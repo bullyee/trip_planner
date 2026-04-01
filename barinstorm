@@ -1,0 +1,257 @@
+import React, { useState } from 'react';
+import {
+  MapPin, Camera, Calendar, Layers, Ticket,
+  SlidersHorizontal, UploadCloud, ScanLine,
+  Clock, CloudRain, ListTodo,
+  Smartphone, Image,
+  Database, Share, FolderTree, ArrowLeftRight, Music,
+  BrainCircuit, FileDown, Code, PenTool, Layout,
+  MonitorSmartphone, Monitor, RefreshCw
+} from 'lucide-react';
+
+export default function App() {
+  const [nodes, setNodes] = useState([
+    // Core Elements
+    { id: 'poi', label: 'POI (Location Node)', x: 0, y: -50, type: 'core', icon: 'MapPin' },
+
+    // Multi-Platform Architecture Nodes (New)
+    { id: 'arch', label: 'Platform Architecture', x: 0, y: -250, type: 'tech_core', icon: 'MonitorSmartphone' },
+    { id: 'arch_web', label: 'PC Web: Deep Planning', x: -180, y: -330, type: 'tech', icon: 'Monitor' },
+    { id: 'arch_mob', label: 'Mobile: Travel View', x: 180, y: -330, type: 'tech', icon: 'Smartphone' },
+    { id: 'arch_sync', label: 'Cross-Platform Sync', x: 0, y: -350, type: 'tech', icon: 'RefreshCw' },
+
+    // Primary Feature Modules
+    { id: 'camera', label: 'Anime Camera', x: 350, y: -150, type: 'module', icon: 'Camera' },
+    { id: 'time', label: 'Trip Calendar', x: -350, y: -150, type: 'module', icon: 'Calendar' },
+    { id: 'roi', label: 'ROI Management', x: -350, y: 150, type: 'module', icon: 'Layers' },
+    { id: 'ticket', label: 'Ticket Organizer', x: 350, y: 150, type: 'module', icon: 'FolderTree' },
+
+    // Data Entry & Media
+    { id: 'poi_add', label: 'OS Share Extension', x: 200, y: -50, type: 'module', icon: 'Share' },
+    { id: 'poi_vlm', label: 'VLM Screenshot Parsing', x: 200, y: 30, type: 'idea', icon: 'BrainCircuit' },
+    { id: 'music', label: 'Pilgrimage BGM List', x: -200, y: -50, type: 'module', icon: 'Music' },
+
+    // Technical Implementation Nodes
+    { id: 'tech_group', label: 'Technical Planning', x: 0, y: 250, type: 'tech_core', icon: 'Code' },
+    { id: 'tech_ui', label: 'UI/UX Screen Flow', x: -150, y: 330, type: 'tech', icon: 'Layout' },
+    { id: 'tech_db', label: 'SQLite DB Schema', x: 0, y: 350, type: 'tech', icon: 'Database' },
+    { id: 'tech_api', label: 'VLM Prompt Logic', x: 150, y: 330, type: 'tech', icon: 'PenTool' },
+
+    // Camera Features
+    { id: 'cam_ugc', label: 'Local Ref Upload', x: 550, y: -230, type: 'idea', icon: 'UploadCloud' },
+    { id: 'cam_ar', label: 'AR Silhouette', x: 600, y: -150, type: 'idea', icon: 'ScanLine' },
+    { id: 'cam_slider', label: 'Opacity Control', x: 550, y: -70, type: 'idea', icon: 'SlidersHorizontal' },
+
+    // Calendar Features
+    { id: 'cal_transit', label: 'Transit Time', x: -550, y: -250, type: 'idea', icon: 'Clock' },
+    { id: 'cal_weather', label: 'Weather Alerts', x: -600, y: -170, type: 'idea', icon: 'CloudRain' },
+    { id: 'cal_backlog', label: 'Unscheduled Pool', x: -600, y: -90, type: 'idea', icon: 'ListTodo' },
+    { id: 'cal_backup', label: 'Alt. Pool (Rain/Delay)', x: -530, y: -10, type: 'idea', icon: 'ArrowLeftRight' },
+
+    // ROI Features
+    { id: 'roi_local', label: 'Offline DB Priority', x: -580, y: 90, type: 'idea', icon: 'Database' },
+    { id: 'roi_share', label: 'Export JSON Payload', x: -600, y: 170, type: 'idea', icon: 'FileDown' },
+    { id: 'roi_radar', label: 'Proximity Radar', x: -560, y: 250, type: 'idea', icon: 'MapPin' },
+
+    // Ticket Features
+    { id: 'tkt_surface', label: 'Auto-Surface QR', x: 550, y: 90, type: 'idea', icon: 'Smartphone' },
+    { id: 'tkt_booking', label: 'Booking Timeline', x: 600, y: 170, type: 'idea', icon: 'Calendar' },
+    { id: 'tkt_scrap', label: 'Digital Scrapbook', x: 550, y: 250, type: 'idea', icon: 'Image' }
+  ]);
+
+  const edges = [
+    // Core connections
+    { source: 'poi', target: 'arch' },
+    { source: 'poi', target: 'camera' },
+    { source: 'poi', target: 'time' },
+    { source: 'poi', target: 'roi' },
+    { source: 'poi', target: 'ticket' },
+    { source: 'poi', target: 'music' },
+    { source: 'poi', target: 'poi_add' },
+    { source: 'poi', target: 'tech_group' },
+
+    // Architecture connections
+    { source: 'arch', target: 'arch_web' },
+    { source: 'arch', target: 'arch_mob' },
+    { source: 'arch', target: 'arch_sync' },
+
+    // Data Entry Pipeline
+    { source: 'poi_add', target: 'poi_vlm' },
+
+    // Technical Implementations
+    { source: 'tech_group', target: 'tech_ui' },
+    { source: 'tech_group', target: 'tech_db' },
+    { source: 'tech_group', target: 'tech_api' },
+
+    // Camera edges
+    { source: 'camera', target: 'cam_ugc' },
+    { source: 'camera', target: 'cam_ar' },
+    { source: 'camera', target: 'cam_slider' },
+
+    // Calendar edges
+    { source: 'time', target: 'cal_transit' },
+    { source: 'time', target: 'cal_weather' },
+    { source: 'time', target: 'cal_backlog' },
+    { source: 'time', target: 'cal_backup' },
+
+    // ROI edges
+    { source: 'roi', target: 'roi_local' },
+    { source: 'roi', target: 'roi_share' },
+    { source: 'roi', target: 'roi_radar' },
+
+    // Ticket edges
+    { source: 'ticket', target: 'tkt_surface' },
+    { source: 'ticket', target: 'tkt_booking' },
+    { source: 'ticket', target: 'tkt_scrap' }
+  ];
+
+  const [dragState, setDragState] = useState({
+    isDragging: false,
+    nodeId: null,
+    startX: 0,
+    startY: 0,
+    originalNodeX: 0,
+    originalNodeY: 0
+  });
+
+  const handleMouseDown = (e, nodeId) => {
+    e.stopPropagation();
+    const node = nodes.find(n => n.id === nodeId);
+    setDragState({
+      isDragging: true,
+      nodeId: nodeId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originalNodeX: node.x,
+      originalNodeY: node.y
+    });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!dragState.isDragging) return;
+    const dx = e.clientX - dragState.startX;
+    const dy = e.clientY - dragState.startY;
+    setNodes(nodes.map(n =>
+      n.id === dragState.nodeId
+        ? { ...n, x: dragState.originalNodeX + dx, y: dragState.originalNodeY + dy }
+        : n
+    ));
+  };
+
+  const handleMouseUp = () => {
+    setDragState({ ...dragState, isDragging: false, nodeId: null });
+  };
+
+  const getIcon = (iconName) => {
+    const props = { className: "w-4 h-4" };
+    switch (iconName) {
+      case 'MapPin': return <MapPin {...props} className="text-emerald-600 w-6 h-6" />;
+      case 'Camera': return <Camera {...props} className="text-indigo-600 w-5 h-5" />;
+      case 'Calendar': return <Calendar {...props} className="text-blue-600 w-5 h-5" />;
+      case 'Layers': return <Layers {...props} className="text-purple-600 w-5 h-5" />;
+      case 'FolderTree': return <FolderTree {...props} className="text-amber-600 w-5 h-5" />;
+      case 'Music': return <Music {...props} className="text-pink-600 w-5 h-5" />;
+      case 'Share': return <Share {...props} className="text-emerald-500 w-5 h-5" />;
+      case 'BrainCircuit': return <BrainCircuit {...props} className="text-emerald-500" />;
+      case 'SlidersHorizontal': return <SlidersHorizontal {...props} className="text-indigo-500" />;
+      case 'UploadCloud': return <UploadCloud {...props} className="text-indigo-500" />;
+      case 'ScanLine': return <ScanLine {...props} className="text-indigo-500" />;
+      case 'Clock': return <Clock {...props} className="text-blue-500" />;
+      case 'CloudRain': return <CloudRain {...props} className="text-blue-500" />;
+      case 'ListTodo': return <ListTodo {...props} className="text-blue-500" />;
+      case 'ArrowLeftRight': return <ArrowLeftRight {...props} className="text-blue-500" />;
+      case 'Database': return <Database {...props} className="text-purple-500" />;
+      case 'FileDown': return <FileDown {...props} className="text-purple-500" />;
+      case 'Smartphone': return <Smartphone {...props} className="text-amber-500" />;
+      case 'Image': return <Image {...props} className="text-amber-500" />;
+      case 'Code': return <Code {...props} className="text-slate-100 w-5 h-5" />;
+      case 'Layout': return <Layout {...props} className="text-slate-200" />;
+      case 'PenTool': return <PenTool {...props} className="text-slate-200" />;
+      case 'MonitorSmartphone': return <MonitorSmartphone {...props} className="text-slate-100 w-5 h-5" />;
+      case 'Monitor': return <Monitor {...props} className="text-slate-200" />;
+      case 'RefreshCw': return <RefreshCw {...props} className="text-slate-200" />;
+      default: return null;
+    }
+  };
+
+  const getNodeStyle = (type) => {
+    switch (type) {
+      case 'core': return 'border-emerald-500 bg-emerald-50 ring-emerald-100 py-4 px-6 scale-110 shadow-lg z-20';
+      case 'module': return 'border-slate-300 bg-white ring-slate-100 py-2.5 px-5 shadow-md font-semibold z-10';
+      case 'idea': return 'border-slate-200 bg-slate-50 text-sm py-1.5 px-3 rounded-full text-slate-700 shadow-sm border-dashed hover:bg-slate-100 z-10';
+      case 'tech_core': return 'border-slate-700 bg-slate-800 text-slate-100 ring-slate-200 py-2.5 px-5 shadow-md font-semibold z-20';
+      case 'tech': return 'border-slate-600 bg-slate-700 text-slate-200 text-sm py-1.5 px-3 rounded-full shadow-sm border-dashed hover:bg-slate-600 z-10';
+      default: return 'border-slate-300 bg-white';
+    }
+  };
+
+  return (
+    <div
+      className="relative w-full h-screen bg-slate-100 overflow-hidden font-sans cursor-grab active:cursor-grabbing"
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      style={{
+         backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
+         backgroundSize: '32px 32px'
+      }}
+    >
+      <div className="absolute top-4 left-4 right-4 flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-sm border border-slate-200 z-30">
+         <div>
+             <h1 className="text-xl font-bold text-slate-800">System Brainstorming Map</h1>
+             <p className="text-sm text-slate-500">Includes PC/Mobile platform split and architecture sync.</p>
+         </div>
+      </div>
+
+      <svg className="absolute top-1/2 left-1/2 w-0 h-0 overflow-visible z-0 pointer-events-none">
+        {edges.map((edge, index) => {
+          const sourceNode = nodes.find(n => n.id === edge.source);
+          const targetNode = nodes.find(n => n.id === edge.target);
+          if (!sourceNode || !targetNode) return null;
+
+          const isIdeaEdge = targetNode.type === 'idea' || targetNode.type === 'tech';
+
+          return (
+            <line
+              key={index}
+              x1={sourceNode.x}
+              y1={sourceNode.y}
+              x2={targetNode.x}
+              y2={targetNode.y}
+              stroke={isIdeaEdge ? "#cbd5e1" : "#94a3b8"}
+              strokeWidth={isIdeaEdge ? "1.5" : "2"}
+              strokeDasharray={isIdeaEdge ? "4,4" : "none"}
+              className="transition-all duration-75"
+            />
+          );
+        })}
+      </svg>
+
+      <div className="absolute top-1/2 left-1/2 w-0 h-0 z-10">
+        {nodes.map(node => (
+          <div
+            key={node.id}
+            className="absolute"
+            style={{ transform: `translate(calc(-50% + ${node.x}px), calc(-50% + ${node.y}px))` }}
+          >
+            <div
+              onMouseDown={(e) => handleMouseDown(e, node.id)}
+              className={`
+                group relative flex items-center space-x-2 rounded-xl border-2 cursor-grab active:cursor-grabbing transition-all select-none whitespace-nowrap
+                ${getNodeStyle(node.type)}
+                ${dragState.nodeId === node.id ? 'ring-4 shadow-xl z-50' : ''}
+              `}
+            >
+              <div className="flex items-center justify-center">
+                {getIcon(node.icon)}
+              </div>
+              <span className="tracking-tight">
+                {node.label}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
