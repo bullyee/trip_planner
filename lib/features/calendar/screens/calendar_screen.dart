@@ -52,7 +52,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             icon: const Icon(Icons.calendar_month),
             tooltip: 'Pick date',
             onPressed: () async {
-              final picked = await showDatePicker(
+              final picked = await showMonthCalendarPicker(
                 context: context,
                 initialDate: selectedDate,
                 firstDate: DateTime(DateTime.now().year - 10),

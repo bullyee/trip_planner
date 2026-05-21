@@ -267,7 +267,7 @@ class PoiDetailScreen extends ConsumerWidget {
                       ? DateFormat('yyyy-MM-dd').format(selectedDate!)
                       : 'Select Date'),
                   onTap: () async {
-                    final picked = await showDatePicker(
+                    final picked = await showMonthCalendarPicker(
                       context: ctx,
                       initialDate: DateTime.now(),
                       firstDate: DateTime(2024),
