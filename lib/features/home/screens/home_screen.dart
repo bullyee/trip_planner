@@ -33,9 +33,9 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 24),
             _HomeCard(
               icon: Icons.layers,
-              title: 'Regions (ROI)',
-              subtitle: 'Manage your trip regions',
-              onTap: () => context.push('/rois'),
+              title: 'View POIs',
+              subtitle: 'Browse by region, anime, or tag',
+              onTap: () => context.push('/pois'),
             ),
             const SizedBox(height: 12),
             _HomeCard(

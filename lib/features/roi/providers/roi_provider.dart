@@ -7,7 +7,7 @@ final allRoisProvider = StreamProvider<List<Roi>>((ref) {
   return db.watchAllRois();
 });
 
-final roiByIdProvider = FutureProvider.family<Roi, String>((ref, id) {
+final roiByIdProvider = StreamProvider.family<Roi, String>((ref, id) {
   final db = ref.watch(databaseProvider);
-  return db.getRoiById(id);
+  return db.watchRoiById(id);
 });
