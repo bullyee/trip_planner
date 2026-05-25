@@ -1,12 +1,16 @@
 package com.example.trip_planner
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -84,11 +88,26 @@ class MainActivity : FlutterActivity() {
                 photoFile
             )
 
+            // Request notification permission (Android 13+) so the foreground
+            // service notification is visible
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(
+                        this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1003
+                    )
+                }
+            }
+
             // Start the overlay service with the reference image
             val overlayIntent = Intent(this, OverlayService::class.java).apply {
                 putExtra("imagePath", imagePath)
             }
-            startService(overlayIntent)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(overlayIntent)
+            } else {
+                startService(overlayIntent)
+            }
             Log.d(TAG, "Overlay service started with image: $imagePath")
 
             // Launch system camera

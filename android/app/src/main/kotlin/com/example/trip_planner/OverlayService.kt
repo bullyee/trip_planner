@@ -1,5 +1,9 @@
 package com.example.trip_planner
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -9,6 +13,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -27,9 +32,20 @@ class OverlayService : Service() {
     private var currentHeight = 480
     private var imageAspectRatio = 3f / 4f  // width / height
 
+    companion object {
+        const val CHANNEL_ID = "overlay_service_channel"
+        const val NOTIFICATION_ID = 1
+        const val ACTION_STOP_OVERLAY = "com.example.trip_planner.STOP_OVERLAY"
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP_OVERLAY) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val imagePath = intent?.getStringExtra("imagePath")
         if (imagePath == null) {
             Log.e(TAG, "No image path provided")
@@ -37,8 +53,51 @@ class OverlayService : Service() {
             return START_NOT_STICKY
         }
 
+        startForegroundNotification()
         showOverlay(imagePath)
         return START_NOT_STICKY
+    }
+
+    private fun startForegroundNotification() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Reference Overlay",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Shows while the reference image overlay is active"
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
+
+        val stopIntent = Intent(this, OverlayService::class.java).apply {
+            action = ACTION_STOP_OVERLAY
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this, 0, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }.apply {
+            setContentTitle("Reference Overlay Active")
+            setContentText("Tap to stop the overlay")
+            setSmallIcon(android.R.drawable.ic_menu_camera)
+            setOngoing(true)
+            setContentIntent(stopPendingIntent)
+            addAction(
+                Notification.Action.Builder(
+                    null, "Stop Overlay", stopPendingIntent
+                ).build()
+            )
+        }.build()
+
+        startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun showOverlay(imagePath: String) {
@@ -111,6 +170,16 @@ class OverlayService : Service() {
         }
         layoutParams = params
 
+        // Double-tap to dismiss
+        val doubleTapDetector = GestureDetector(this,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDoubleTap(e: MotionEvent): Boolean {
+                    stopSelf()
+                    return true
+                }
+            }
+        )
+
         // Pinch-to-resize — uses raw screen coords for stable focal tracking
         // (computed from MotionEvent in the touch listener, not from detector)
         var prevRawFocusX = 0f
@@ -170,6 +239,8 @@ class OverlayService : Service() {
         var isDragging = false
 
         container.setOnTouchListener { view, event ->
+            doubleTapDetector.onTouchEvent(event)
+
             // Compute focal point in RAW screen coordinates before passing to detector
             // This avoids feedback loops since the view itself moves during interaction
             if (event.pointerCount >= 2) {
