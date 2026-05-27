@@ -46,14 +46,14 @@ class AppDatabase extends _$AppDatabase {
   Future<int> insertRoi(RoisCompanion roi) => into(rois).insert(roi);
 
   Future<bool> updateRoi(RoisCompanion roi) => update(rois).replace(
-        Roi(
-          id: roi.id.value,
-          name: roi.name.value,
-          description: roi.description.value,
-          isOfflineCached: roi.isOfflineCached.value,
-          createdAt: roi.createdAt.value,
-        ),
-      );
+    Roi(
+      id: roi.id.value,
+      name: roi.name.value,
+      description: roi.description.value,
+      isOfflineCached: roi.isOfflineCached.value,
+      createdAt: roi.createdAt.value,
+    ),
+  );
 
   Future<int> deleteRoi(String id) =>
       (delete(rois)..where((r) => r.id.equals(id))).go();
@@ -90,21 +90,21 @@ class AppDatabase extends _$AppDatabase {
   Future<int> insertPoi(PoisCompanion poi) => into(pois).insert(poi);
 
   Future<bool> updatePoi(PoisCompanion poi) => update(pois).replace(
-        Poi(
-          id: poi.id.value,
-          roiId: poi.roiId.value,
-          name: poi.name.value,
-          description: poi.description.value,
-          address: poi.address.value,
-          lat: poi.lat.value,
-          lng: poi.lng.value,
-          businessHours: poi.businessHours.value,
-          contactInfo: poi.contactInfo.value,
-          coverImageUri: poi.coverImageUri.value,
-          tags: poi.tags.value,
-          animeSeriesRef: poi.animeSeriesRef.value,
-        ),
-      );
+    Poi(
+      id: poi.id.value,
+      roiId: poi.roiId.value,
+      name: poi.name.value,
+      description: poi.description.value,
+      address: poi.address.value,
+      lat: poi.lat.value,
+      lng: poi.lng.value,
+      businessHours: poi.businessHours.value,
+      contactInfo: poi.contactInfo.value,
+      coverImageUri: poi.coverImageUri.value,
+      tags: poi.tags.value,
+      animeSeriesRef: poi.animeSeriesRef.value,
+    ),
+  );
 
   Future<List<Poi>> getAllPois() => select(pois).get();
 

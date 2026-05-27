@@ -1,9 +1,8 @@
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' show FontFeature;
 
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart' show compute, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -122,6 +121,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   Future<void> _initializeCameras() async {
     try {
+      if (kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux) return;
       final cameras = await availableCameras();
       if (!mounted) return;
 
