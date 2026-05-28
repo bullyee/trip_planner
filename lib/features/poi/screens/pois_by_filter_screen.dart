@@ -4,16 +4,18 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/database/database.dart';
 import '../../roi/providers/roi_provider.dart';
-import '../providers/poi_provider.dart';
+import '../../anime/providers/anime_provider.dart';
+import '../../tag/providers/tag_provider.dart';
 
 class PoisByAnimeScreen extends ConsumerWidget {
-  final String animeName;
+  final String animeId;
 
-  const PoisByAnimeScreen({super.key, required this.animeName});
+  const PoisByAnimeScreen({super.key, required this.animeId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final poisAsync = ref.watch(poisByAnimeSeriesProvider(animeName));
+    final animeAsync = ref.watch(animeByIdProvider(animeId));
+    final poisAsync = ref.watch(poisByAnimeProvider(animeId));
 
     return Scaffold(
       appBar: AppBar(
@@ -21,28 +23,48 @@ class PoisByAnimeScreen extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.go('/pois?tab=anime'),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Anime', style: TextStyle(fontSize: 12)),
-            Text(animeName,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-          ],
+        title: animeAsync.maybeWhen(
+          data: (anime) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Anime', style: TextStyle(fontSize: 12)),
+              Text(anime?.name ?? 'Unknown',
+                  style:
+                      const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          orElse: () => const Text('Anime'),
         ),
+        actions: [
+          animeAsync.maybeWhen(
+            data: (anime) => anime == null
+                ? const SizedBox.shrink()
+                : IconButton(
+                    icon: const Icon(Icons.edit),
+                    tooltip: 'Edit anime',
+                    onPressed: () => context.push('/animes/${anime.id}/edit'),
+                  ),
+            orElse: () => const SizedBox.shrink(),
+          ),
+        ],
       ),
-      body: _PoiListView(poisAsync: poisAsync, emptyText: 'No POIs for $animeName'),
+      body: _PoiListView(
+        poisAsync: poisAsync,
+        emptyText: 'No POIs for this anime yet',
+      ),
     );
   }
 }
 
 class PoisByTagScreen extends ConsumerWidget {
-  final String tag;
+  final String tagId;
 
-  const PoisByTagScreen({super.key, required this.tag});
+  const PoisByTagScreen({super.key, required this.tagId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final poisAsync = ref.watch(poisByTagProvider(tag));
+    final tagAsync = ref.watch(tagByIdProvider(tagId));
+    final poisAsync = ref.watch(poisByTagProvider(tagId));
 
     return Scaffold(
       appBar: AppBar(
@@ -50,16 +72,33 @@ class PoisByTagScreen extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.go('/pois?tab=tag'),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Tag', style: TextStyle(fontSize: 12)),
-            Text(tag,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-          ],
+        title: tagAsync.maybeWhen(
+          data: (tag) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Tag', style: TextStyle(fontSize: 12)),
+              Text(tag?.name ?? 'Unknown',
+                  style:
+                      const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          orElse: () => const Text('Tag'),
         ),
+        actions: [
+          tagAsync.maybeWhen(
+            data: (tag) => tag == null
+                ? const SizedBox.shrink()
+                : IconButton(
+                    icon: const Icon(Icons.edit),
+                    tooltip: 'Edit tag',
+                    onPressed: () => context.push('/tags/${tag.id}/edit'),
+                  ),
+            orElse: () => const SizedBox.shrink(),
+          ),
+        ],
       ),
-      body: _PoiListView(poisAsync: poisAsync, emptyText: 'No POIs tagged "$tag"'),
+      body:
+          _PoiListView(poisAsync: poisAsync, emptyText: 'No POIs for this tag'),
     );
   }
 }
@@ -90,7 +129,7 @@ class _PoiListView extends ConsumerWidget {
           itemCount: pois.length,
           itemBuilder: (context, index) {
             final poi = pois[index];
-            final roiName = roiMap[poi.roiId]?.name;
+            final roiName = poi.roiId == null ? null : roiMap[poi.roiId]?.name;
             return Card(
               child: ListTile(
                 leading: const Icon(Icons.location_on),

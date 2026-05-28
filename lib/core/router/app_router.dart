@@ -2,10 +2,15 @@ import 'package:go_router/go_router.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/roi/screens/roi_list_screen.dart';
 import '../../features/roi/screens/roi_detail_screen.dart';
+import '../../features/roi/screens/roi_edit_screen.dart';
 import '../../features/poi/screens/poi_detail_screen.dart';
 import '../../features/poi/screens/poi_create_screen.dart';
 import '../../features/poi/screens/poi_browse_screen.dart';
 import '../../features/poi/screens/pois_by_filter_screen.dart';
+import '../../features/anime/screens/anime_list_screen.dart';
+import '../../features/anime/screens/anime_edit_screen.dart';
+import '../../features/tag/screens/tag_list_screen.dart';
+import '../../features/tag/screens/tag_edit_screen.dart';
 import '../../features/calendar/screens/calendar_screen.dart';
 import '../../features/camera/screens/camera_screen.dart';
 import '../../features/ticket/screens/ticket_screen.dart';
@@ -29,15 +34,24 @@ final appRouter = GoRouter(
       ),
     ),
     GoRoute(
-      path: '/rois/:roiId/pois/new',
-      builder: (context, state) => PoiCreateScreen(
+      path: '/rois/:roiId/edit',
+      builder: (context, state) => RoiEditScreen(
         roiId: state.pathParameters['roiId']!,
       ),
     ),
     GoRoute(
-      path: '/rois/:roiId/pois/:poiId/edit',
+      path: '/rois/:roiId/pois/new',
       builder: (context, state) => PoiCreateScreen(
-        roiId: state.pathParameters['roiId']!,
+        roiId: state.pathParameters['roiId'],
+      ),
+    ),
+    GoRoute(
+      path: '/pois/new',
+      builder: (context, state) => const PoiCreateScreen(),
+    ),
+    GoRoute(
+      path: '/pois/:poiId/edit',
+      builder: (context, state) => PoiCreateScreen(
         editPoiId: state.pathParameters['poiId'],
       ),
     ),
@@ -54,15 +68,35 @@ final appRouter = GoRouter(
       ),
     ),
     GoRoute(
-      path: '/anime/:name',
-      builder: (context, state) => PoisByAnimeScreen(
-        animeName: Uri.decodeComponent(state.pathParameters['name']!),
+      path: '/animes',
+      builder: (context, state) => const AnimeListScreen(),
+    ),
+    GoRoute(
+      path: '/animes/:animeId/edit',
+      builder: (context, state) => AnimeEditScreen(
+        animeId: state.pathParameters['animeId'],
       ),
     ),
     GoRoute(
-      path: '/tag/:name',
+      path: '/anime/:animeId',
+      builder: (context, state) => PoisByAnimeScreen(
+        animeId: state.pathParameters['animeId']!,
+      ),
+    ),
+    GoRoute(
+      path: '/tags',
+      builder: (context, state) => const TagListScreen(),
+    ),
+    GoRoute(
+      path: '/tags/:tagId/edit',
+      builder: (context, state) => TagEditScreen(
+        tagId: state.pathParameters['tagId'],
+      ),
+    ),
+    GoRoute(
+      path: '/tag/:tagId',
       builder: (context, state) => PoisByTagScreen(
-        tag: Uri.decodeComponent(state.pathParameters['name']!),
+        tagId: state.pathParameters['tagId']!,
       ),
     ),
     GoRoute(

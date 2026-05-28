@@ -7,6 +7,8 @@ import 'package:uuid/uuid.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../roi/providers/roi_provider.dart';
+import '../../anime/providers/anime_provider.dart';
+import '../../tag/providers/tag_provider.dart';
 import '../providers/poi_provider.dart';
 
 class PoiBrowseScreen extends StatelessWidget {
@@ -149,32 +151,31 @@ class _ByAnimeTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final asyncSeries = ref.watch(distinctAnimeSeriesProvider);
+    final asyncAnimes = ref.watch(allAnimesProvider);
 
-    return asyncSeries.when(
+    return asyncAnimes.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, _) => Center(child: Text('Error: $err')),
-      data: (names) {
-        if (names.isEmpty) {
+      data: (animes) {
+        if (animes.isEmpty) {
           return const Center(
-            child: Text('No anime series yet. Add some when creating POIs.'),
+            child: Text('No anime yet. Tap manage to add one.'),
           );
         }
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: names.length,
+          itemCount: animes.length,
           itemBuilder: (context, index) {
-            final name = names[index];
+            final anime = animes[index];
             return Card(
               child: ListTile(
                 leading: Icon(
                   Icons.movie_outlined,
                   color: Theme.of(context).colorScheme.primary,
                 ),
-                title: Text(name),
+                title: Text(anime.name),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () =>
-                    context.push('/anime/${Uri.encodeComponent(name)}'),
+                onTap: () => context.push('/anime/${anime.id}'),
               ),
             );
           },
@@ -189,7 +190,7 @@ class _ByTagTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final asyncTags = ref.watch(distinctTagsProvider);
+    final asyncTags = ref.watch(allTagsProvider);
 
     return asyncTags.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -197,7 +198,7 @@ class _ByTagTab extends ConsumerWidget {
       data: (tags) {
         if (tags.isEmpty) {
           return const Center(
-            child: Text('No tags yet. Add some when creating POIs.'),
+            child: Text('No tags yet. Tap manage to add one.'),
           );
         }
         return ListView.builder(
@@ -211,10 +212,9 @@ class _ByTagTab extends ConsumerWidget {
                   Icons.label_outline,
                   color: Theme.of(context).colorScheme.primary,
                 ),
-                title: Text(tag),
+                title: Text(tag.name),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () =>
-                    context.push('/tag/${Uri.encodeComponent(tag)}'),
+                onTap: () => context.push('/tag/${tag.id}'),
               ),
             );
           },
@@ -249,11 +249,20 @@ class _AllPoisTab extends ConsumerWidget {
               child: ListTile(
                 leading: const Icon(Icons.location_on),
                 title: Text(poi.name),
-                subtitle: poi.animeSeriesRef != null
-                    ? Text(poi.animeSeriesRef!)
-                    : poi.address != null
-                        ? Text(poi.address!)
-                        : null,
+                subtitle: Consumer(
+                  builder: (context, ref, _) {
+                    final animesAsync = ref.watch(animesForPoiProvider(poi.id));
+                    final firstAnime = animesAsync.maybeWhen(
+                      data: (animes) =>
+                          animes.isNotEmpty ? animes.first.name : null,
+                      orElse: () => null,
+                    );
+                    final subtitle = firstAnime ?? poi.address;
+                    return subtitle != null
+                        ? Text(subtitle)
+                        : const SizedBox.shrink();
+                  },
+                ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.push('/pois/${poi.id}'),
               ),

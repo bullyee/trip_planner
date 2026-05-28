@@ -43,6 +43,20 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               _HomeCard(
+                icon: Icons.movie_outlined,
+                title: 'Manage Anime',
+                subtitle: 'Add, edit, or browse anime series',
+                onTap: () => context.push('/animes'),
+              ),
+              const SizedBox(height: 12),
+              _HomeCard(
+                icon: Icons.label_outline,
+                title: 'Manage Tags',
+                subtitle: 'Add or edit tags',
+                onTap: () => context.push('/tags'),
+              ),
+              const SizedBox(height: 12),
+              _HomeCard(
                 icon: Icons.calendar_month,
                 title: 'Trip Calendar',
                 subtitle: 'Schedule your visits',

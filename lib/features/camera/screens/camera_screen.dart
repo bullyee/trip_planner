@@ -796,9 +796,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               poi.name,
               style: const TextStyle(color: Colors.white),
             ),
-            subtitle: poi.animeSeriesRef != null
+            subtitle: poi.address != null
                 ? Text(
-                    poi.animeSeriesRef!,
+                    poi.address!,
                     style: const TextStyle(color: Colors.white54),
                   )
                 : null,
@@ -856,9 +856,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             pois[i].name,
             style: const TextStyle(color: Colors.white),
           ),
-          subtitle: pois[i].animeSeriesRef != null
+          subtitle: pois[i].address != null
               ? Text(
-                  pois[i].animeSeriesRef!,
+                  pois[i].address!,
                   style: const TextStyle(color: Colors.white54),
                 )
               : null,
