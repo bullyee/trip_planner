@@ -51,54 +51,71 @@ class PoiBrowseScreen extends StatelessWidget {
             _AllPoisTab(),
           ],
         ),
-        floatingActionButton: _ContextualFab(),
+        floatingActionButton: const _MultiAddFab(),
       ),
     );
   }
 }
 
-class _ContextualFab extends StatefulWidget {
-  @override
-  State<_ContextualFab> createState() => _ContextualFabState();
-}
-
-class _ContextualFabState extends State<_ContextualFab> {
-  TabController? _controller;
-  int _currentIndex = 0;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final controller = DefaultTabController.of(context);
-    if (controller != _controller) {
-      _controller?.removeListener(_handleChange);
-      _controller = controller;
-      _controller!.addListener(_handleChange);
-      _currentIndex = controller.index;
-    }
-  }
-
-  void _handleChange() {
-    if (!mounted) return;
-    setState(() => _currentIndex = _controller!.index);
-  }
-
-  @override
-  void dispose() {
-    _controller?.removeListener(_handleChange);
-    super.dispose();
-  }
+class _MultiAddFab extends StatelessWidget {
+  const _MultiAddFab();
 
   @override
   Widget build(BuildContext context) {
-    if (_currentIndex == 0) {
-      return FloatingActionButton(
-        onPressed: () => _showCreateRoiDialog(context),
-        tooltip: 'New Region',
-        child: const Icon(Icons.add),
-      );
-    }
-    return const SizedBox.shrink();
+    return FloatingActionButton(
+      tooltip: 'Add',
+      onPressed: () => _showAddSheet(context),
+      child: const Icon(Icons.add),
+    );
+  }
+
+  void _showAddSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.location_on),
+              title: const Text('New POI'),
+              subtitle: const Text('Add a single location'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                context.push('/pois/new');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.layers),
+              title: const Text('New Region'),
+              subtitle: const Text('Group POIs by area, e.g., Kyoto'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _showCreateRoiDialog(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.movie_outlined),
+              title: const Text('New Anime'),
+              subtitle: const Text('Add an anime series'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                context.push('/animes/new/edit');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.label_outline),
+              title: const Text('New Tag'),
+              subtitle: const Text('Add a tag'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                context.push('/tags/new/edit');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -137,6 +154,7 @@ class _ByRegionTab extends ConsumerWidget {
                     : null,
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.push('/rois/${roi.id}'),
+                onLongPress: () => context.push('/rois/${roi.id}/edit'),
               ),
             );
           },
@@ -159,7 +177,7 @@ class _ByAnimeTab extends ConsumerWidget {
       data: (animes) {
         if (animes.isEmpty) {
           return const Center(
-            child: Text('No anime yet. Tap manage to add one.'),
+            child: Text('No anime yet. Tap + to add one.'),
           );
         }
         return ListView.builder(
@@ -174,8 +192,12 @@ class _ByAnimeTab extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 title: Text(anime.name),
+                subtitle: anime.description != null
+                    ? Text(anime.description!, maxLines: 1, overflow: TextOverflow.ellipsis)
+                    : null,
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.push('/anime/${anime.id}'),
+                onLongPress: () => context.push('/animes/${anime.id}/edit'),
               ),
             );
           },
@@ -198,7 +220,7 @@ class _ByTagTab extends ConsumerWidget {
       data: (tags) {
         if (tags.isEmpty) {
           return const Center(
-            child: Text('No tags yet. Tap manage to add one.'),
+            child: Text('No tags yet. Tap + to add one.'),
           );
         }
         return ListView.builder(
@@ -213,8 +235,12 @@ class _ByTagTab extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 title: Text(tag.name),
+                subtitle: tag.description != null
+                    ? Text(tag.description!, maxLines: 1, overflow: TextOverflow.ellipsis)
+                    : null,
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.push('/tag/${tag.id}'),
+                onLongPress: () => context.push('/tags/${tag.id}/edit'),
               ),
             );
           },

@@ -7,9 +7,7 @@ import '../../features/poi/screens/poi_detail_screen.dart';
 import '../../features/poi/screens/poi_create_screen.dart';
 import '../../features/poi/screens/poi_browse_screen.dart';
 import '../../features/poi/screens/pois_by_filter_screen.dart';
-import '../../features/anime/screens/anime_list_screen.dart';
 import '../../features/anime/screens/anime_edit_screen.dart';
-import '../../features/tag/screens/tag_list_screen.dart';
 import '../../features/tag/screens/tag_edit_screen.dart';
 import '../../features/calendar/screens/calendar_screen.dart';
 import '../../features/camera/screens/camera_screen.dart';
@@ -68,10 +66,6 @@ final appRouter = GoRouter(
       ),
     ),
     GoRoute(
-      path: '/animes',
-      builder: (context, state) => const AnimeListScreen(),
-    ),
-    GoRoute(
       path: '/animes/:animeId/edit',
       builder: (context, state) => AnimeEditScreen(
         animeId: state.pathParameters['animeId'],
@@ -82,10 +76,6 @@ final appRouter = GoRouter(
       builder: (context, state) => PoisByAnimeScreen(
         animeId: state.pathParameters['animeId']!,
       ),
-    ),
-    GoRoute(
-      path: '/tags',
-      builder: (context, state) => const TagListScreen(),
     ),
     GoRoute(
       path: '/tags/:tagId/edit',

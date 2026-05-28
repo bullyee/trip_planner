@@ -38,22 +38,8 @@ class HomeScreen extends StatelessWidget {
               _HomeCard(
                 icon: Icons.layers,
                 title: 'View POIs',
-                subtitle: 'Browse by region, anime, or tag',
+                subtitle: 'Browse and manage regions, anime, tags, POIs',
                 onTap: () => context.push('/pois'),
-              ),
-              const SizedBox(height: 12),
-              _HomeCard(
-                icon: Icons.movie_outlined,
-                title: 'Manage Anime',
-                subtitle: 'Add, edit, or browse anime series',
-                onTap: () => context.push('/animes'),
-              ),
-              const SizedBox(height: 12),
-              _HomeCard(
-                icon: Icons.label_outline,
-                title: 'Manage Tags',
-                subtitle: 'Add or edit tags',
-                onTap: () => context.push('/tags'),
               ),
               const SizedBox(height: 12),
               _HomeCard(
