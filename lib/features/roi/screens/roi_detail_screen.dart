@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/database_provider.dart';
+import '../../../core/widgets/add_speed_dial.dart';
+import '../../poi/screens/poi_browse_screen.dart';
 import '../providers/roi_provider.dart';
 import '../../poi/providers/poi_provider.dart';
 import '../../anime/providers/anime_provider.dart';
@@ -110,9 +112,11 @@ class RoiDetailScreen extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/rois/$roiId/pois/new'),
-        child: const Icon(Icons.add_location),
+      floatingActionButton: AddSpeedDial(
+        actions: buildDefaultAddActions(
+          context,
+          newPoiAction: () => context.push('/rois/$roiId/pois/new'),
+        ),
       ),
     );
   }

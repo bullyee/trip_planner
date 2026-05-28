@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
+import '../../../core/widgets/add_speed_dial.dart';
 import '../../roi/providers/roi_provider.dart';
 import '../../anime/providers/anime_provider.dart';
 import '../../tag/providers/tag_provider.dart';
@@ -51,72 +52,46 @@ class PoiBrowseScreen extends StatelessWidget {
             _AllPoisTab(),
           ],
         ),
-        floatingActionButton: const _MultiAddFab(),
+        floatingActionButton: Builder(
+          builder: (ctx) => AddSpeedDial(
+            actions: buildDefaultAddActions(ctx),
+          ),
+        ),
       ),
     );
   }
 }
 
-class _MultiAddFab extends StatelessWidget {
-  const _MultiAddFab();
-
-  @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton(
-      tooltip: 'Add',
-      onPressed: () => _showAddSheet(context),
-      child: const Icon(Icons.add),
-    );
-  }
-
-  void _showAddSheet(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.location_on),
-              title: const Text('New POI'),
-              subtitle: const Text('Add a single location'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                context.push('/pois/new');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.layers),
-              title: const Text('New Region'),
-              subtitle: const Text('Group POIs by area, e.g., Kyoto'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _showCreateRoiDialog(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.movie_outlined),
-              title: const Text('New Anime'),
-              subtitle: const Text('Add an anime series'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                context.push('/animes/new/edit');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.label_outline),
-              title: const Text('New Tag'),
-              subtitle: const Text('Add a tag'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                context.push('/tags/new/edit');
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+/// Builds the standard 4-action add menu (New POI, New Region, New Anime,
+/// New Tag). The order is bottom-up: index 0 (New POI) sits closest to the
+/// main FAB. Pass [newPoiAction] to override the "New POI" callback when the
+/// containing screen needs to preserve context (e.g., scoping to an ROI).
+List<SpeedDialAction> buildDefaultAddActions(
+  BuildContext context, {
+  VoidCallback? newPoiAction,
+}) {
+  return [
+    SpeedDialAction(
+      label: 'New POI',
+      icon: Icons.location_on,
+      onTap: newPoiAction ?? () => context.push('/pois/new'),
+    ),
+    SpeedDialAction(
+      label: 'New Region',
+      icon: Icons.layers,
+      onTap: () => showCreateRoiDialog(context),
+    ),
+    SpeedDialAction(
+      label: 'New Anime',
+      icon: Icons.movie_outlined,
+      onTap: () => context.push('/animes/new/edit'),
+    ),
+    SpeedDialAction(
+      label: 'New Tag',
+      icon: Icons.label_outline,
+      onTap: () => context.push('/tags/new/edit'),
+    ),
+  ];
 }
 
 class _ByRegionTab extends ConsumerWidget {
@@ -300,7 +275,7 @@ class _AllPoisTab extends ConsumerWidget {
   }
 }
 
-void _showCreateRoiDialog(BuildContext context) {
+void showCreateRoiDialog(BuildContext context) {
   final nameController = TextEditingController();
   final descController = TextEditingController();
 

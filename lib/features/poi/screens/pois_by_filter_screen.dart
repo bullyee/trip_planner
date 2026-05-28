@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/database/database.dart';
+import '../../../core/widgets/add_speed_dial.dart';
 import '../../roi/providers/roi_provider.dart';
 import '../../anime/providers/anime_provider.dart';
 import '../../tag/providers/tag_provider.dart';
+import 'poi_browse_screen.dart';
 
 class PoisByAnimeScreen extends ConsumerWidget {
   final String animeId;
@@ -51,6 +53,9 @@ class PoisByAnimeScreen extends ConsumerWidget {
       body: _PoiListView(
         poisAsync: poisAsync,
         emptyText: 'No POIs for this anime yet',
+      ),
+      floatingActionButton: AddSpeedDial(
+        actions: buildDefaultAddActions(context),
       ),
     );
   }
@@ -99,6 +104,9 @@ class PoisByTagScreen extends ConsumerWidget {
       ),
       body:
           _PoiListView(poisAsync: poisAsync, emptyText: 'No POIs for this tag'),
+      floatingActionButton: AddSpeedDial(
+        actions: buildDefaultAddActions(context),
+      ),
     );
   }
 }
