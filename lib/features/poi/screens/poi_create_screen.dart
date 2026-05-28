@@ -6,13 +6,15 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
-import '../providers/poi_provider.dart';
+import '../../anime/providers/anime_provider.dart';
+import '../../tag/providers/tag_provider.dart';
+import '../../roi/providers/roi_provider.dart';
 
 class PoiCreateScreen extends ConsumerStatefulWidget {
-  final String roiId;
+  final String? roiId;
   final String? editPoiId;
 
-  const PoiCreateScreen({super.key, required this.roiId, this.editPoiId});
+  const PoiCreateScreen({super.key, this.roiId, this.editPoiId});
 
   @override
   ConsumerState<PoiCreateScreen> createState() => _PoiCreateScreenState();
@@ -28,13 +30,15 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
   final _businessHoursController = TextEditingController();
   final _contactInfoController = TextEditingController();
 
-  String? _animeSeriesRef;
-  List<String> _selectedTags = [];
+  String? _roiId;
+  List<String> _selectedAnimeIds = [];
+  List<String> _selectedTagIds = [];
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    _roiId = widget.roiId;
     if (widget.editPoiId != null) {
       _loadExistingPoi();
     }
@@ -50,16 +54,16 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       _addressController.text = poi.address ?? '';
       _latController.text = poi.lat.toString();
       _lngController.text = poi.lng.toString();
-      _animeSeriesRef = poi.animeSeriesRef;
-      _selectedTags = (poi.tags ?? '')
-          .split(',')
-          .map((t) => t.trim())
-          .where((t) => t.isNotEmpty)
-          .toList();
       _businessHoursController.text = poi.businessHours ?? '';
       _contactInfoController.text = poi.contactInfo ?? '';
+      _roiId = poi.roiId;
+
+      final animes = await db.watchAnimesForPoi(poi.id).first;
+      final tags = await db.watchTagsForPoi(poi.id).first;
+      _selectedAnimeIds = animes.map((a) => a.id).toList();
+      _selectedTagIds = tags.map((t) => t.id).toList();
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -100,18 +104,15 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
                         v == null || v.trim().isEmpty ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
-                  InkWell(
-                    onTap: _pickAnimeSeries,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Anime Series',
-                        hintText: 'Tap to select or add',
-                        suffixIcon: Icon(Icons.arrow_drop_down),
-                      ),
-                      isEmpty: _animeSeriesRef == null ||
-                          _animeSeriesRef!.isEmpty,
-                      child: Text(_animeSeriesRef ?? ''),
-                    ),
+                  _RoiPickerField(
+                    currentRoiId: _roiId,
+                    onChanged: (id) => setState(() => _roiId = id),
+                  ),
+                  const SizedBox(height: 16),
+                  _AnimePickerField(
+                    selectedIds: _selectedAnimeIds,
+                    onChanged: (ids) =>
+                        setState(() => _selectedAnimeIds = ids),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -170,33 +171,9 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  InkWell(
-                    onTap: _pickTags,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Tags',
-                        hintText: 'Tap to select or add',
-                        suffixIcon: Icon(Icons.arrow_drop_down),
-                      ),
-                      isEmpty: _selectedTags.isEmpty,
-                      child: _selectedTags.isEmpty
-                          ? const SizedBox.shrink()
-                          : Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Wrap(
-                                spacing: 6,
-                                runSpacing: 4,
-                                children: _selectedTags
-                                    .map((t) => Chip(
-                                          label: Text(t),
-                                          materialTapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
-                                          visualDensity: VisualDensity.compact,
-                                        ))
-                                    .toList(),
-                              ),
-                            ),
-                    ),
+                  _TagPickerField(
+                    selectedIds: _selectedTagIds,
+                    onChanged: (ids) => setState(() => _selectedTagIds = ids),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -236,7 +213,7 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
 
     final companion = PoisCompanion(
       id: Value(id),
-      roiId: Value(widget.roiId),
+      roiId: Value(_roiId),
       name: Value(_nameController.text.trim()),
       description: Value(nullIfEmpty(_descController.text)),
       address: Value(nullIfEmpty(_addressController.text)),
@@ -245,12 +222,6 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       businessHours: Value(nullIfEmpty(_businessHoursController.text)),
       contactInfo: Value(nullIfEmpty(_contactInfoController.text)),
       coverImageUri: const Value(null),
-      tags: Value(_selectedTags.isEmpty ? null : _selectedTags.join(', ')),
-      animeSeriesRef: Value(
-        _animeSeriesRef == null || _animeSeriesRef!.trim().isEmpty
-            ? null
-            : _animeSeriesRef!.trim(),
-      ),
     );
 
     if (widget.editPoiId != null) {
@@ -259,49 +230,70 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       await db.insertPoi(companion);
     }
 
+    await db.setAnimesForPoi(id, _selectedAnimeIds);
+    await db.setTagsForPoi(id, _selectedTagIds);
+
     if (mounted) context.pop();
   }
-
-  Future<void> _pickAnimeSeries() async {
-    final picked = await showModalBottomSheet<_AnimeSeriesPickerResult>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _AnimeSeriesPickerSheet(currentValue: _animeSeriesRef),
-    );
-
-    if (picked == null) return;
-    setState(() {
-      _animeSeriesRef = picked.value;
-    });
-  }
-
-  Future<void> _pickTags() async {
-    final picked = await showModalBottomSheet<List<String>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _TagsPickerSheet(currentTags: _selectedTags),
-    );
-
-    if (picked == null) return;
-    setState(() {
-      _selectedTags = picked;
-    });
-  }
 }
 
-class _AnimeSeriesPickerResult {
-  final String? value;
-  const _AnimeSeriesPickerResult(this.value);
-}
+class _RoiPickerField extends ConsumerWidget {
+  final String? currentRoiId;
+  final ValueChanged<String?> onChanged;
 
-class _AnimeSeriesPickerSheet extends ConsumerWidget {
-  final String? currentValue;
-
-  const _AnimeSeriesPickerSheet({required this.currentValue});
+  const _RoiPickerField({required this.currentRoiId, required this.onChanged});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final asyncSeries = ref.watch(distinctAnimeSeriesProvider);
+    final roisAsync = ref.watch(allRoisProvider);
+    final currentName = roisAsync.maybeWhen(
+      data: (rois) {
+        if (currentRoiId == null) return null;
+        try {
+          return rois.firstWhere((r) => r.id == currentRoiId).name;
+        } catch (_) {
+          return null;
+        }
+      },
+      orElse: () => null,
+    );
+
+    return InkWell(
+      onTap: () async {
+        final picked = await showModalBottomSheet<String?>(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => _RoiPickerSheet(currentRoiId: currentRoiId),
+        );
+        if (picked == _kRoiCleared) {
+          onChanged(null);
+        } else if (picked != null) {
+          onChanged(picked);
+        }
+      },
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Region',
+          hintText: 'Tap to select (optional)',
+          suffixIcon: Icon(Icons.arrow_drop_down),
+        ),
+        isEmpty: currentName == null,
+        child: Text(currentName ?? ''),
+      ),
+    );
+  }
+}
+
+const String _kRoiCleared = '__cleared__';
+
+class _RoiPickerSheet extends ConsumerWidget {
+  final String? currentRoiId;
+
+  const _RoiPickerSheet({required this.currentRoiId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final roisAsync = ref.watch(allRoisProvider);
 
     return SafeArea(
       child: Column(
@@ -309,7 +301,7 @@ class _AnimeSeriesPickerSheet extends ConsumerWidget {
         children: [
           ListTile(
             title: Text(
-              'Anime Series',
+              'Region',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             trailing: IconButton(
@@ -319,7 +311,7 @@ class _AnimeSeriesPickerSheet extends ConsumerWidget {
           ),
           const Divider(height: 1),
           Flexible(
-            child: asyncSeries.when(
+            child: roisAsync.when(
               loading: () => const Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(child: CircularProgressIndicator()),
@@ -328,47 +320,24 @@ class _AnimeSeriesPickerSheet extends ConsumerWidget {
                 padding: const EdgeInsets.all(24),
                 child: Center(child: Text('Error: $err')),
               ),
-              data: (series) => ListView(
+              data: (rois) => ListView(
                 shrinkWrap: true,
                 children: [
-                  if (currentValue != null && currentValue!.isNotEmpty)
+                  if (currentRoiId != null)
                     ListTile(
                       leading: const Icon(Icons.clear),
-                      title: const Text('Clear selection'),
-                      onTap: () => Navigator.pop(
-                        context,
-                        const _AnimeSeriesPickerResult(null),
-                      ),
+                      title: const Text('No region'),
+                      onTap: () => Navigator.pop(context, _kRoiCleared),
                     ),
-                  ...series.map((name) => ListTile(
-                        leading: const Icon(Icons.movie_outlined),
-                        title: Text(name),
-                        selected: name == currentValue,
-                        trailing: name == currentValue
+                  ...rois.map((roi) => ListTile(
+                        leading: const Icon(Icons.place_outlined),
+                        title: Text(roi.name),
+                        selected: roi.id == currentRoiId,
+                        trailing: roi.id == currentRoiId
                             ? const Icon(Icons.check)
                             : null,
-                        onTap: () => Navigator.pop(
-                          context,
-                          _AnimeSeriesPickerResult(name),
-                        ),
+                        onTap: () => Navigator.pop(context, roi.id),
                       )),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.add),
-                    title: const Text('Add new anime'),
-                    onTap: () async {
-                      final newName = await showDialog<String>(
-                        context: context,
-                        builder: (_) => const _AddAnimeDialog(),
-                      );
-                      if (newName == null || newName.isEmpty) return;
-                      if (!context.mounted) return;
-                      Navigator.pop(
-                        context,
-                        _AnimeSeriesPickerResult(newName),
-                      );
-                    },
-                  ),
                 ],
               ),
             ),
@@ -379,95 +348,100 @@ class _AnimeSeriesPickerSheet extends ConsumerWidget {
   }
 }
 
-class _AddAnimeDialog extends StatefulWidget {
-  const _AddAnimeDialog();
+class _AnimePickerField extends ConsumerWidget {
+  final List<String> selectedIds;
+  final ValueChanged<List<String>> onChanged;
+
+  const _AnimePickerField({
+    required this.selectedIds,
+    required this.onChanged,
+  });
 
   @override
-  State<_AddAnimeDialog> createState() => _AddAnimeDialogState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final animesAsync = ref.watch(allAnimesProvider);
+    final selectedNames = animesAsync.maybeWhen(
+      data: (animes) => animes
+          .where((a) => selectedIds.contains(a.id))
+          .map((a) => a.name)
+          .toList(),
+      orElse: () => <String>[],
+    );
 
-class _AddAnimeDialogState extends State<_AddAnimeDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add Anime Series'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        decoration: const InputDecoration(hintText: 'e.g., K-On!'),
-        textInputAction: TextInputAction.done,
-        onSubmitted: (value) => Navigator.pop(context, value.trim()),
+    return InkWell(
+      onTap: () async {
+        final picked = await showModalBottomSheet<List<String>>(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => _AnimePickerSheet(selectedIds: selectedIds),
+        );
+        if (picked != null) onChanged(picked);
+      },
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Anime Series',
+          hintText: 'Tap to select or add',
+          suffixIcon: Icon(Icons.arrow_drop_down),
+        ),
+        isEmpty: selectedNames.isEmpty,
+        child: selectedNames.isEmpty
+            ? const SizedBox.shrink()
+            : Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: selectedNames
+                      .map((n) => Chip(
+                            label: Text(n),
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          ))
+                      .toList(),
+                ),
+              ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _controller.text.trim()),
-          child: const Text('Add'),
-        ),
-      ],
     );
   }
 }
 
-class _TagsPickerSheet extends ConsumerStatefulWidget {
-  final List<String> currentTags;
+class _AnimePickerSheet extends ConsumerStatefulWidget {
+  final List<String> selectedIds;
 
-  const _TagsPickerSheet({required this.currentTags});
+  const _AnimePickerSheet({required this.selectedIds});
 
   @override
-  ConsumerState<_TagsPickerSheet> createState() => _TagsPickerSheetState();
+  ConsumerState<_AnimePickerSheet> createState() => _AnimePickerSheetState();
 }
 
-class _TagsPickerSheetState extends ConsumerState<_TagsPickerSheet> {
+class _AnimePickerSheetState extends ConsumerState<_AnimePickerSheet> {
   late Set<String> _selected;
 
   @override
   void initState() {
     super.initState();
-    _selected = widget.currentTags.toSet();
+    _selected = widget.selectedIds.toSet();
   }
 
   @override
   Widget build(BuildContext context) {
-    final asyncTags = ref.watch(distinctTagsProvider);
+    final animesAsync = ref.watch(allAnimesProvider);
 
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            title: Text(
-              'Tags',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            title: Text('Anime', style: Theme.of(context).textTheme.titleMedium),
             trailing: FilledButton(
-              onPressed: () => Navigator.pop(
-                context,
-                (_selected.toList()..sort()),
-              ),
+              onPressed: () => Navigator.pop(context, _selected.toList()),
               child: const Text('Done'),
             ),
           ),
           const Divider(height: 1),
           Flexible(
-            child: asyncTags.when(
+            child: animesAsync.when(
               loading: () => const Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(child: CircularProgressIndicator()),
@@ -476,48 +450,48 @@ class _TagsPickerSheetState extends ConsumerState<_TagsPickerSheet> {
                 padding: const EdgeInsets.all(24),
                 child: Center(child: Text('Error: $err')),
               ),
-              data: (knownTags) {
-                final extra = _selected
-                    .where((t) => !knownTags.contains(t))
-                    .toList()
-                  ..sort();
-                final allTags = [...knownTags, ...extra];
-
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ...allTags.map((tag) => FilterChip(
-                            label: Text(tag),
-                            selected: _selected.contains(tag),
-                            onSelected: (selected) {
-                              setState(() {
-                                if (selected) {
-                                  _selected.add(tag);
-                                } else {
-                                  _selected.remove(tag);
-                                }
-                              });
-                            },
-                          )),
-                      ActionChip(
-                        avatar: const Icon(Icons.add, size: 18),
-                        label: const Text('Add new tag'),
-                        onPressed: () async {
-                          final newTag = await showDialog<String>(
-                            context: context,
-                            builder: (_) => const _AddTagDialog(),
-                          );
-                          if (newTag == null || newTag.isEmpty) return;
-                          setState(() => _selected.add(newTag));
-                        },
-                      ),
-                    ],
-                  ),
-                );
-              },
+              data: (animes) => SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ...animes.map((anime) => FilterChip(
+                          label: Text(anime.name),
+                          selected: _selected.contains(anime.id),
+                          onSelected: (sel) => setState(() {
+                            if (sel) {
+                              _selected.add(anime.id);
+                            } else {
+                              _selected.remove(anime.id);
+                            }
+                          }),
+                        )),
+                    ActionChip(
+                      avatar: const Icon(Icons.add, size: 18),
+                      label: const Text('Add new anime'),
+                      onPressed: () async {
+                        final newName = await showDialog<String>(
+                          context: context,
+                          builder: (_) => const _AddEntityDialog(
+                            title: 'Add Anime',
+                            hint: 'e.g., K-On!',
+                          ),
+                        );
+                        if (newName == null || newName.isEmpty) return;
+                        final db = ref.read(databaseProvider);
+                        final id = const Uuid().v4();
+                        await db.insertAnime(AnimesCompanion.insert(
+                          id: id,
+                          name: newName,
+                          createdAt: DateTime.now().millisecondsSinceEpoch,
+                        ));
+                        setState(() => _selected.add(id));
+                      },
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -526,14 +500,166 @@ class _TagsPickerSheetState extends ConsumerState<_TagsPickerSheet> {
   }
 }
 
-class _AddTagDialog extends StatefulWidget {
-  const _AddTagDialog();
+class _TagPickerField extends ConsumerWidget {
+  final List<String> selectedIds;
+  final ValueChanged<List<String>> onChanged;
+
+  const _TagPickerField({required this.selectedIds, required this.onChanged});
 
   @override
-  State<_AddTagDialog> createState() => _AddTagDialogState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tagsAsync = ref.watch(allTagsProvider);
+    final selectedNames = tagsAsync.maybeWhen(
+      data: (tags) => tags
+          .where((t) => selectedIds.contains(t.id))
+          .map((t) => t.name)
+          .toList(),
+      orElse: () => <String>[],
+    );
+
+    return InkWell(
+      onTap: () async {
+        final picked = await showModalBottomSheet<List<String>>(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => _TagPickerSheet(selectedIds: selectedIds),
+        );
+        if (picked != null) onChanged(picked);
+      },
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Tags',
+          hintText: 'Tap to select or add',
+          suffixIcon: Icon(Icons.arrow_drop_down),
+        ),
+        isEmpty: selectedNames.isEmpty,
+        child: selectedNames.isEmpty
+            ? const SizedBox.shrink()
+            : Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: selectedNames
+                      .map((n) => Chip(
+                            label: Text(n),
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          ))
+                      .toList(),
+                ),
+              ),
+      ),
+    );
+  }
 }
 
-class _AddTagDialogState extends State<_AddTagDialog> {
+class _TagPickerSheet extends ConsumerStatefulWidget {
+  final List<String> selectedIds;
+
+  const _TagPickerSheet({required this.selectedIds});
+
+  @override
+  ConsumerState<_TagPickerSheet> createState() => _TagPickerSheetState();
+}
+
+class _TagPickerSheetState extends ConsumerState<_TagPickerSheet> {
+  late Set<String> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.selectedIds.toSet();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tagsAsync = ref.watch(allTagsProvider);
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            title: Text('Tags', style: Theme.of(context).textTheme.titleMedium),
+            trailing: FilledButton(
+              onPressed: () => Navigator.pop(context, _selected.toList()),
+              child: const Text('Done'),
+            ),
+          ),
+          const Divider(height: 1),
+          Flexible(
+            child: tagsAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (err, _) => Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(child: Text('Error: $err')),
+              ),
+              data: (tags) => SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ...tags.map((tag) => FilterChip(
+                          label: Text(tag.name),
+                          selected: _selected.contains(tag.id),
+                          onSelected: (sel) => setState(() {
+                            if (sel) {
+                              _selected.add(tag.id);
+                            } else {
+                              _selected.remove(tag.id);
+                            }
+                          }),
+                        )),
+                    ActionChip(
+                      avatar: const Icon(Icons.add, size: 18),
+                      label: const Text('Add new tag'),
+                      onPressed: () async {
+                        final newName = await showDialog<String>(
+                          context: context,
+                          builder: (_) => const _AddEntityDialog(
+                            title: 'Add Tag',
+                            hint: 'e.g., rain-safe',
+                          ),
+                        );
+                        if (newName == null || newName.isEmpty) return;
+                        final db = ref.read(databaseProvider);
+                        final id = const Uuid().v4();
+                        await db.insertTag(TagsCompanion.insert(
+                          id: id,
+                          name: newName,
+                          createdAt: DateTime.now().millisecondsSinceEpoch,
+                        ));
+                        setState(() => _selected.add(id));
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddEntityDialog extends StatefulWidget {
+  final String title;
+  final String hint;
+
+  const _AddEntityDialog({required this.title, required this.hint});
+
+  @override
+  State<_AddEntityDialog> createState() => _AddEntityDialogState();
+}
+
+class _AddEntityDialogState extends State<_AddEntityDialog> {
   late final TextEditingController _controller;
 
   @override
@@ -551,11 +677,11 @@ class _AddTagDialogState extends State<_AddTagDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add Tag'),
+      title: Text(widget.title),
       content: TextField(
         controller: _controller,
         autofocus: true,
-        decoration: const InputDecoration(hintText: 'e.g., rain-safe'),
+        decoration: InputDecoration(hintText: widget.hint),
         textInputAction: TextInputAction.done,
         onSubmitted: (value) => Navigator.pop(context, value.trim()),
       ),

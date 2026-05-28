@@ -14,6 +14,8 @@ import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
 import '../providers/poi_provider.dart';
 import '../../roi/providers/roi_provider.dart';
+import '../../anime/providers/anime_provider.dart';
+import '../../tag/providers/tag_provider.dart';
 import '../../../core/utils/schedule_utils.dart';
 
 class PoiDetailScreen extends ConsumerWidget {
@@ -60,64 +62,87 @@ class PoiDetailScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ROI breadcrumb
-              Consumer(
-                builder: (context, ref, _) {
-                  final roiAsync = ref.watch(roiByIdProvider(poi.roiId));
-                  return roiAsync.maybeWhen(
-                    data: (roi) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(4),
-                        onTap: () => context.push('/rois/${poi.roiId}'),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.place_outlined,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              roi.name,
-                              style: TextStyle(
+              if (poi.roiId != null)
+                Consumer(
+                  builder: (context, ref, _) {
+                    final roiAsync = ref.watch(roiByIdProvider(poi.roiId!));
+                    return roiAsync.maybeWhen(
+                      data: (roi) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(4),
+                          onTap: () => context.push('/rois/${poi.roiId}'),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.place_outlined,
+                                size: 16,
                                 color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.w500,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 4),
+                              Text(
+                                roi.name,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
+                      orElse: () => const SizedBox.shrink(),
+                    );
+                  },
+                ),
+
+              // Anime hero chips (m:n via PoiAnimes)
+              Consumer(
+                builder: (context, ref, _) {
+                  final animesAsync = ref.watch(animesForPoiProvider(poi.id));
+                  return animesAsync.maybeWhen(
+                    data: (animes) {
+                      if (animes.isEmpty) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: animes
+                              .map((anime) => ActionChip(
+                                    avatar: Icon(
+                                      Icons.movie_outlined,
+                                      size: 20,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onPrimaryContainer,
+                                    ),
+                                    label: Text(
+                                      anime.name,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onPrimaryContainer,
+                                      ),
+                                    ),
+                                    backgroundColor: Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    onPressed: () =>
+                                        context.push('/anime/${anime.id}'),
+                                  ))
+                              .toList(),
+                        ),
+                      );
+                    },
                     orElse: () => const SizedBox.shrink(),
                   );
                 },
               ),
-
-              // Anime hero chip
-              if (poi.animeSeriesRef != null) ...[
-                ActionChip(
-                  avatar: Icon(
-                    Icons.movie_outlined,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  ),
-                  label: Text(
-                    poi.animeSeriesRef!,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                  backgroundColor:
-                      Theme.of(context).colorScheme.primaryContainer,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  onPressed: () => context.push(
-                    '/anime/${Uri.encodeComponent(poi.animeSeriesRef!)}',
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
 
               // Description
               if (poi.description != null) ...[
@@ -161,45 +186,53 @@ class PoiDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              // Tags
-              if (poi.tags != null && poi.tags!.trim().isNotEmpty) ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Icon(
-                        Icons.label_outline,
-                        size: 18,
-                        color:
-                            Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: poi.tags!
-                            .split(',')
-                            .map((t) => t.trim())
-                            .where((t) => t.isNotEmpty)
-                            .map((tag) => ActionChip(
-                                  label: Text(tag),
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  onPressed: () => context.push(
-                                    '/tag/${Uri.encodeComponent(tag)}',
-                                  ),
-                                ))
-                            .toList(),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-              ],
+              // Tags (m:n via PoiTags)
+              Consumer(
+                builder: (context, ref, _) {
+                  final tagsAsync = ref.watch(tagsForPoiProvider(poi.id));
+                  return tagsAsync.maybeWhen(
+                    data: (tags) {
+                      if (tags.isEmpty) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Icon(
+                                Icons.label_outline,
+                                size: 18,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: tags
+                                    .map((tag) => ActionChip(
+                                          label: Text(tag.name),
+                                          visualDensity: VisualDensity.compact,
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          onPressed: () =>
+                                              context.push('/tag/${tag.id}'),
+                                        ))
+                                    .toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    orElse: () => const SizedBox.shrink(),
+                  );
+                },
+              ),
 
               // Schedule section
               const Divider(height: 32),
@@ -380,7 +413,7 @@ class PoiDetailScreen extends ConsumerWidget {
       BuildContext context, WidgetRef ref, String action, Poi poi) {
     switch (action) {
       case 'edit':
-        context.push('/rois/${poi.roiId}/pois/${poi.id}/edit');
+        context.push('/pois/${poi.id}/edit');
         break;
       case 'delete':
         showDialog(

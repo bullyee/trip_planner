@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/database_provider.dart';
+import '../../../core/widgets/add_speed_dial.dart';
+import '../../poi/screens/poi_browse_screen.dart';
 import '../providers/roi_provider.dart';
 import '../../poi/providers/poi_provider.dart';
+import '../../anime/providers/anime_provider.dart';
 
 class RoiDetailScreen extends ConsumerWidget {
   final String roiId;
@@ -31,13 +34,15 @@ class RoiDetailScreen extends ConsumerWidget {
           roiAsync.when(
             data: (roi) => PopupMenuButton<String>(
               onSelected: (action) {
-                if (action == 'delete') {
+                if (action == 'edit') {
+                  context.push('/rois/${roi.id}/edit');
+                } else if (action == 'delete') {
                   showDialog(
                     context: context,
                     builder: (ctx) => AlertDialog(
                       title: const Text('Delete Region?'),
                       content: Text(
-                          'This will permanently delete "${roi.name}" and all its locations.'),
+                          'This will permanently delete "${roi.name}". Locations in this region will become regionless (not deleted).'),
                       actions: [
                         TextButton(
                             onPressed: () => Navigator.pop(ctx),
@@ -59,6 +64,7 @@ class RoiDetailScreen extends ConsumerWidget {
                 }
               },
               itemBuilder: (_) => [
+                const PopupMenuItem(value: 'edit', child: Text('Edit')),
                 const PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
             ),
@@ -84,11 +90,19 @@ class RoiDetailScreen extends ConsumerWidget {
               return Card(
                 child: ListTile(
                   title: Text(poi.name),
-                  subtitle: poi.animeSeriesRef != null
-                      ? Text(poi.animeSeriesRef!)
-                      : poi.address != null
-                          ? Text(poi.address!)
-                          : null,
+                  subtitle: Consumer(
+                    builder: (context, ref, _) {
+                      final animesAsync =
+                          ref.watch(animesForPoiProvider(poi.id));
+                      final firstAnime = animesAsync.maybeWhen(
+                        data: (animes) =>
+                            animes.isNotEmpty ? animes.first.name : null,
+                        orElse: () => null,
+                      );
+                      final subtitle = firstAnime ?? poi.address;
+                      return subtitle != null ? Text(subtitle) : const SizedBox.shrink();
+                    },
+                  ),
                   leading: const Icon(Icons.location_on),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/pois/${poi.id}'),
@@ -98,9 +112,11 @@ class RoiDetailScreen extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/rois/$roiId/pois/new'),
-        child: const Icon(Icons.add_location),
+      floatingActionButton: AddSpeedDial(
+        actions: buildDefaultAddActions(
+          context,
+          newPoiAction: () => context.push('/rois/$roiId/pois/new'),
+        ),
       ),
     );
   }
