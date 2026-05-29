@@ -210,12 +210,7 @@ class AnitabiApiService {
           failed++;
           // Leave this POI without a reference image; others continue.
         }
-        processed++;
-        debugPrint(
-            '[anitabi] reference $processed/$total done by worker$workerId in '
-            '${stopwatch.elapsedMilliseconds - itemStart}ms '
-            '(total ${stopwatch.elapsedMilliseconds}ms, '
-            'ok=$success fail=$failed)');
+        processed++;        
       }
     }
 

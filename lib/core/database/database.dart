@@ -108,6 +108,7 @@ class AppDatabase extends _$AppDatabase {
     }
 
     // Step 3: drop legacy columns and relax roi_id to nullable.
+    // ignore: experimental_member_use
     await m.alterTable(TableMigration(pois));
   }
 
