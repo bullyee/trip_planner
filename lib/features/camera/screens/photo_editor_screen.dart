@@ -23,21 +23,32 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
   bool _showOverlay = false;
   bool _processing = false;
   bool _saving = false;
+  String? _activeTool; // id of the tool whose result is currently displayed
 
-  Future<void> _runAutoBrightness() async {
+  /// Runs the given compute-safe match algorithm against the current
+  /// captured + reference bytes and replaces `_editedBytes` with the
+  /// result. [activeTool] is shown highlighted on the matching chip so
+  /// the user can see which filter is currently applied.
+  Future<void> _runMatch(
+    String activeTool,
+    Future<Uint8List> Function(MatchArgs) algorithm,
+  ) async {
     final camState = ref.read(cameraProvider);
     final captured = camState.capturedPhoto;
     final reference = camState.referenceImage;
     if (captured == null || reference == null) return;
     if (_processing) return;
 
-    setState(() => _processing = true);
+    setState(() {
+      _processing = true;
+      _activeTool = activeTool;
+    });
     try {
       final capturedBytes = await captured.readAsBytes();
       final referenceBytes = await reference.readAsBytes();
       final result = await compute(
-        autoMatchBrightness,
-        AutoMatchArgs(
+        algorithm,
+        MatchArgs(
           capturedBytes: capturedBytes,
           referenceBytes: referenceBytes,
         ),
@@ -47,7 +58,7 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Auto-match failed: $e')),
+        SnackBar(content: Text('Match failed: $e')),
       );
     } finally {
       if (mounted) setState(() => _processing = false);
@@ -160,46 +171,62 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
             Container(
               color: Colors.black,
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 64,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          _ToolChip(
-                            icon: Icons.auto_fix_high,
-                            label: 'Auto match brightness',
-                            enabled: hasReference && !_processing,
-                            disabledHint:
-                                hasReference ? null : 'Pick a reference image first',
-                            onTap: _runAutoBrightness,
-                            selected: _editedBytes != null,
-                          ),
-                          // Future tools land here as additional _ToolChip rows.
-                        ],
-                      ),
+                  SizedBox(
+                    height: 64,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        _ToolChip(
+                          icon: Icons.auto_fix_high,
+                          label: 'Enhance (RGB)',
+                          enabled: hasReference && !_processing,
+                          disabledHint: hasReference
+                              ? null
+                              : 'Pick a reference image first',
+                          selected: _activeTool == 'rgb',
+                          onTap: () =>
+                              _runMatch('rgb', histogramMatchRgb),
+                        ),
+                        _ToolChip(
+                          icon: Icons.gradient,
+                          label: 'Enhance (LAB)',
+                          enabled: hasReference && !_processing,
+                          disabledHint: hasReference
+                              ? null
+                              : 'Pick a reference image first',
+                          selected: _activeTool == 'lab',
+                          onTap: () =>
+                              _runMatch('lab', histogramMatchLab),
+                        ),
+                        // Future tools land here as additional _ToolChip rows.
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  FilledButton.icon(
-                    onPressed: _saving ? null : _save,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: theme.colorScheme.onPrimary,
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      onPressed: _saving ? null : _save,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: theme.colorScheme.onPrimary,
+                      ),
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.save),
+                      label: const Text('Save'),
                     ),
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.save),
-                    label: const Text('Save'),
                   ),
                 ],
               ),
