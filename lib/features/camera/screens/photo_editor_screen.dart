@@ -6,6 +6,20 @@ import '../../../core/providers/database_provider.dart';
 import '../providers/camera_provider.dart';
 import '../services/color_match_service.dart';
 
+/// One step in the edit history.
+///
+/// `bytes == null` means the original captured file (no in-memory edit).
+/// `tool` is the id of the chip that produced this state, used both to
+/// highlight that chip and to label the step in tooltips. Carrying tool
+/// alongside bytes means undo/redo restore both the visible image AND
+/// the chip-selected state in a single hop.
+@immutable
+class _EditState {
+  final Uint8List? bytes;
+  final String? tool;
+  const _EditState({this.bytes, this.tool});
+}
+
 /// Post-capture editor. Owns its own Scaffold so it sits in place of the
 /// older inline Compare Shot panel inside `CameraScreen.build`. Reads
 /// `CameraState` through the existing `cameraProvider` — no constructor
@@ -19,16 +33,54 @@ class PhotoEditorScreen extends ConsumerStatefulWidget {
 }
 
 class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
-  Uint8List? _editedBytes; // null → showing the original captured file
+  // History always starts with the original (bytes: null, tool: null).
+  // _historyIndex points at the currently-visible step; tapping a tool
+  // truncates anything past it and appends the new step.
+  List<_EditState> _history = const [_EditState()];
+  int _historyIndex = 0;
+
   bool _showOverlay = false;
   bool _processing = false;
   bool _saving = false;
-  String? _activeTool; // id of the tool whose result is currently displayed
+  int _page = 0;
+  late final PageController _pageController = PageController();
+
+  _EditState get _current => _history[_historyIndex];
+  bool get _canUndo => _historyIndex > 0;
+  bool get _canRedo => _historyIndex < _history.length - 1;
+
+  void _pushHistory(_EditState state) {
+    // Drop any redo branch when a new edit is applied past an undo.
+    final base = _historyIndex < _history.length - 1
+        ? _history.sublist(0, _historyIndex + 1)
+        : List<_EditState>.from(_history);
+    base.add(state);
+    _history = base;
+    _historyIndex = _history.length - 1;
+  }
+
+  void _undo() {
+    if (!_canUndo) return;
+    setState(() => _historyIndex--);
+  }
+
+  void _redo() {
+    if (!_canRedo) return;
+    setState(() => _historyIndex++);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   /// Runs the given compute-safe match algorithm against the current
-  /// captured + reference bytes and replaces `_editedBytes` with the
-  /// result. [activeTool] is shown highlighted on the matching chip so
-  /// the user can see which filter is currently applied.
+  /// captured + reference bytes and pushes the result onto the edit
+  /// history. Filters are applied against the **original** captured
+  /// image (not the previous filter's output), so tapping a different
+  /// chip swaps filter rather than stacking it — undo lets the user
+  /// step back through previously-applied filters.
   Future<void> _runMatch(
     String activeTool,
     Future<Uint8List> Function(MatchArgs) algorithm,
@@ -39,10 +91,7 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
     if (captured == null || reference == null) return;
     if (_processing) return;
 
-    setState(() {
-      _processing = true;
-      _activeTool = activeTool;
-    });
+    setState(() => _processing = true);
     try {
       final capturedBytes = await captured.readAsBytes();
       final referenceBytes = await reference.readAsBytes();
@@ -54,7 +103,7 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
         ),
       );
       if (!mounted) return;
-      setState(() => _editedBytes = result);
+      setState(() => _pushHistory(_EditState(bytes: result, tool: activeTool)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -78,8 +127,9 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
       // If there's an in-memory edit, write it over the captured file so
       // the existing savePhoto pipeline copies the edited bytes into app
       // storage rather than the untouched shutter capture.
-      if (_editedBytes != null) {
-        await captured.writeAsBytes(_editedBytes!, flush: true);
+      final currentBytes = _current.bytes;
+      if (currentBytes != null) {
+        await captured.writeAsBytes(currentBytes, flush: true);
       }
       final ok = await notifier.savePhoto(db);
       if (!mounted) return;
@@ -114,23 +164,45 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
 
     final theme = Theme.of(context);
     final hasReference = reference != null;
+    final currentBytes = _current.bytes;
+    final activeTool = _current.tool;
 
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          tooltip: 'Back',
-          onPressed: _back,
+        // Wider leading slot to fit back + undo + redo in a row without
+        // pushing the title — the editor has no title anyway.
+        leadingWidth: 168,
+        leading: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back),
+              tooltip: 'Back',
+              onPressed: _back,
+            ),
+            IconButton(
+              icon: const Icon(Icons.undo),
+              tooltip: 'Undo',
+              onPressed: _canUndo && !_processing ? _undo : null,
+            ),
+            IconButton(
+              icon: const Icon(Icons.redo),
+              tooltip: 'Redo',
+              onPressed: _canRedo && !_processing ? _redo : null,
+            ),
+          ],
         ),
         actions: [
           IconButton(
             icon: Icon(
               _showOverlay ? Icons.compare : Icons.compare_outlined,
             ),
-            tooltip: hasReference ? 'Toggle reference overlay' : 'No reference image',
+            tooltip: hasReference
+                ? 'Toggle reference overlay'
+                : 'No reference image',
             onPressed: hasReference
                 ? () => setState(() => _showOverlay = !_showOverlay)
                 : null,
@@ -144,18 +216,44 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Center(
-                    child: _editedBytes != null
-                        ? Image.memory(_editedBytes!, fit: BoxFit.contain)
-                        : Image.file(captured, fit: BoxFit.contain),
-                  ),
-                  if (hasReference && _showOverlay)
-                    Positioned.fill(
-                      child: Opacity(
-                        opacity: 0.4,
-                        child: Image.file(reference, fit: BoxFit.contain),
+                  // Page 0 = editable canvas (current edit + optional
+                  // semi-transparent reference overlay).
+                  // Page 1 = the reference itself, full screen.
+                  // PageView only carries the reference page when one is
+                  // actually loaded — otherwise the swipe falls back to a
+                  // single-page (no swipe) view.
+                  PageView(
+                    controller: _pageController,
+                    physics: hasReference
+                        ? const PageScrollPhysics()
+                        : const NeverScrollableScrollPhysics(),
+                    onPageChanged: (p) => setState(() => _page = p),
+                    children: [
+                      Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Center(
+                            child: currentBytes != null
+                                ? Image.memory(currentBytes,
+                                    fit: BoxFit.contain)
+                                : Image.file(captured, fit: BoxFit.contain),
+                          ),
+                          if (hasReference && _showOverlay)
+                            Positioned.fill(
+                              child: Opacity(
+                                opacity: 0.4,
+                                child: Image.file(reference,
+                                    fit: BoxFit.contain),
+                              ),
+                            ),
+                        ],
                       ),
-                    ),
+                      if (hasReference)
+                        Center(
+                          child: Image.file(reference, fit: BoxFit.contain),
+                        ),
+                    ],
+                  ),
                   if (_processing)
                     const Positioned.fill(
                       child: ColoredBox(
@@ -164,6 +262,16 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
                           child: CircularProgressIndicator(color: Colors.white),
                         ),
                       ),
+                    ),
+                  if (hasReference)
+                    // Tiny hint that the canvas is swipeable — sits at the
+                    // bottom of the image area so it doesn't fight the
+                    // tool strip below. Two dots: filled = current page.
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 8,
+                      child: _SwipeHint(page: _page),
                     ),
                 ],
               ),
@@ -187,7 +295,7 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
                           disabledHint: hasReference
                               ? null
                               : 'Pick a reference image first',
-                          selected: _activeTool == 'luminance',
+                          selected: activeTool == 'luminance',
                           onTap: () => _runMatch(
                               'luminance', histogramMatchLuminance),
                         ),
@@ -198,9 +306,8 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
                           disabledHint: hasReference
                               ? null
                               : 'Pick a reference image first',
-                          selected: _activeTool == 'rgb',
-                          onTap: () =>
-                              _runMatch('rgb', histogramMatchRgb),
+                          selected: activeTool == 'rgb',
+                          onTap: () => _runMatch('rgb', histogramMatchRgb),
                         ),
                         _ToolChip(
                           icon: Icons.gradient,
@@ -209,9 +316,8 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
                           disabledHint: hasReference
                               ? null
                               : 'Pick a reference image first',
-                          selected: _activeTool == 'lab',
-                          onTap: () =>
-                              _runMatch('lab', histogramMatchLab),
+                          selected: activeTool == 'lab',
+                          onTap: () => _runMatch('lab', histogramMatchLab),
                         ),
                         // Future tools land here as additional _ToolChip rows.
                       ],
@@ -245,6 +351,35 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Two small dots at the bottom of the canvas — filled is the current
+/// page, dimmed is the other. Page index is owned by the parent State so
+/// this widget can stay stateless.
+class _SwipeHint extends StatelessWidget {
+  final int page;
+  const _SwipeHint({required this.page});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(2, (i) {
+        final active = i == page;
+        return Container(
+          width: 6,
+          height: 6,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: active
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.35),
+            shape: BoxShape.circle,
+          ),
+        );
+      }),
     );
   }
 }
