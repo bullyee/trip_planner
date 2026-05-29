@@ -154,7 +154,7 @@ class _AddSpeedDialState extends State<AddSpeedDial>
 
   Widget _buildMiniActions() {
     final int count = widget.actions.length;
-    final int totalMs = _controller.duration?.inMilliseconds ?? 200;
+    final int totalMs = _controller.duration?.inMilliseconds ?? _baseDuration.inMilliseconds;
     // Give the follower enough height to contain every mini-FAB so that
     // hit tests reach the children. The follower sits with its bottom edge
     // on the main FAB's top edge, and the top-most item sits at
