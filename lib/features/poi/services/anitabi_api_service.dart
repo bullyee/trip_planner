@@ -168,12 +168,20 @@ class AnitabiApiService {
     required http.Client httpClient,
     required bool closeClientWhenDone,
   }) async {
+    final stopwatch = Stopwatch()..start();
+    final total = pending.length;
+    debugPrint(
+        '[anitabi] cover queue: $total items, $_coverDownloadConcurrency workers');
+
     final queue = List<_PendingCover>.from(pending);
     var success = 0;
+    var failed = 0;
+    var processed = 0;
 
-    Future<void> worker() async {
+    Future<void> worker(int workerId) async {
       while (queue.isNotEmpty) {
         final next = queue.removeAt(0);
+        final itemStart = stopwatch.elapsedMilliseconds;
         try {
           final localPath = await downloadCoverImage(
             next.url,
@@ -183,20 +191,31 @@ class AnitabiApiService {
             await (db.update(db.pois)..where((p) => p.id.equals(next.poiId)))
                 .write(PoisCompanion(coverImageUri: Value(localPath)));
             success++;
+          } else {
+            failed++;
           }
         } catch (_) {
+          failed++;
           // Leave the URL in place on this POI; other workers continue.
         }
+        processed++;
+        debugPrint(
+            '[anitabi] cover $processed/$total done by worker$workerId in '
+            '${stopwatch.elapsedMilliseconds - itemStart}ms '
+            '(total ${stopwatch.elapsedMilliseconds}ms, '
+            'ok=$success fail=$failed)');
       }
     }
 
     try {
       await Future.wait(
-        List.generate(_coverDownloadConcurrency, (_) => worker()),
+        List.generate(_coverDownloadConcurrency, (i) => worker(i)),
       );
     } finally {
       if (closeClientWhenDone) httpClient.close();
     }
+    debugPrint(
+        '[anitabi] cover queue finished: $success/$total ok in ${stopwatch.elapsedMilliseconds}ms');
     return success;
   }
 
