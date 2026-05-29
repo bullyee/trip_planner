@@ -102,30 +102,38 @@ void main() {
     final pois = await db.getAllPois();
     expect(pois, hasLength(1));
     expect(pois.first.name, '丰乡小学');
+    // Anitabi screenshots are reference images, not the POI cover photo;
+    // cover stays null until the user (or a future camera flow) sets it.
+    expect(pois.first.coverImageUri, isNull);
 
-    final coverUri = pois.first.coverImageUri;
-    expect(coverUri, isNotNull);
-    expect(coverUri!.startsWith(p.join(tempDocs.path, 'poi_covers')), isTrue);
-    expect(File(coverUri).existsSync(), isTrue);
+    final refs = await db.getReferenceImagesByPoi(pois.first.id);
+    expect(refs, hasLength(1));
+    expect(refs.first.localUri
+        .startsWith(p.join(tempDocs.path, 'reference_images')), isTrue);
+    expect(File(refs.first.localUri).existsSync(), isTrue);
+    expect(refs.first.remoteUrl,
+        'https://image.anitabi.cn/cover.jpg?plan=h360');
+    expect(refs.first.metadata, contains('anitabi'));
 
     final junction = await db.watchAnimesForPoi(pois.first.id).first;
     expect(junction, hasLength(1));
     expect(junction.first.id, animes.first.id);
   });
 
-  test('importBangumiSubject keeps URL when image download fails', () async {
+  test('importBangumiSubject skips reference row when image download fails',
+      () async {
     final mock = MockClient((request) async {
       final path = request.url.path;
       if (path == '/bangumi/2222') {
-        return http.Response(
-          jsonEncode({'title': 'Test'}),
+        return http.Response.bytes(
+          utf8.encode(jsonEncode({'title': 'Test'})),
           200,
-          headers: {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json; charset=utf-8'},
         );
       }
       if (path == '/bangumi/2222/points/detail') {
-        return http.Response(
-          jsonEncode([
+        return http.Response.bytes(
+          utf8.encode(jsonEncode([
             {
               'id': 'p1',
               'name': 'Spot',
@@ -134,7 +142,7 @@ void main() {
               's': 0,
               'ep': 1,
             },
-          ]),
+          ])),
           200,
         );
       }
@@ -153,8 +161,10 @@ void main() {
     expect(await result.coverDownloadCompletion, 0);
 
     final pois = await db.getAllPois();
-    expect(pois.first.coverImageUri,
-        startsWith('https://image.anitabi.cn/'));
+    expect(pois.first.coverImageUri, isNull);
+
+    final refs = await db.getReferenceImagesByPoi(pois.first.id);
+    expect(refs, isEmpty);
   });
 
   test('importBangumiSubject returns null on empty point list', () async {

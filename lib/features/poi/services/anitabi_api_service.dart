@@ -119,11 +119,15 @@ class AnitabiApiService {
             await db.addAnimeToPoi(companion.id.value, animeId);
             imported++;
 
-            final url = companion.coverImageUri.value;
-            if (url != null && url.isNotEmpty) {
-              pendingDownloads.add(
-                _PendingCover(poiId: companion.id.value, url: url),
-              );
+            final rawImage = (raw['image'] ?? '').toString();
+            if (rawImage.isNotEmpty) {
+              final url =
+                  rawImage.replaceAll('?plan=h160', '?plan=h360');
+              pendingDownloads.add(_PendingCover(
+                poiId: companion.id.value,
+                url: url,
+                metadata: _referenceMetadata(raw),
+              ));
             }
           } catch (_) {
             skipped++;
@@ -185,22 +189,30 @@ class AnitabiApiService {
         try {
           final localPath = await downloadCoverImage(
             next.url,
+            subdir: 'reference_images',
             client: httpClient,
           );
           if (localPath != null) {
-            await (db.update(db.pois)..where((p) => p.id.equals(next.poiId)))
-                .write(PoisCompanion(coverImageUri: Value(localPath)));
+            await db.insertReferenceImage(
+              ReferenceImagesCompanion.insert(
+                id: const Uuid().v4(),
+                poiId: next.poiId,
+                localUri: localPath,
+                remoteUrl: Value(next.url),
+                metadata: Value(next.metadata),
+              ),
+            );
             success++;
           } else {
             failed++;
           }
         } catch (_) {
           failed++;
-          // Leave the URL in place on this POI; other workers continue.
+          // Leave this POI without a reference image; others continue.
         }
         processed++;
         debugPrint(
-            '[anitabi] cover $processed/$total done by worker$workerId in '
+            '[anitabi] reference $processed/$total done by worker$workerId in '
             '${stopwatch.elapsedMilliseconds - itemStart}ms '
             '(total ${stopwatch.elapsedMilliseconds}ms, '
             'ok=$success fail=$failed)');
@@ -304,7 +316,11 @@ class AnitabiApiService {
       name: Value(name),
       lat: Value(lat),
       lng: Value(lng),
-      coverImageUri: Value(imageUrl.isEmpty ? null : imageUrl),
+      // Anitabi's `image` is the anime scene reference shot, not a place
+      // photo. It goes to the reference_images table; the POI cover stays
+      // null until the user takes their own photo or the camera flow sets
+      // it.
+      coverImageUri: const Value(null),
       description: Value(description),
       address: const Value(null),
       businessHours: const Value(null),
@@ -312,11 +328,27 @@ class AnitabiApiService {
       roiId: const Value(null),
     );
   }
+
+  /// Pulls the Anitabi-side fields we want to carry along with the
+  /// downloaded reference image: episode and timestamp let future screens
+  /// sort or filter without re-fetching.
+  static String _referenceMetadata(Map<String, dynamic> json) {
+    return jsonEncode({
+      'source': 'anitabi',
+      ?'ep': json['ep'],
+      ?'s': json['s'],
+    });
+  }
 }
 
 class _PendingCover {
   final String poiId;
   final String url;
+  final String metadata;
 
-  const _PendingCover({required this.poiId, required this.url});
+  const _PendingCover({
+    required this.poiId,
+    required this.url,
+    required this.metadata,
+  });
 }
