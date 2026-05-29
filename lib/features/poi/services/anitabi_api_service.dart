@@ -57,13 +57,7 @@ class AnitabiApiService {
     final ownsClient = client == null;
     var handedOff = false;
 
-    void log(String stage) {
-      
-    }
-
     try {
-      log('start subjectId=$subjectId');
-
       // Title and points endpoints are independent — fire them in
       // parallel so the slower of the two becomes the wall-clock cost
       // instead of the sum.
@@ -73,10 +67,8 @@ class AnitabiApiService {
       ]);
       final animeName = futures[0] as String;
       final jsonList = futures[1] as List<dynamic>?;
-      log('title + points fetched');
 
       if (jsonList == null) return null;
-      log('points list size: ${jsonList.length} raw entries');
 
       if (jsonList.isEmpty) return null;
 
@@ -89,7 +81,6 @@ class AnitabiApiService {
       int skipped = 0;
       final pendingDownloads = <_PendingCover>[];
 
-      log('transaction start');
       await db.transaction(() async {
         for (final raw in jsonList) {
           if (raw is! Map<String, dynamic>) {
@@ -132,8 +123,6 @@ class AnitabiApiService {
         }
       });
 
-      log('transaction done; imported=$imported skipped=$skipped covers=${pendingDownloads.length}');
-
       // Hand the client off to the background downloader; it closes the
       // client (when we own it) once every worker is done.
       final completion = _downloadCoversInBackground(
@@ -143,7 +132,6 @@ class AnitabiApiService {
         closeClientWhenDone: ownsClient,
       );
       handedOff = true;
-      log('returning; covers running in background');
 
       return AnitabiImportResult(
         animeId: animeId,
