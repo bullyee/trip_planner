@@ -2,12 +2,9 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart';
 
-// Ensure this path matches your project's actual database location
-import '../../../core/database/database.dart'; 
+import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
 
-// Required for Riverpod Generator. 
-// It will show an error until you run build_runner.
 part 'poi_controller.g.dart';
 
 @riverpod
