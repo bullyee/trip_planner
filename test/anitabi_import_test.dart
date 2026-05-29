@@ -88,7 +88,12 @@ void main() {
     expect(result!.animeName, 'けいおん！');
     expect(result.poisImported, 1);
     expect(result.poisSkipped, 0);
-    expect(result.coversDownloaded, 1);
+    expect(result.coversPending, 1);
+
+    // Cover downloads happen in the background; await completion so we can
+    // assert on the final POI state.
+    final coversDownloaded = await result.coverDownloadCompletion;
+    expect(coversDownloaded, 1);
 
     final animes = await db.getAllAnimes();
     expect(animes, hasLength(1));
@@ -144,7 +149,8 @@ void main() {
     );
 
     expect(result!.poisImported, 1);
-    expect(result.coversDownloaded, 0);
+    expect(result.coversPending, 1);
+    expect(await result.coverDownloadCompletion, 0);
 
     final pois = await db.getAllPois();
     expect(pois.first.coverImageUri,

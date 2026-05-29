@@ -111,15 +111,23 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
       return;
     }
 
+    final coversMsg = result.coversPending == 0
+        ? ''
+        : ' Downloading ${result.coversPending} cover'
+            '${result.coversPending == 1 ? '' : 's'} in the background…';
     messenger.showSnackBar(
       SnackBar(
         content: Text(
-          'Imported ${result.poisImported} POIs for "${result.animeName}" '
-          '(${result.coversDownloaded} covers downloaded).',
+          'Imported ${result.poisImported} POIs for "${result.animeName}".'
+          '$coversMsg',
         ),
       ),
     );
     goRouter.go('/anime/${result.animeId}');
+    // Fire and forget — covers will fade in via Drift's reactive streams
+    // as each download finishes. We just make sure unhandled errors don't
+    // bubble up to the framework.
+    unawaited(result.coverDownloadCompletion.then((_) {}, onError: (_) {}));
   }
 
   @override

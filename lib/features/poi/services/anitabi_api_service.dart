@@ -11,25 +11,39 @@ class AnitabiImportResult {
   final String animeName;
   final int poisImported;
   final int poisSkipped;
-  final int coversDownloaded;
+
+  /// Number of POIs whose cover image will be fetched in the background.
+  /// Reflects the queue size when this result was returned — downloads
+  /// happen asynchronously via [coverDownloadCompletion].
+  final int coversPending;
+
+  /// Completes once every queued cover download has either succeeded or
+  /// failed. The Future's int is the number of covers that successfully
+  /// landed on local storage; failures silently leave the original URL
+  /// on the POI. Callers can ignore this if they're happy to let covers
+  /// appear via Drift's reactive streams as each download finishes.
+  final Future<int> coverDownloadCompletion;
 
   const AnitabiImportResult({
     required this.animeId,
     required this.animeName,
     required this.poisImported,
     required this.poisSkipped,
-    required this.coversDownloaded,
+    required this.coversPending,
+    required this.coverDownloadCompletion,
   });
 }
 
 class AnitabiApiService {
   static const String _apiBaseUrl = 'https://api.anitabi.cn';
+  static const int _coverDownloadConcurrency = 5;
 
   /// Fetch POIs for a bangumi subject from Anitabi, upsert the Anime row by
   /// bangumi_id (so re-import dedupes), insert each POI, link them via the
-  /// PoiAnimes junction, then download each POI's cover image to local
-  /// storage so the rest of the app (which renders `coverImageUri` via
-  /// `Image.file`) keeps working offline.
+  /// PoiAnimes junction, then kick off cover-image downloads in the
+  /// background. The returned result is yielded as soon as the database
+  /// rows are in place — covers stream in afterwards and the POI screens
+  /// pick them up via Drift's reactive watches.
   ///
   /// The optional [client] parameter exists so tests can inject a single
   /// shared `MockClient` that answers both the Anitabi API calls and the
@@ -41,6 +55,7 @@ class AnitabiApiService {
   }) async {
     final httpClient = client ?? http.Client();
     final ownsClient = client == null;
+    var handedOff = false;
 
     try {
       final animeName = await _fetchSubjectTitle(subjectId, httpClient);
@@ -70,9 +85,6 @@ class AnitabiApiService {
 
       int imported = 0;
       int skipped = 0;
-      // Track (poiId, remote URL) pairs so we can download covers after the
-      // transaction commits — keeping downloads outside the transaction
-      // means an HTTP hiccup on one image cannot abort the entire insert.
       final pendingDownloads = <_PendingCover>[];
 
       await db.transaction(() async {
@@ -108,28 +120,70 @@ class AnitabiApiService {
         }
       });
 
-      int coversDownloaded = 0;
-      for (final pending in pendingDownloads) {
-        final localPath = await downloadCoverImage(
-          pending.url,
-          client: httpClient,
-        );
-        if (localPath == null) continue;
-        await (db.update(db.pois)..where((p) => p.id.equals(pending.poiId)))
-            .write(PoisCompanion(coverImageUri: Value(localPath)));
-        coversDownloaded++;
-      }
+      // Hand the client off to the background downloader; it closes the
+      // client (when we own it) once every worker is done.
+      final completion = _downloadCoversInBackground(
+        db: db,
+        pending: pendingDownloads,
+        httpClient: httpClient,
+        closeClientWhenDone: ownsClient,
+      );
+      handedOff = true;
 
       return AnitabiImportResult(
         animeId: animeId,
         animeName: animeName,
         poisImported: imported,
         poisSkipped: skipped,
-        coversDownloaded: coversDownloaded,
+        coversPending: pendingDownloads.length,
+        coverDownloadCompletion: completion,
       );
     } finally {
-      if (ownsClient) httpClient.close();
+      if (ownsClient && !handedOff) httpClient.close();
     }
+  }
+
+  /// Drains the cover queue with [_coverDownloadConcurrency] simultaneous
+  /// workers. Each worker pulls the next pending download off the shared
+  /// queue, fetches the bytes, writes them locally, and updates the POI
+  /// row's `coverImageUri`. Per-item failures are swallowed so one bad
+  /// CDN response cannot stop the rest of the queue.
+  static Future<int> _downloadCoversInBackground({
+    required AppDatabase db,
+    required List<_PendingCover> pending,
+    required http.Client httpClient,
+    required bool closeClientWhenDone,
+  }) async {
+    final queue = List<_PendingCover>.from(pending);
+    var success = 0;
+
+    Future<void> worker() async {
+      while (queue.isNotEmpty) {
+        final next = queue.removeAt(0);
+        try {
+          final localPath = await downloadCoverImage(
+            next.url,
+            client: httpClient,
+          );
+          if (localPath != null) {
+            await (db.update(db.pois)..where((p) => p.id.equals(next.poiId)))
+                .write(PoisCompanion(coverImageUri: Value(localPath)));
+            success++;
+          }
+        } catch (_) {
+          // Leave the URL in place on this POI; other workers continue.
+        }
+      }
+    }
+
+    try {
+      await Future.wait(
+        List.generate(_coverDownloadConcurrency, (_) => worker()),
+      );
+    } finally {
+      if (closeClientWhenDone) httpClient.close();
+    }
+    return success;
   }
 
   static Future<String> _fetchSubjectTitle(
