@@ -36,16 +36,16 @@ Future<Uint8List> autoMatchBrightness(AutoMatchArgs args) async {
   final capStats = _statsFor(_thumb(captured));
   final refStats = _statsFor(_thumb(reference));
 
-  // adjustColor's `brightness` is an additive shift in -1..1 (where 1
-  // pushes pure black to mid-grey). Express the luminance delta in the
-  // same domain and clamp so an extreme reference can't blow out the
-  // photo.
-  final brightness =
-      ((refStats.mean - capStats.mean) / 255.0).clamp(-0.5, 0.5);
+  // adjustColor's `brightness` and `contrast` are both *multipliers*,
+  // not deltas — 1.0 is identity, 0.5 halves, 2.0 doubles. Express the
+  // luminance and spread differences as ratios so equal-brightness
+  // inputs land on 1.0 and don't crush the result toward zero (an
+  // earlier delta-based formulation made every match darken to black).
+  final brightness = (refStats.mean / math.max(capStats.mean, 1.0))
+      .clamp(0.6, 1.6);
 
-  // `contrast` multiplies around mid-grey (1.0 == identity). Match the
-  // reference's spread but cap the swing so a high-contrast night scene
-  // doesn't crush a daytime shot.
+  // Match the reference's contrast, but cap so a high-contrast night
+  // scene doesn't crush a daytime shot.
   final contrast = (refStats.stdDev / math.max(capStats.stdDev, 1.0))
       .clamp(0.7, 1.4);
 
