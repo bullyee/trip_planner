@@ -65,25 +65,20 @@ class AnitabiApiService {
 
     try {
       log('start subjectId=$subjectId');
-      final animeName = await _fetchSubjectTitle(subjectId, httpClient);
-      log('title fetched');
-      final pointsUrl = Uri.parse(
-        '$_apiBaseUrl/bangumi/$subjectId/points/detail?haveImage=true',
-      );
 
-      List<dynamic> jsonList;
-      try {
-        final response = await httpClient
-            .get(pointsUrl)
-            .timeout(const Duration(seconds: 15));
-        if (response.statusCode != 200) return null;
-        final body = jsonDecode(utf8.decode(response.bodyBytes));
-        if (body is! List) return null;
-        jsonList = body;
-      } catch (_) {
-        return null;
-      }
-      log('points fetched (${jsonList.length} raw entries)');
+      // Title and points endpoints are independent — fire them in
+      // parallel so the slower of the two becomes the wall-clock cost
+      // instead of the sum.
+      final futures = await Future.wait([
+        _fetchSubjectTitle(subjectId, httpClient),
+        _fetchPointsList(subjectId, httpClient),
+      ]);
+      final animeName = futures[0] as String;
+      final jsonList = futures[1] as List<dynamic>?;
+      log('title + points fetched');
+
+      if (jsonList == null) return null;
+      log('points list size: ${jsonList.length} raw entries');
 
       if (jsonList.isEmpty) return null;
 
@@ -104,7 +99,13 @@ class AnitabiApiService {
             continue;
           }
 
-          final companion = _parsePoi(raw);
+          PoisCompanion? companion;
+          try {
+            companion = _parsePoi(raw);
+          } catch (e) {
+            debugPrint('[anitabi] _parsePoi threw on id=${raw['id']}: $e');
+            companion = null;
+          }
           if (companion == null) {
             skipped++;
             continue;
@@ -199,6 +200,25 @@ class AnitabiApiService {
     return success;
   }
 
+  static Future<List<dynamic>?> _fetchPointsList(
+    String subjectId,
+    http.Client httpClient,
+  ) async {
+    try {
+      final pointsUrl = Uri.parse(
+        '$_apiBaseUrl/bangumi/$subjectId/points/detail?haveImage=true',
+      );
+      final response =
+          await httpClient.get(pointsUrl).timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) return null;
+      final body = jsonDecode(utf8.decode(response.bodyBytes));
+      if (body is! List) return null;
+      return body;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<String> _fetchSubjectTitle(
     String subjectId,
     http.Client httpClient,
@@ -220,6 +240,18 @@ class AnitabiApiService {
     return 'Bangumi $subjectId';
   }
 
+  static double? _toDouble(dynamic v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v);
+    return null;
+  }
+
+  static int _toInt(dynamic v, {int fallback = 0}) {
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v) ?? fallback;
+    return fallback;
+  }
+
   static PoisCompanion? _parsePoi(Map<String, dynamic> json) {
     final rawId = json['id'];
     if (rawId == null) return null;
@@ -228,8 +260,8 @@ class AnitabiApiService {
 
     final geo = json['geo'];
     if (geo is! List || geo.length < 2) return null;
-    final lat = (geo[0] as num?)?.toDouble();
-    final lng = (geo[1] as num?)?.toDouble();
+    final lat = _toDouble(geo[0]);
+    final lng = _toDouble(geo[1]);
     if (lat == null || lng == null) return null;
 
     final name = (json['cn'] ?? json['name'] ?? '').toString();
@@ -238,7 +270,7 @@ class AnitabiApiService {
     var imageUrl = (json['image'] ?? '').toString();
     imageUrl = imageUrl.replaceAll('?plan=h160', '?plan=h360');
 
-    final seconds = (json['s'] as num?)?.toInt() ?? 0;
+    final seconds = _toInt(json['s']);
     final timeString =
         '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
 
