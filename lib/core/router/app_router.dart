@@ -12,6 +12,7 @@ import '../../features/anime/screens/bangumi_search_screen.dart';
 import '../../features/tag/screens/tag_edit_screen.dart';
 import '../../features/calendar/screens/calendar_screen.dart';
 import '../../features/camera/screens/camera_screen.dart';
+import '../../features/map/map_screen.dart';
 import '../../features/ticket/screens/ticket_screen.dart';
 import '../../features/home/screens/sync_screen.dart';
 
@@ -109,6 +110,8 @@ final appRouter = GoRouter(
       builder: (context, state) => const SyncScreen(),
     ),
     GoRoute(
+      path: '/map',
+      builder: (context, state) => const MapScreen(),
       path: '/import/bangumi',
       builder: (context, state) => const BangumiSearchScreen(),
     ),

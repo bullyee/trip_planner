@@ -43,6 +43,13 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               _HomeCard(
+                icon: Icons.map,
+                title: 'Map',
+                subtitle: 'Visualize POIs on the map',
+                onTap: () => context.push('/map'),
+              ),
+              const SizedBox(height: 12),
+              _HomeCard(
                 icon: Icons.calendar_month,
                 title: 'Trip Calendar',
                 subtitle: 'Schedule your visits',

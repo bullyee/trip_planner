@@ -141,6 +141,15 @@ class AppDatabase extends _$AppDatabase {
   Future<List<Poi>> getPoisByRoi(String roiId) =>
       (select(pois)..where((p) => p.roiId.equals(roiId))).get();
 
+  Future<List<Poi>> getPoisByDate(String date) {
+    final query = select(pois).join([
+      innerJoin(timeChunks, timeChunks.poiId.equalsExp(pois.id)),
+    ])
+      ..where(timeChunks.date.equals(date))
+      ..groupBy([pois.id]);
+    return query.map((row) => row.readTable(pois)).get();
+  }
+
   Stream<List<Poi>> watchPoisByRoi(String roiId) =>
       (select(pois)..where((p) => p.roiId.equals(roiId))).watch();
 
