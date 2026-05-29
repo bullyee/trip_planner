@@ -112,6 +112,8 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/map',
       builder: (context, state) => const MapScreen(),
+    ),
+    GoRoute(
       path: '/import/bangumi',
       builder: (context, state) => const BangumiSearchScreen(),
     ),
