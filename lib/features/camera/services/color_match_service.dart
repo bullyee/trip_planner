@@ -60,6 +60,58 @@ Future<Uint8List> histogramMatchRgb(MatchArgs args) async {
   return Uint8List.fromList(img.encodeJpg(captured, quality: 90));
 }
 
+/// Luminance-only histogram matching.
+///
+/// Computes a luminance histogram (BT.601 weighted) on a 128px thumbnail
+/// for each image, builds a 256-entry LUT mapping captured luminance
+/// ranks to reference luminance ranks, and applies the LUT to the full
+/// captured image by scaling RGB equally per pixel — every pixel's hue
+/// is preserved exactly because R / G / B share the same multiplier.
+///
+/// Quickest of the three filters and the safest when the captured shot
+/// already has the colour mood you want; ideal for matching brightness
+/// distribution (highlights / midtones / shadows) without touching
+/// colour temperature or saturation. The RGB and LAB filters will move
+/// hue or chroma; this one will not.
+Future<Uint8List> histogramMatchLuminance(MatchArgs args) async {
+  final captured = img.decodeImage(args.capturedBytes);
+  final reference = img.decodeImage(args.referenceBytes);
+  if (captured == null || reference == null) return args.capturedBytes;
+
+  final lumaLut = _matchLut(
+    _cdf(_histLuminance(_thumb(captured))),
+    _cdf(_histLuminance(_thumb(reference))),
+  );
+
+  for (final px in captured) {
+    final r = px.r.toDouble();
+    final g = px.g.toDouble();
+    final b = px.b.toDouble();
+    // BT.601 luminance — same weights as the histogram side, so a pixel
+    // ends up mapped onto its own original histogram bin and the LUT
+    // round-trip is meaningful.
+    final oldLuma = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (oldLuma < 1.0) continue; // near-black pixels stay where they are
+    final newLuma = lumaLut[oldLuma.round().clamp(0, 255)].toDouble();
+    final scale = newLuma / oldLuma;
+    px.r = (r * scale).clamp(0, 255);
+    px.g = (g * scale).clamp(0, 255);
+    px.b = (b * scale).clamp(0, 255);
+  }
+
+  return Uint8List.fromList(img.encodeJpg(captured, quality: 90));
+}
+
+List<int> _histLuminance(img.Image src) {
+  final h = List<int>.filled(256, 0);
+  for (final px in src) {
+    final luma =
+        (0.299 * px.r + 0.587 * px.g + 0.114 * px.b).round().clamp(0, 255);
+    h[luma]++;
+  }
+  return h;
+}
+
 /// LAB colour-space matching.
 ///
 /// Converts both images to LAB. Matches the L (luminance) channel via

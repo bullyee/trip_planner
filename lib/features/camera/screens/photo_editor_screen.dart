@@ -181,6 +181,17 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
                       scrollDirection: Axis.horizontal,
                       children: [
                         _ToolChip(
+                          icon: Icons.brightness_6,
+                          label: 'Enhance (Brightness)',
+                          enabled: hasReference && !_processing,
+                          disabledHint: hasReference
+                              ? null
+                              : 'Pick a reference image first',
+                          selected: _activeTool == 'luminance',
+                          onTap: () => _runMatch(
+                              'luminance', histogramMatchLuminance),
+                        ),
+                        _ToolChip(
                           icon: Icons.auto_fix_high,
                           label: 'Enhance (RGB)',
                           enabled: hasReference && !_processing,
