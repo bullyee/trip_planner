@@ -355,11 +355,22 @@ class PoiDetailScreen extends ConsumerWidget {
                 children: [
                   Text('Media Assets',
                       style: Theme.of(context).textTheme.titleMedium),
-                  FilledButton.tonalIcon(
-                    onPressed: () =>
-                        context.push('/camera?poiId=${poi.id}'),
-                    icon: const Icon(Icons.camera_alt, size: 18),
-                    label: const Text('Take Photo'),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Take photo',
+                        onPressed: () =>
+                            context.push('/camera?poiId=${poi.id}'),
+                        icon: const Icon(Icons.camera_alt),
+                      ),
+                      IconButton(
+                        tooltip: 'Add image',
+                        onPressed: () =>
+                            _addImageToMediaAssets(context, ref, poi.id),
+                        icon: const Icon(Icons.add_photo_alternate),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -791,6 +802,47 @@ class PoiDetailScreen extends ConsumerWidget {
   String _referenceImageTitle(ReferenceImage image) {
     final fileName = p.basenameWithoutExtension(image.localUri);
     return fileName.isEmpty ? 'Reference' : fileName;
+  }
+
+  /// Pick an image from the gallery and drop the user into the photo
+  /// editor against it. The file is copied into the app's temp
+  /// directory first so the editor can freely overwrite it with the
+  /// edited bytes without touching the gallery item or the picker's
+  /// cache; once the editor saves, that temp copy gets archived into
+  /// permanent app storage with `type = uploaded_image`.
+  Future<void> _addImageToMediaAssets(
+    BuildContext context,
+    WidgetRef ref,
+    String poiId,
+  ) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    if (!context.mounted) return;
+
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final ext = p.extension(picked.path).isEmpty
+          ? '.jpg'
+          : p.extension(picked.path);
+      final tempPath = p.join(
+        tempDir.path,
+        'upload_${DateTime.now().millisecondsSinceEpoch}$ext',
+      );
+      await File(picked.path).copy(tempPath);
+
+      if (!context.mounted) return;
+      context.push(
+        '/pois/$poiId/photo-edit'
+        '?path=${Uri.encodeComponent(tempPath)}'
+        '&upload=1',
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load image: $e')),
+      );
+    }
   }
 
   Future<void> _addReferenceImage(

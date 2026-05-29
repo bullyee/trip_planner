@@ -6,15 +6,14 @@ import 'package:flutter/foundation.dart' show compute, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../poi/providers/poi_provider.dart';
 import '../providers/camera_provider.dart';
-import 'photo_editor_screen.dart';
 
 enum _CameraFrameMode { native, screenFill }
 
@@ -204,7 +203,33 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           ? await _cropPhotoToAspect(photoFile, screenAspectRatio)
           : photoFile;
       if (!mounted) return;
-      ref.read(cameraProvider.notifier).setCapturedPhoto(visiblePhoto);
+
+      // Hand the capture off to the standalone photo editor by route
+      // rather than swapping screens inline — keeps the camera's
+      // controller alive underneath, so popping out of the editor
+      // (back, save, or discard) returns straight to live preview
+      // without re-running camera init.
+      final poiId = widget.poiId;
+      if (poiId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Open the camera from a POI to save a photo.'),
+          ),
+        );
+        return;
+      }
+      final camState = ref.read(cameraProvider);
+      final qs = <String, String>{
+        'path': Uri.encodeComponent(visiblePhoto.path),
+      };
+      if (camState.referenceImage != null) {
+        qs['ref'] = Uri.encodeComponent(camState.referenceImage!.path);
+      }
+      if (camState.referenceImageId != null) {
+        qs['refId'] = camState.referenceImageId!;
+      }
+      final query = qs.entries.map((e) => '${e.key}=${e.value}').join('&');
+      context.push('/pois/$poiId/photo-edit?$query');
     } on CameraException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -322,10 +347,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           ),
         ),
       );
-    }
-
-    if (camState.capturedPhoto != null) {
-      return const PhotoEditorScreen();
     }
 
     return _buildCameraScreen(camState);
@@ -607,23 +628,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
-
-    final imageFile = File(picked.path);
-    final camState = ref.read(cameraProvider);
-
-    if (camState.poiId != null) {
-      final db = ref.read(databaseProvider);
-      final success = await ref
-          .read(cameraProvider.notifier)
-          .saveUploadedImage(db, imageFile);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(success ? 'Image uploaded!' : 'Upload failed')),
-      );
-      return;
-    }
-
-    ref.read(cameraProvider.notifier).setReferenceImage(imageFile);
+    if (!mounted) return;
+    // Uploading an image as a POI media asset now lives on the POI
+    // detail screen's "Add Image" button, so this button only sets the
+    // current camera overlay reference regardless of context.
+    ref.read(cameraProvider.notifier).setReferenceImage(File(picked.path));
   }
 
   Future<void> _pickPoiReferenceImage() async {

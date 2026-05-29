@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/roi/screens/roi_list_screen.dart';
@@ -7,6 +8,7 @@ import '../../features/poi/screens/poi_detail_screen.dart';
 import '../../features/poi/screens/poi_create_screen.dart';
 import '../../features/poi/screens/poi_browse_screen.dart';
 import '../../features/poi/screens/pois_by_filter_screen.dart';
+import '../../features/poi/screens/photo_edit_screen.dart';
 import '../../features/anime/screens/anime_edit_screen.dart';
 import '../../features/anime/screens/bangumi_search_screen.dart';
 import '../../features/tag/screens/tag_edit_screen.dart';
@@ -66,6 +68,32 @@ final appRouter = GoRouter(
       builder: (context, state) => PoiDetailScreen(
         poiId: state.pathParameters['poiId']!,
       ),
+    ),
+    GoRoute(
+      // Photo editor — opens against `path`, optionally overlaying `ref`
+      // (with `refId` to link the resulting MediaAsset to the
+      // ReferenceImage row). `upload=1` marks the save as
+      // `uploaded_image` rather than `user_photo`. Both the camera
+      // capture flow and the POI detail "Add Image" picker push here.
+      path: '/pois/:poiId/photo-edit',
+      builder: (context, state) {
+        final qp = state.uri.queryParameters;
+        final source = qp['path'];
+        if (source == null) {
+          return const Scaffold(
+            body: Center(child: Text('Missing source path.')),
+          );
+        }
+        return PhotoEditScreen(
+          poiId: state.pathParameters['poiId']!,
+          sourcePath: Uri.decodeComponent(source),
+          referencePath: qp['ref'] != null
+              ? Uri.decodeComponent(qp['ref']!)
+              : null,
+          referenceImageId: qp['refId'],
+          wasUpload: qp['upload'] == '1',
+        );
+      },
     ),
     GoRoute(
       path: '/animes/:animeId/edit',
