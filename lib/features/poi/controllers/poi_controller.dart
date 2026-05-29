@@ -13,9 +13,7 @@ part 'poi_controller.g.dart';
 @riverpod
 class PoiController extends _$PoiController {
   @override
-  FutureOr<void> build() {
-    // Initialize state. No specific action needed on startup.
-  }
+  FutureOr<void> build() {}
 
   /// Handles business logic and database operations for saving a POI.
   Future<bool> savePoi({
