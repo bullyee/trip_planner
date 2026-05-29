@@ -32,9 +32,9 @@ Future<void> handleTimeChunkAction(BuildContext context, WidgetRef ref, String a
       await db.updateTimeChunk(TimeChunksCompanion(
         id: Value(chunk.id),
         poiId: Value(chunk.poiId),
-        date: Value(null),
-        startTime: Value(null),
-        endTime: Value(null),
+        date: const Value(null),
+        startTime: const Value(null),
+        endTime: const Value(null),
         status: Value(action),
       ));
       break;

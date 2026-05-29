@@ -448,9 +448,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                             TimeChunksCompanion(
                                               id: Value(const Uuid().v4()),
                                               poiId: Value(poi.id),
-                                              date: Value(null),
-                                              startTime: Value('10:00'),
-                                              endTime: Value('12:00'),
+                                              date: const Value(null),
+                                              startTime: const Value('10:00'),
+                                              endTime: const Value('12:00'),
                                               status: const Value('backlog'),
                                             ),
                                           );
