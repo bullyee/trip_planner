@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'band_runner.dart';
+
 /// Sendable bundle of input bytes for the colour-match `compute()` helpers.
 /// Holds primitives only so closures inside instance methods can't leak the
 /// surrounding widget state across the isolate boundary.
@@ -18,11 +20,19 @@ class MatchArgs {
 
 // ---------------------------------------------------------------------------
 //  Public entry points
+//
+//  Each function:
+//    1. Decodes both images (sequential — small cost on 12 MP).
+//    2. Builds LUTs / stats on a 128 px thumbnail (sequential — cheap).
+//    3. Dispatches the per-pixel apply phase to N worker isolates via
+//       `processBandsInParallel`, which works directly on the raw byte
+//       buffer instead of going through `package:image`'s Pixel iterator
+//       (5–10× faster per pixel).
 // ---------------------------------------------------------------------------
 
 /// RGB per-channel histogram matching.
 ///
-/// For each of R, G, B independently: build a 256-bin histogram on a 128px
+/// For each of R, G, B independently: build a 256-bin histogram on a 128 px
 /// thumbnail of both images, derive each side's CDF, and build a 256-entry
 /// LUT that maps captured rank-X% to reference rank-X%. Apply the LUTs to
 /// every pixel in the full-size captured image.
@@ -51,28 +61,42 @@ Future<Uint8List> histogramMatchRgb(MatchArgs args) async {
     _cdf(_histChannel(refThumb, _channelB)),
   );
 
-  for (final px in captured) {
-    px.r = lutR[px.r.toInt().clamp(0, 255)].toDouble();
-    px.g = lutG[px.g.toInt().clamp(0, 255)].toDouble();
-    px.b = lutB[px.b.toInt().clamp(0, 255)].toDouble();
-  }
+  return processBandsInParallel(
+    captured: captured,
+    bandFn: (bytes, ch, _, _, _) => _applyRgbBand(bytes, ch, lutR, lutG, lutB),
+  );
+}
 
-  return Uint8List.fromList(img.encodeJpg(captured, quality: 90));
+Uint8List _applyRgbBand(
+  Uint8List bandBytes,
+  int channels,
+  List<int> lutR,
+  List<int> lutG,
+  List<int> lutB,
+) {
+  final result = Uint8List.fromList(bandBytes);
+  final n = result.length;
+  for (var i = 0; i < n; i += channels) {
+    result[i] = lutR[result[i]];
+    result[i + 1] = lutG[result[i + 1]];
+    result[i + 2] = lutB[result[i + 2]];
+  }
+  return result;
 }
 
 /// Luminance-only histogram matching.
 ///
-/// Computes a luminance histogram (BT.601 weighted) on a 128px thumbnail
-/// for each image, builds a 256-entry LUT mapping captured luminance
-/// ranks to reference luminance ranks, and applies the LUT to the full
-/// captured image by scaling RGB equally per pixel — every pixel's hue
-/// is preserved exactly because R / G / B share the same multiplier.
+/// Computes a luminance histogram (BT.601 weighted) on a 128 px thumbnail
+/// for each image, builds a 256-entry LUT mapping captured luminance ranks
+/// to reference luminance ranks, and applies the LUT to the full captured
+/// image by scaling RGB equally per pixel — every pixel's hue is preserved
+/// exactly because R / G / B share the same multiplier.
 ///
 /// Quickest of the three filters and the safest when the captured shot
 /// already has the colour mood you want; ideal for matching brightness
-/// distribution (highlights / midtones / shadows) without touching
-/// colour temperature or saturation. The RGB and LAB filters will move
-/// hue or chroma; this one will not.
+/// distribution (highlights / midtones / shadows) without touching colour
+/// temperature or saturation. The RGB and LAB filters will move hue or
+/// chroma; this one will not.
 Future<Uint8List> histogramMatchLuminance(MatchArgs args) async {
   final captured = img.decodeImage(args.capturedBytes);
   final reference = img.decodeImage(args.referenceBytes);
@@ -83,23 +107,34 @@ Future<Uint8List> histogramMatchLuminance(MatchArgs args) async {
     _cdf(_histLuminance(_thumb(reference))),
   );
 
-  for (final px in captured) {
-    final r = px.r.toDouble();
-    final g = px.g.toDouble();
-    final b = px.b.toDouble();
-    // BT.601 luminance — same weights as the histogram side, so a pixel
-    // ends up mapped onto its own original histogram bin and the LUT
-    // round-trip is meaningful.
+  return processBandsInParallel(
+    captured: captured,
+    bandFn: (bytes, ch, _, _, _) => _applyLuminanceBand(bytes, ch, lumaLut),
+  );
+}
+
+Uint8List _applyLuminanceBand(
+  Uint8List bandBytes,
+  int channels,
+  List<int> lumaLut,
+) {
+  final result = Uint8List.fromList(bandBytes);
+  final n = result.length;
+  for (var i = 0; i < n; i += channels) {
+    final r = result[i].toDouble();
+    final g = result[i + 1].toDouble();
+    final b = result[i + 2].toDouble();
+    // BT.601 luminance — same weights as the histogram side, so the
+    // LUT round-trip is meaningful.
     final oldLuma = 0.299 * r + 0.587 * g + 0.114 * b;
     if (oldLuma < 1.0) continue; // near-black pixels stay where they are
     final newLuma = lumaLut[oldLuma.round().clamp(0, 255)].toDouble();
     final scale = newLuma / oldLuma;
-    px.r = (r * scale).clamp(0, 255);
-    px.g = (g * scale).clamp(0, 255);
-    px.b = (b * scale).clamp(0, 255);
+    result[i] = (r * scale).round().clamp(0, 255);
+    result[i + 1] = (g * scale).round().clamp(0, 255);
+    result[i + 2] = (b * scale).round().clamp(0, 255);
   }
-
-  return Uint8List.fromList(img.encodeJpg(captured, quality: 90));
+  return result;
 }
 
 List<int> _histLuminance(img.Image src) {
@@ -120,7 +155,7 @@ List<int> _histLuminance(img.Image src) {
 /// the heavier histogram treatment and a linear adjustment keeps colour
 /// drift predictable. Converts back to sRGB.
 ///
-/// Slower than the RGB pass (~3-5x because of the per-pixel sRGB ↔ XYZ ↔
+/// Slower than the RGB pass (~3-5× because of the per-pixel sRGB ↔ XYZ ↔
 /// LAB conversions) but separates brightness from colour so the L
 /// adjustment doesn't pull hue, and the a/b adjustment doesn't crush
 /// shadows. Better choice when the reference image has strong colour
@@ -144,19 +179,43 @@ Future<Uint8List> histogramMatchLab(MatchArgs args) async {
       (refStats.bStdDev / math.max(capStats.bStdDev, 1.0)).clamp(0.7, 1.3);
   final bShift = refStats.bMean - capStats.bMean * bScale;
 
-  for (final px in captured) {
-    final lab = _rgbToLab(px.r, px.g, px.b);
+  return processBandsInParallel(
+    captured: captured,
+    bandFn: (bytes, ch, _, _, _) => _applyLabBand(
+      bytes,
+      ch,
+      lLut,
+      aScale,
+      aShift,
+      bScale,
+      bShift,
+    ),
+  );
+}
+
+Uint8List _applyLabBand(
+  Uint8List bandBytes,
+  int channels,
+  List<int> lLut,
+  double aScale,
+  double aShift,
+  double bScale,
+  double bShift,
+) {
+  final result = Uint8List.fromList(bandBytes);
+  final n = result.length;
+  for (var i = 0; i < n; i += channels) {
+    final lab = _rgbToLab(result[i], result[i + 1], result[i + 2]);
     final lBin = ((lab.l / 100.0) * 255).round().clamp(0, 255);
     final newL = (lLut[lBin] / 255.0) * 100.0;
     final newA = lab.a * aScale + aShift;
     final newB = lab.b * bScale + bShift;
     final rgb = _labToRgb(newL, newA, newB);
-    px.r = rgb.r.clamp(0, 255);
-    px.g = rgb.g.clamp(0, 255);
-    px.b = rgb.b.clamp(0, 255);
+    result[i] = rgb.r.round().clamp(0, 255);
+    result[i + 1] = rgb.g.round().clamp(0, 255);
+    result[i + 2] = rgb.b.round().clamp(0, 255);
   }
-
-  return Uint8List.fromList(img.encodeJpg(captured, quality: 90));
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +294,9 @@ class _RgbPixel {
 
 double _srgbToLinear(double v8) {
   final v = v8 / 255.0;
-  return v <= 0.04045 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+  return v <= 0.04045
+      ? v / 12.92
+      : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
 }
 
 double _linearToSrgb(double v) {
@@ -254,9 +315,7 @@ double _labF(double t) {
 
 double _labFInv(double t) {
   // t > 6/29
-  return t > 0.206893
-      ? t * t * t
-      : (t - 16.0 / 116.0) / 7.787;
+  return t > 0.206893 ? t * t * t : (t - 16.0 / 116.0) / 7.787;
 }
 
 _LabPixel _rgbToLab(num r8, num g8, num b8) {
