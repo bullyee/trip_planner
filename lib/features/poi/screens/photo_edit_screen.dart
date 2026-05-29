@@ -135,7 +135,10 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   String? _referencePath;
   String? _referenceImageId;
 
-  bool _showOverlay = false;
+  // Reference overlay starts visible (when a reference image is in
+  // play) to match the live camera — the floating bar provides the eye
+  // toggle to hide / re-show it without leaving the canvas.
+  bool _showOverlay = true;
   // Overlay pan / pinch / opacity, matched to the live camera's
   // reference overlay so behaviour transfers across screens.
   Offset _overlayOffset = Offset.zero;
@@ -1103,16 +1106,6 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
               hasReference ? 'Change reference image' : 'Add reference image',
           onPressed: _processing ? null : _changeReference,
         ),
-        IconButton(
-          icon: Icon(
-            _showOverlay ? Icons.compare : Icons.compare_outlined,
-          ),
-          tooltip:
-              hasReference ? 'Toggle reference overlay' : 'No reference image',
-          onPressed: hasReference
-              ? () => setState(() => _showOverlay = !_showOverlay)
-              : null,
-        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: TextButton(
@@ -1164,16 +1157,6 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
           tooltip:
               hasReference ? 'Change reference image' : 'Add reference image',
           onPressed: _processing ? null : _changeReference,
-        ),
-        IconButton(
-          icon: Icon(
-            _showOverlay ? Icons.compare : Icons.compare_outlined,
-          ),
-          tooltip:
-              hasReference ? 'Toggle reference overlay' : 'No reference image',
-          onPressed: hasReference
-              ? () => setState(() => _showOverlay = !_showOverlay)
-              : null,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1292,17 +1275,20 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                   // is on AND Compare mode is off (Compare already
                   // shows both images, so the overlay layer is hidden
                   // and its controls go with it).
-                  if (hasReference && _showOverlay && !_compareMode)
+                  if (hasReference && !_compareMode)
                     Positioned(
                       left: 12,
                       right: 12,
                       bottom: 12,
                       child: _FloatingOverlayBar(
+                        overlayVisible: _showOverlay,
                         opacity: _overlayOpacity,
                         theme: theme,
-                        onChanged: (v) =>
+                        onOpacityChanged: (v) =>
                             setState(() => _overlayOpacity = v),
                         onReset: _resetOverlay,
+                        onToggleVisibility: () =>
+                            setState(() => _showOverlay = !_showOverlay),
                       ),
                     ),
                 ],
@@ -1316,22 +1302,32 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   }
 }
 
-/// Floating Overlay opacity bar — sits at the bottom edge of the canvas
-/// area whenever the compare overlay is on, so the Match Color
-/// strength slider can keep its dedicated line in the bottom strip
-/// without one tool clobbering the other's UI. Has a built-in reset
-/// button on the right edge (no AppBar entry needed).
+/// Floating overlay control bar — sits at the bottom edge of the
+/// canvas whenever a reference image is in play (and Compare mode
+/// isn't on). Layout matches the camera screen's bottom row:
+///
+///   visible:  [🗏] [slider────────] [↻ reset] [👁‍🗨 hide]
+///   hidden:                                   [👁 show]
+///
+/// so the two screens share the same controls in the same order. The
+/// AppBar no longer carries an overlay toggle — this bar is the only
+/// way in and out of the overlay state, and that makes the two
+/// surfaces feel like the same tool.
 class _FloatingOverlayBar extends StatelessWidget {
+  final bool overlayVisible;
   final double opacity;
   final ThemeData theme;
-  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onOpacityChanged;
   final VoidCallback onReset;
+  final VoidCallback onToggleVisibility;
 
   const _FloatingOverlayBar({
+    required this.overlayVisible,
     required this.opacity,
     required this.theme,
-    required this.onChanged,
+    required this.onOpacityChanged,
     required this.onReset,
+    required this.onToggleVisibility,
   });
 
   @override
@@ -1340,44 +1336,55 @@ class _FloatingOverlayBar extends StatelessWidget {
       color: Colors.black.withValues(alpha: 0.6),
       borderRadius: BorderRadius.circular(24),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         child: Row(
           children: [
-            const Text(
-              'Overlay',
-              style: TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  activeTrackColor: theme.colorScheme.primary,
-                  inactiveTrackColor: Colors.white24,
-                  thumbColor: theme.colorScheme.primary,
-                  overlayColor:
-                      theme.colorScheme.primary.withValues(alpha: 0.2),
-                ),
-                child: Slider(
-                  value: opacity.clamp(0.1, 1),
-                  min: 0.1,
-                  max: 1,
-                  onChanged: onChanged,
+            if (overlayVisible) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child:
+                    Icon(Icons.layers, color: Colors.white70, size: 18),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: theme.colorScheme.primary,
+                    inactiveTrackColor: Colors.white24,
+                    thumbColor: theme.colorScheme.primary,
+                    overlayColor:
+                        theme.colorScheme.primary.withValues(alpha: 0.2),
+                  ),
+                  child: Slider(
+                    value: opacity.clamp(0.1, 1),
+                    min: 0.1,
+                    max: 1,
+                    onChanged: onOpacityChanged,
+                  ),
                 ),
               ),
-            ),
-            SizedBox(
-              width: 40,
-              child: Text(
-                '${(opacity * 100).round()}%',
-                style: const TextStyle(color: Colors.white70),
-                textAlign: TextAlign.right,
+              IconButton(
+                icon: const Icon(Icons.restart_alt),
+                color: Colors.white,
+                tooltip: 'Reset overlay',
+                onPressed: onReset,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 36,
+                  height: 36,
+                ),
               ),
-            ),
+            ] else
+              const Spacer(),
             IconButton(
-              icon: const Icon(Icons.restart_alt),
+              icon: Icon(
+                overlayVisible
+                    ? Icons.visibility_off
+                    : Icons.visibility,
+              ),
               color: Colors.white,
-              tooltip: 'Reset overlay',
-              onPressed: onReset,
+              tooltip:
+                  overlayVisible ? 'Hide reference overlay' : 'Show reference overlay',
+              onPressed: onToggleVisibility,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(
                 width: 36,

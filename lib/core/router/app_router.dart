@@ -49,7 +49,14 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/pois/new',
-      builder: (context, state) => const PoiCreateScreen(),
+      builder: (context, state) {
+        final capturedPath = state.uri.queryParameters['capturedPath'];
+        return PoiCreateScreen(
+          capturedPhotoPath: capturedPath != null
+              ? Uri.decodeComponent(capturedPath)
+              : null,
+        );
+      },
     ),
     GoRoute(
       path: '/pois/:poiId/edit',

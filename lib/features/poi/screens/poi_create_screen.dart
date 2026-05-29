@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' show Value;
@@ -9,12 +11,25 @@ import '../../../core/providers/database_provider.dart';
 import '../../anime/providers/anime_provider.dart';
 import '../../tag/providers/tag_provider.dart';
 import '../../roi/providers/roi_provider.dart';
+import '../services/media_asset_service.dart';
 
 class PoiCreateScreen extends ConsumerStatefulWidget {
   final String? roiId;
   final String? editPoiId;
 
-  const PoiCreateScreen({super.key, this.roiId, this.editPoiId});
+  /// Optional path to a photo (typically from the Anime Camera) that
+  /// should be archived as a `user_photo` MediaAsset for this POI
+  /// once it's created. Only honoured on the create path — ignored
+  /// when [editPoiId] is set, since "edit POI" isn't about adding
+  /// media.
+  final String? capturedPhotoPath;
+
+  const PoiCreateScreen({
+    super.key,
+    this.roiId,
+    this.editPoiId,
+    this.capturedPhotoPath,
+  });
 
   @override
   ConsumerState<PoiCreateScreen> createState() => _PoiCreateScreenState();
@@ -232,6 +247,22 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
 
     await db.setAnimesForPoi(id, _selectedAnimeIds);
     await db.setTagsForPoi(id, _selectedTagIds);
+
+    // Camera capture-then-create-POI flow: archive the temp capture
+    // as a `user_photo` MediaAsset under the new POI before we pop.
+    // Silently no-op when the file has already gone (rare) or when
+    // we're on the edit path.
+    if (widget.editPoiId == null && widget.capturedPhotoPath != null) {
+      final photoFile = File(widget.capturedPhotoPath!);
+      if (await photoFile.exists()) {
+        await persistMediaAsset(
+          db: db,
+          source: photoFile,
+          poiId: id,
+          type: 'user_photo',
+        );
+      }
+    }
 
     if (mounted) context.pop();
   }

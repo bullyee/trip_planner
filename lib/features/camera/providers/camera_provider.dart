@@ -7,6 +7,10 @@ class CameraState {
   final bool isInitialized;
   final File? referenceImage;
   final String? referenceImageId;
+  // Whether the reference overlay should currently be painted on top
+  // of the live preview. The reference itself stays in state when
+  // toggled off so the user can flick it back on without re-picking.
+  final bool overlayVisible;
   final String? poiId;
   final String? error;
   final Offset overlayOffset;
@@ -17,6 +21,7 @@ class CameraState {
     this.isInitialized = false,
     this.referenceImage,
     this.referenceImageId,
+    this.overlayVisible = true,
     this.poiId,
     this.error,
     this.overlayOffset = Offset.zero,
@@ -28,6 +33,7 @@ class CameraState {
     bool? isInitialized,
     File? referenceImage,
     String? referenceImageId,
+    bool? overlayVisible,
     String? poiId,
     String? error,
     Offset? overlayOffset,
@@ -44,6 +50,7 @@ class CameraState {
       referenceImageId: (clearReferenceImage || clearReferenceImageId)
           ? null
           : (referenceImageId ?? this.referenceImageId),
+      overlayVisible: overlayVisible ?? this.overlayVisible,
       poiId: poiId ?? this.poiId,
       error: clearError ? null : (error ?? this.error),
       overlayOffset: overlayOffset ?? this.overlayOffset,
@@ -69,6 +76,7 @@ class CameraNotifier extends StateNotifier<CameraState> {
       referenceImage: file,
       referenceImageId: referenceImageId,
       clearReferenceImageId: referenceImageId == null,
+      overlayVisible: true,
       overlayOffset: Offset.zero,
       overlayScale: 1,
       overlayOpacity: 0.55,
@@ -77,6 +85,14 @@ class CameraNotifier extends StateNotifier<CameraState> {
 
   void clearReferenceImage() {
     state = state.copyWith(clearReferenceImage: true);
+  }
+
+  /// Flip the overlay's visibility without throwing away the reference
+  /// itself — the eye-icon toggle uses this so the user can hide the
+  /// overlay temporarily and bring it back without re-picking from
+  /// the library.
+  void toggleOverlayVisibility() {
+    state = state.copyWith(overlayVisible: !state.overlayVisible);
   }
 
   void updateOverlayTransform({
