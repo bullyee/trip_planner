@@ -255,8 +255,14 @@ class AnitabiApiService {
     http.Client httpClient,
   ) async {
     try {
+      // Intentionally NOT passing ?haveImage=true. Many subjects on
+      // Anitabi (e.g., crowdsourced ones with only Google Maps origins)
+      // have plenty of POI rows but no reference screenshots — that
+      // filter dropped every POI for those animes and surfaced as a
+      // misleading "no POIs found". POIs without an image just won't
+      // have a reference_images row attached.
       final pointsUrl = Uri.parse(
-        '$_apiBaseUrl/bangumi/$subjectId/points/detail?haveImage=true',
+        '$_apiBaseUrl/bangumi/$subjectId/points/detail',
       );
       final response =
           await httpClient.get(pointsUrl).timeout(const Duration(seconds: 15));
