@@ -61,6 +61,29 @@ class PoiDetailScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Cover image (downloaded by Anitabi import; user-edit screen
+              // currently never sets one). Hidden when null so manually
+              // created POIs don't show a gap.
+              if (poi.coverImageUri != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Image.file(
+                      File(poi.coverImageUri!),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        color: Colors.black12,
+                        child: const Center(
+                          child: Icon(Icons.broken_image, size: 48),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               // ROI breadcrumb
               if (poi.roiId != null)
                 Consumer(
