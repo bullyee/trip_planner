@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -32,6 +33,37 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     Colors.brown,
   ];
   static const Color _orphanRoiColor = Colors.grey;
+
+  LatLng? _currentLocation;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCurrentLocation();
+  }
+
+  Future<void> _fetchCurrentLocation({bool recenter = false}) async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      final location = LatLng(position.latitude, position.longitude);
+      setState(() => _currentLocation = location);
+      if (recenter) {
+        _mapController.move(location, 14);
+      }
+    } catch (_) {
+      // Location unavailable (services off, timeout, etc.) — leave the map as is.
+    }
+  }
 
   Color _colorForRoi(String? roiId) {
     if (roiId == null) return _orphanRoiColor;
@@ -80,7 +112,16 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final markers = _buildMarkers(mapState.pois, mapState.selectedPoi);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Map')),
+      appBar: AppBar(
+        title: const Text('Map'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.my_location),
+            tooltip: 'My location',
+            onPressed: () => _fetchCurrentLocation(recenter: true),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Row(
@@ -134,6 +175,39 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   markers: markers,
                   rotate: false,
                 ),
+                if (_currentLocation != null)
+                  MarkerLayer(
+                    rotate: false,
+                    markers: [
+                      Marker(
+                        point: _currentLocation!,
+                        width: 48,
+                        height: 48,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.3),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.blue, width: 2),
+                              ),
+                            ),
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                color: Colors.blue,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
