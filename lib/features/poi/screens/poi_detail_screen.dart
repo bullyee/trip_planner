@@ -61,6 +61,7 @@ class PoiDetailScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+
               // ROI breadcrumb
               if (poi.roiId != null)
                 Consumer(
