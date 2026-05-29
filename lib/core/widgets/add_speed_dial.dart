@@ -132,10 +132,13 @@ class _AddSpeedDialState extends State<AddSpeedDial>
             CompositedTransformFollower(
               link: _layerLink,
               showWhenUnlinked: false,
-              // Anchor the follower's top-right corner to the main FAB's
-              // top-right corner; mini-FABs grow upward from there.
+              // Anchor the follower's BOTTOM-right corner to the main FAB's
+              // TOP-right corner. The follower then has real, positive
+              // height (see _buildMiniActions) so its children get proper
+              // hit tests — versus the older zero-height anchor, where the
+              // children rendered but every tap fell through to the scrim.
               targetAnchor: Alignment.topRight,
-              followerAnchor: Alignment.topRight,
+              followerAnchor: Alignment.bottomRight,
               child: _buildMiniActions(),
             ),
           ],
@@ -147,15 +150,18 @@ class _AddSpeedDialState extends State<AddSpeedDial>
   Widget _buildMiniActions() {
     final int count = widget.actions.length;
     final int totalMs = _controller.duration!.inMilliseconds;
-    // The follower is anchored at the main FAB's top edge. Each mini-FAB
-    // sits above that anchor (negative top) so we use a Stack with negative
-    // Positioned tops growing upward.
+    // Give the follower enough height to contain every mini-FAB so that
+    // hit tests reach the children. The follower sits with its bottom edge
+    // on the main FAB's top edge, and the top-most item sits at
+    // `_firstItemOffset + (count-1)*_itemSpacing` above the bottom — we
+    // add the mini-FAB height (48) so the FAB itself fits inside.
+    final double height =
+        _firstItemOffset + (count > 0 ? (count - 1) * _itemSpacing : 0) + 48;
     return SizedBox(
       width: 280, // enough room for label chip + mini-FAB
-      height: 0, // zero-height anchor; children overflow upward
+      height: height,
       child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.topRight,
+        alignment: Alignment.bottomRight,
         children: [
           for (int i = 0; i < count; i++)
             _buildMiniAction(
@@ -196,12 +202,14 @@ class _AddSpeedDialState extends State<AddSpeedDial>
     final double offset = targetOffset * curved.value;
     final double opacity = curved.value.clamp(0.0, 1.0);
 
-    // Position above the anchor (negative top), right-aligned. We offset by
+    // Anchor each item by its bottom: at full open, the i-th item sits
+    // `_firstItemOffset + i*_itemSpacing` above the bottom of the follower
+    // (which is itself sitting on the main FAB). We offset right by
     // (main FAB size - mini FAB size) / 2 = (56 - 48) / 2 = 4 so the mini
-    // aligns horizontally with the main FAB's center.
+    // FAB aligns horizontally with the main FAB's center.
     return Positioned(
       right: 4,
-      top: -offset - 48,
+      bottom: offset,
       child: IgnorePointer(
         ignoring: opacity < 0.05,
         child: Opacity(
