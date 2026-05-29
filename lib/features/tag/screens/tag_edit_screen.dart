@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:go_router/go_router.dart';
-import 'package:uuid/uuid.dart';
 
-import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
+import '../controllers/tag_controller.dart';
 
 class TagEditScreen extends ConsumerStatefulWidget {
   /// Pass null or "new" for create.
@@ -110,25 +108,15 @@ class _TagEditScreenState extends ConsumerState<TagEditScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final db = ref.read(databaseProvider);
-    String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
+    
+    final success = await ref.read(tagControllerProvider.notifier).saveTag(
+      isNew: widget.isNew,
+      id: widget.tagId,
+      name: _nameController.text,
+      description: _descController.text,
+    );
 
-    if (widget.isNew) {
-      final id = const Uuid().v4();
-      await db.insertTag(TagsCompanion.insert(
-        id: id,
-        name: _nameController.text.trim(),
-        description: Value(nullIfEmpty(_descController.text)),
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ));
-    } else {
-      await db.updateTag(TagsCompanion(
-        id: Value(widget.tagId!),
-        name: Value(_nameController.text.trim()),
-        description: Value(nullIfEmpty(_descController.text)),
-      ));
-    }
-    if (mounted) context.pop();
+    if (success && mounted) context.pop();
   }
 
   Future<void> _confirmDelete() async {
