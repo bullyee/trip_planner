@@ -4,7 +4,19 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 
 import 'band_runner.dart';
-import 'color_match_service.dart' show MatchArgs;
+
+/// Sendable bundle of input bytes for the colour-match `compute()` helpers.
+/// Holds primitives only so closures inside instance methods can't leak the
+/// surrounding widget state across the isolate boundary.
+class MatchArgs {
+  final Uint8List capturedBytes;
+  final Uint8List referenceBytes;
+
+  const MatchArgs({
+    required this.capturedBytes,
+    required this.referenceBytes,
+  });
+}
 
 /// Sendable bundle for the lerp helper. JPEG-encoded buffers in, JPEG out.
 class LerpArgs {

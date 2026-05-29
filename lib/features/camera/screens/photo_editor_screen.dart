@@ -6,8 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/database_provider.dart';
 import '../providers/camera_provider.dart';
-import '../services/color_match_service.dart';
-import '../services/patch_match_service.dart';
 import '../services/reinhard_match_service.dart';
 
 /// One step in the edit history.
@@ -411,43 +409,6 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
                             reinhardMatch,
                             storeMatchedBase: true,
                           ),
-                        ),
-                        _ToolChip(
-                          icon: Icons.brightness_6,
-                          label: 'Enhance (Brightness)',
-                          enabled: hasReference && !_processing,
-                          disabledHint: hasReference
-                              ? null
-                              : 'Pick a reference image first',
-                          selected: activeTool == 'luminance',
-                          // Patch-based: each 16×16 tile gets its own
-                          // luminance LUT, bilinearly blended at apply
-                          // time so sky and shadows can move differently
-                          // without seams. Slower than the global pass
-                          // but handles "different areas, different
-                          // brightness" cases the global one ignores.
-                          onTap: () =>
-                              _runMatch('luminance', patchMatchBrightness),
-                        ),
-                        _ToolChip(
-                          icon: Icons.auto_fix_high,
-                          label: 'Enhance (RGB)',
-                          enabled: hasReference && !_processing,
-                          disabledHint: hasReference
-                              ? null
-                              : 'Pick a reference image first',
-                          selected: activeTool == 'rgb',
-                          onTap: () => _runMatch('rgb', histogramMatchRgb),
-                        ),
-                        _ToolChip(
-                          icon: Icons.gradient,
-                          label: 'Enhance (LAB)',
-                          enabled: hasReference && !_processing,
-                          disabledHint: hasReference
-                              ? null
-                              : 'Pick a reference image first',
-                          selected: activeTool == 'lab',
-                          onTap: () => _runMatch('lab', histogramMatchLab),
                         ),
                         // Future tools land here as additional _ToolChip rows.
                       ],
