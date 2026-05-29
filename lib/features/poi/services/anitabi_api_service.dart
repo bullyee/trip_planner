@@ -335,8 +335,8 @@ class AnitabiApiService {
   static String _referenceMetadata(Map<String, dynamic> json) {
     return jsonEncode({
       'source': 'anitabi',
-      ?'ep': json['ep'],
-      ?'s': json['s'],
+      'ep': ?json['ep'],
+      's': ?json['s'],
     });
   }
 }
