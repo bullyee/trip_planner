@@ -95,8 +95,13 @@ class _AddSpeedDialState extends State<AddSpeedDial>
     if (_isOpen) _controller.reverse();
   }
 
+  /// Used when an action callback navigates / fires a side-effect: the
+  /// scrim-bearing overlay is removed *synchronously* so it cannot keep
+  /// absorbing taps on the destination screen while the close animation
+  /// is still in flight (which previously made pushed screens look frozen).
   void _runAction(VoidCallback callback) {
-    _close();
+    _controller.value = 0;
+    _removeOverlay();
     callback();
   }
 
