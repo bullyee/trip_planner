@@ -105,7 +105,7 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
                         labelText: 'Bangumi ID',
                         helperText: 'Imported from Anitabi',
                       ),
-                      child: Text(_existing!.bangumiId!),
+                      child: Text(_existing?.bangumiId ?? 'Not Bound'),
                     ),
                   ],
                   const SizedBox(height: 32),
