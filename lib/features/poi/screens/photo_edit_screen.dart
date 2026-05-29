@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -9,47 +10,65 @@ import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../camera/services/reinhard_match_service.dart';
 import '../providers/poi_provider.dart';
+import '../services/brightness_service.dart';
+import '../services/comparison_image_service.dart';
+import '../services/edit_preview_service.dart';
 import '../services/media_asset_service.dart';
+import '../services/sharpness_service.dart';
 
 /// One step in the edit history.
 ///
-/// `bytes == null` means the source file as-is (no in-memory edit).
-/// `tool` is the id of the chip that produced this state, used both to
-/// highlight that chip and to label the step in tooltips. Carrying tool
-/// alongside bytes means undo/redo restore both the visible image AND
-/// the chip-selected state in a single hop.
+/// Filters chain: every step's [toolBaseBytes] is the previous step's
+/// committed [bytes] (or the editor's downscaled `_editingBaseBytes`
+/// for the very first step), so a sequence like Match Color → Brightness
+/// → Sharpness stacks effects on top of each other instead of throwing
+/// the previous one away.
 ///
-/// For `tool == 'match'` only: `matchedBaseBytes` holds Reinhard's
-/// full-strength output and `strength` ∈ [0, 1] is the current slider
-/// position. The canvas renders a Stack of the original source image
-/// + the matched bytes at `opacity = strength` so dragging the slider
-/// is free (Flutter blends in the GPU), and Save flattens the lerp into
-/// a single JPEG via `lerpJpegs` when `strength < 1.0`.
+/// `bytes == null` means the step has been created but not yet committed
+/// (the user is still dialling in the slider); on Confirm we compute the
+/// byte-buffer result against [toolBaseBytes] and populate [bytes].
+///
+/// Tool-specific fields (`matchedBaseBytes` + `strength` for Match
+/// Color, `brightness`, `sharpness`) ride along so a slider drag can
+/// mutate the current step rather than spam undo with one history entry
+/// per slider tick.
 @immutable
 class _EditState {
   final Uint8List? bytes;
   final String? tool;
+  final Uint8List? toolBaseBytes;
   final Uint8List? matchedBaseBytes;
   final double strength;
+  final double brightness;
+  final double sharpness;
 
   const _EditState({
     this.bytes,
     this.tool,
+    this.toolBaseBytes,
     this.matchedBaseBytes,
     this.strength = 1.0,
+    this.brightness = 0,
+    this.sharpness = 0,
   });
 
   _EditState copyWith({
     Uint8List? bytes,
     String? tool,
+    Uint8List? toolBaseBytes,
     Uint8List? matchedBaseBytes,
     double? strength,
+    double? brightness,
+    double? sharpness,
   }) {
     return _EditState(
       bytes: bytes ?? this.bytes,
       tool: tool ?? this.tool,
+      toolBaseBytes: toolBaseBytes ?? this.toolBaseBytes,
       matchedBaseBytes: matchedBaseBytes ?? this.matchedBaseBytes,
       strength: strength ?? this.strength,
+      brightness: brightness ?? this.brightness,
+      sharpness: sharpness ?? this.sharpness,
     );
   }
 }
@@ -132,12 +151,63 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
 
   bool _processing = false;
   bool _saving = false;
-  int _page = 0;
-  late final PageController _pageController = PageController();
+
+  // Downscaled (1024 px long edge) copy of the source built once on
+  // editor mount. Every preview compute — Match Color's Reinhard,
+  // Sharpness prepare, the canvas Image.memory — runs against this
+  // instead of the full-res source, so each tool's first interactive
+  // result lands in well under a second on a 12 MP shot. Save still
+  // re-runs each tool's effect on the full-res source so disk quality
+  // isn't downscaled.
+  Uint8List? _editingBaseBytes;
+  bool _preparingEditingBase = false;
+
+  // Cached downscaled source + blur for the Sharpness preview path.
+  // Built once when the user enters Sharpness mode (faster now that
+  // the input is already the 1024 px editing base), reused across
+  // every slider release after that.
+  PreparedSharpness? _sharpnessCache;
+  bool _preparingSharpness = false;
+
+  // Compare toggle — when on, the canvas renders the edited captured
+  // side-by-side with the reference and Save persists a
+  // `comparison_image` MediaAsset instead of overwriting the source.
+  bool _compareMode = false;
+
+  // True while the user is actively dialling in a tool's parameters.
+  // In this submode the AppBar swaps to Cancel + tool name + Confirm,
+  // the bottom tool row hides, and the active slider becomes the only
+  // interactive control — committing or backing out is the only way
+  // to switch tools.
+  bool _inEditMode = false;
+
+  // After each Confirm, a background `compute()` is scheduled to run
+  // the same filter chain on the **full-resolution source** (and to
+  // chain on top of the previous step's full-res checkpoint). The
+  // Future is stored here keyed by `_historyIndex`, so when the user
+  // hits Save the editor just awaits this Future — if the background
+  // job already finished, Save returns instantly; if not, Save waits
+  // for whatever remains instead of doubling the compute cost.
+  //
+  // Cleared from the map whenever the step's params change (new push,
+  // re-Confirm with different slider value) so the next replay rebuilds
+  // against the new state.
+  final Map<int, Future<Uint8List?>> _fullResCheckpoints = {};
 
   _EditState get _current => _history[_historyIndex];
   bool get _canUndo => _historyIndex > 0;
   bool get _canRedo => _historyIndex < _history.length - 1;
+
+  /// Bytes that a freshly-tapped tool chip should chain on top of —
+  /// the most recent committed bytes in history, or the downscaled
+  /// editing base when nothing has been confirmed yet.
+  Uint8List? get _chainBase {
+    for (var i = _historyIndex; i >= 0; i--) {
+      final b = _history[i].bytes;
+      if (b != null) return b;
+    }
+    return _editingBaseBytes;
+  }
 
   File get _sourceFile => File(widget.sourcePath);
   File? get _referenceFile =>
@@ -149,16 +219,40 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     super.initState();
     _referencePath = widget.referencePath;
     _referenceImageId = widget.referenceImageId;
+    unawaited(_prepareEditingBase());
+  }
+
+  /// Decode the source + downscale to 1024 px long edge once, cache
+  /// the resulting JPEG bytes. Every preview compute reads from this
+  /// instead of decoding the source repeatedly, so a 12 MP JPEG only
+  /// pays its ~300-500 ms decode cost a single time per editing
+  /// session.
+  Future<void> _prepareEditingBase() async {
+    setState(() => _preparingEditingBase = true);
+    try {
+      final sourceBytes = await _sourceFile.readAsBytes();
+      final downscaled = await compute(downscaleForEditing, sourceBytes);
+      if (!mounted) return;
+      setState(() => _editingBaseBytes = downscaled);
+    } finally {
+      if (mounted) setState(() => _preparingEditingBase = false);
+    }
   }
 
   void _pushHistory(_EditState state) {
     // Drop any redo branch when a new edit is applied past an undo.
+    final oldIndex = _historyIndex;
     final base = _historyIndex < _history.length - 1
         ? _history.sublist(0, _historyIndex + 1)
         : List<_EditState>.from(_history);
     base.add(state);
     _history = base;
     _historyIndex = _history.length - 1;
+    // Background full-res checkpoints for the truncated redo branch
+    // are stale now — drop them so a future Save doesn't reuse the
+    // wrong filter chain. Running futures complete in the background
+    // and their results just get dropped.
+    _fullResCheckpoints.removeWhere((k, _) => k > oldIndex);
   }
 
   void _undo() {
@@ -173,7 +267,6 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
 
   @override
   void dispose() {
-    _pageController.dispose();
     super.dispose();
   }
 
@@ -191,27 +284,43 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     final ref = _referenceFile;
     if (ref == null) return;
     if (_processing) return;
+    // Re-tapping the same chip while already on this tool's step just
+    // re-enters edit submode without recomputing the (still-cached)
+    // matched bytes — useful after Confirm when the user wants to
+    // fine-tune the slider again.
+    if (_current.tool == activeTool && _current.matchedBaseBytes != null) {
+      setState(() => _inEditMode = true);
+      return;
+    }
+    // Chain on top of whatever filters have already been confirmed —
+    // Reinhard runs against the previous step's bytes (or the editing
+    // base when nothing has landed yet), not against the raw source.
+    final base = _chainBase;
+    if (base == null) return;
 
     setState(() => _processing = true);
     try {
-      final sourceBytes = await _sourceFile.readAsBytes();
       final referenceBytes = await ref.readAsBytes();
       final result = await compute(
         algorithm,
         MatchArgs(
-          capturedBytes: sourceBytes,
+          capturedBytes: base,
           referenceBytes: referenceBytes,
         ),
       );
       if (!mounted) return;
-      setState(() => _pushHistory(_EditState(
-            bytes: result,
-            tool: activeTool,
-            // Keep the full-strength match alongside so the slider can
-            // lerp against the original without recomputing the filter.
-            matchedBaseBytes: storeMatchedBase ? result : null,
-            strength: 1.0,
-          )));
+      setState(() {
+        _pushHistory(_EditState(
+          // bytes left null until the user Confirms — slider drag
+          // previews via Stack opacity on top of `toolBaseBytes`, so
+          // there's no need to commit a byte buffer until then.
+          tool: activeTool,
+          toolBaseBytes: base,
+          matchedBaseBytes: storeMatchedBase ? result : null,
+          strength: 1.0,
+        ));
+        _inEditMode = true;
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -222,25 +331,388 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     }
   }
 
-  /// Updates the strength of the current Match Color state in place.
-  /// Slider drags shouldn't push a new history step every frame, so we
-  /// mutate the current entry — undo still goes back to before Match
-  /// Color was tapped.
-  void _setStrength(double value) {
-    if (_current.tool != 'match' || _current.matchedBaseBytes == null) return;
+  /// Replace the current history step with [update] applied to it.
+  /// Slider drags shouldn't push a new history step every frame, so
+  /// instead the current entry's tool params get mutated in place —
+  /// undo still goes back to before the tool was tapped.
+  void _mutateCurrent(_EditState Function(_EditState) update) {
     setState(() {
       final newHistory = List<_EditState>.from(_history);
-      newHistory[_historyIndex] = _current.copyWith(strength: value);
+      newHistory[_historyIndex] = update(_current);
       _history = newHistory;
     });
+  }
+
+  void _setStrength(double value) {
+    if (_current.tool != 'match' || _current.matchedBaseBytes == null) return;
+    _mutateCurrent((s) => s.copyWith(strength: value));
+  }
+
+  /// Brightness drag mutates the live state — the canvas re-renders
+  /// the source image through a `ColorFilter.matrix` matrix in real
+  /// time, so the user gets immediate visual feedback without any
+  /// per-frame compute. The byte-buffer adjust isn't needed until the
+  /// user actually saves: `_resolveBytesForSave` runs it once against
+  /// the source so the JPEG that lands on disk matches the canvas.
+  void _setBrightness(double value) {
+    if (_current.tool != 'brightness') return;
+    _mutateCurrent((s) => s.copyWith(brightness: value));
+  }
+
+  void _setSharpness(double value) {
+    if (_current.tool != 'sharpness') return;
+    _mutateCurrent((s) => s.copyWith(sharpness: value));
+  }
+
+  /// Pre-compute the Sharpness preview cache (downscaled source +
+  /// blurred buffer). Idempotent — early-returns if it's already
+  /// built or in-flight.
+  Future<void> _prepareSharpnessCache() async {
+    if (_sharpnessCache != null || _preparingSharpness) return;
+    // Cache is per-chain-step — the bytes the user is about to
+    // sharpen are this step's `toolBaseBytes` (= the previous
+    // filter's committed result), not the raw editing base.
+    final baseBytes = _current.toolBaseBytes ?? _editingBaseBytes;
+    if (baseBytes == null) return;
+    setState(() => _preparingSharpness = true);
+    try {
+      final prepared = await compute(prepareSharpness, baseBytes);
+      if (!mounted) return;
+      setState(() => _sharpnessCache = prepared);
+    } finally {
+      if (mounted) setState(() => _preparingSharpness = false);
+    }
+  }
+
+  Future<void> _commitSharpness(double value) async {
+    if (_current.tool != 'sharpness') return;
+    if (_processing) return;
+    final cache = _sharpnessCache;
+    final base = _current.toolBaseBytes ?? _editingBaseBytes;
+    if (base == null) return;
+    setState(() => _processing = true);
+    try {
+      final Uint8List result;
+      if (cache != null) {
+        // Fast path — combine on the cached prepare (downscaled +
+        // pre-blurred copy of `toolBaseBytes`), encode a small JPEG.
+        result = await compute(
+          applySharpnessQuick,
+          QuickSharpnessArgs(prepared: cache, amount: value),
+        );
+      } else {
+        // Cache wasn't ready yet — run the full path on this step's
+        // base bytes. Slower but the next release will be fast.
+        result = await compute(
+          applySharpness,
+          SharpnessArgs(sourceBytes: base, amount: value),
+        );
+      }
+      if (!mounted) return;
+      _mutateCurrent((s) => s.copyWith(bytes: result, sharpness: value));
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+  }
+
+  /// Brightness / Sharpness chip taps push a fresh history step with
+  /// the relevant tool selected — slider starts at the no-op value
+  /// (0) so the displayed image equals the source until the user
+  /// drags. Tapping the chip again with the same tool already active
+  /// is a no-op so it doesn't reset slider state mid-edit.
+  void _runBrightness() {
+    if (_current.tool == 'brightness') {
+      setState(() => _inEditMode = true);
+      return;
+    }
+    final base = _chainBase;
+    if (base == null) return;
+    setState(() {
+      _pushHistory(_EditState(tool: 'brightness', toolBaseBytes: base));
+      _inEditMode = true;
+    });
+  }
+
+  void _runSharpness() {
+    if (_current.tool == 'sharpness') {
+      setState(() => _inEditMode = true);
+      return;
+    }
+    final base = _chainBase;
+    if (base == null) return;
+    setState(() {
+      _pushHistory(_EditState(tool: 'sharpness', toolBaseBytes: base));
+      _inEditMode = true;
+    });
+    // Sharpness cache is tied to a specific `toolBaseBytes`, so a new
+    // chain step always needs a fresh prepare.
+    _sharpnessCache = null;
+    unawaited(_prepareSharpnessCache());
+  }
+
+  /// Commit the current tool's dialled-in result into the history
+  /// step's `bytes` field, then exit edit submode. The next tool the
+  /// user picks chains on top of these bytes — that's how stacking
+  /// filters works.
+  ///
+  /// Sharpness already commits on each slider release, so it only
+  /// needs a no-op confirm. Brightness's preview lives entirely in
+  /// the `ColorFilter` widget, so Confirm runs the byte-buffer
+  /// adjust here. Match Color lerps the cached match against the
+  /// step's `toolBaseBytes` according to the current strength.
+  Future<void> _confirmEdit() async {
+    if (_processing) return;
+    final state = _current;
+    final base = state.toolBaseBytes ?? _editingBaseBytes;
+    if (base == null) {
+      setState(() => _inEditMode = false);
+      return;
+    }
+
+    setState(() => _processing = true);
+    try {
+      Uint8List? newBytes;
+      switch (state.tool) {
+        case 'match':
+          if (state.matchedBaseBytes != null) {
+            final t = state.strength.clamp(0.0, 1.0);
+            if (t >= 0.999) {
+              newBytes = state.matchedBaseBytes;
+            } else if (t <= 0.001) {
+              newBytes = base;
+            } else {
+              newBytes = await compute(
+                lerpJpegs,
+                LerpArgs(
+                  jpegA: base,
+                  jpegB: state.matchedBaseBytes!,
+                  strength: t,
+                ),
+              );
+            }
+          }
+          break;
+        case 'brightness':
+          if (state.brightness != 0) {
+            newBytes = await compute(
+              applyBrightness,
+              BrightnessArgs(
+                sourceBytes: base,
+                brightness: state.brightness,
+              ),
+            );
+          } else {
+            newBytes = base;
+          }
+          break;
+        case 'sharpness':
+          if (state.bytes != null) {
+            newBytes = state.bytes;
+          } else if (state.sharpness != 0) {
+            // No release happened yet (user confirmed without
+            // touching the slider). Quick-path against the cache
+            // when ready, otherwise full-path on `base`.
+            final cache = _sharpnessCache;
+            if (cache != null) {
+              newBytes = await compute(
+                applySharpnessQuick,
+                QuickSharpnessArgs(prepared: cache, amount: state.sharpness),
+              );
+            } else {
+              newBytes = await compute(
+                applySharpness,
+                SharpnessArgs(sourceBytes: base, amount: state.sharpness),
+              );
+            }
+          } else {
+            newBytes = base;
+          }
+          break;
+      }
+      if (!mounted) return;
+      if (newBytes != null) {
+        _mutateCurrent((s) => s.copyWith(bytes: newBytes));
+      }
+      setState(() {
+        // Re-Confirming an older step (after undo + re-entry) would
+        // leave a stale redo branch — truncate it so the chain stays
+        // consistent.
+        if (_historyIndex < _history.length - 1) {
+          _history = _history.sublist(0, _historyIndex + 1);
+        }
+        _inEditMode = false;
+      });
+      // Drop this step's stale full-res checkpoint (and any from the
+      // now-truncated redo branch) and schedule a fresh background
+      // job — by the time the user reaches Save it's usually done.
+      _fullResCheckpoints.removeWhere((k, _) => k >= _historyIndex);
+      _scheduleFullResCheckpoint(_historyIndex);
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+  }
+
+  /// Schedule a background `compute()` for the full-res result of the
+  /// filter at [idx]. Idempotent — early-returns if the checkpoint is
+  /// already in the map (running or completed). The actual work runs
+  /// in a worker isolate; Save just awaits the Future stored here.
+  void _scheduleFullResCheckpoint(int idx) {
+    if (idx <= 0) return;
+    if (_fullResCheckpoints.containsKey(idx)) return;
+    // Capture the step + reference at scheduling time so a later
+    // re-Confirm (which will reschedule with new params) can't make
+    // this Future see mutated state mid-run.
+    final step = _history[idx];
+    final referenceFile = _referenceFile;
+    _fullResCheckpoints[idx] =
+        _computeFullResForStep(idx, step, referenceFile);
+  }
+
+  Future<Uint8List?> _computeFullResForStep(
+    int idx,
+    _EditState step,
+    File? referenceFile,
+  ) async {
+    if (idx <= 0) return null;
+
+    // Resolve the base: either the source (for the very first filter)
+    // or recursively the previous step's full-res checkpoint.
+    Uint8List baseBytes;
+    if (idx == 1) {
+      baseBytes = await _sourceFile.readAsBytes();
+    } else {
+      if (!_fullResCheckpoints.containsKey(idx - 1)) {
+        _scheduleFullResCheckpoint(idx - 1);
+      }
+      final prevFuture = _fullResCheckpoints[idx - 1];
+      if (prevFuture == null) return null;
+      final prev = await prevFuture;
+      if (prev == null) return null;
+      baseBytes = prev;
+    }
+
+    switch (step.tool) {
+      case 'match':
+        if (referenceFile == null) return baseBytes;
+        final t = step.strength.clamp(0.0, 1.0);
+        if (t <= 0.001) return baseBytes;
+        final referenceBytes = await referenceFile.readAsBytes();
+        final matched = await compute(
+          reinhardMatch,
+          MatchArgs(
+            capturedBytes: baseBytes,
+            referenceBytes: referenceBytes,
+          ),
+        );
+        if (t >= 0.999) return matched;
+        return compute(
+          lerpJpegs,
+          LerpArgs(jpegA: baseBytes, jpegB: matched, strength: t),
+        );
+      case 'brightness':
+        if (step.brightness == 0) return baseBytes;
+        return compute(
+          applyBrightness,
+          BrightnessArgs(
+            sourceBytes: baseBytes,
+            brightness: step.brightness,
+          ),
+        );
+      case 'sharpness':
+        if (step.sharpness == 0) return baseBytes;
+        return compute(
+          applySharpness,
+          SharpnessArgs(
+            sourceBytes: baseBytes,
+            amount: step.sharpness,
+          ),
+        );
+      default:
+        return baseBytes;
+    }
+  }
+
+  /// Discard the tool's history step and exit edit submode — same
+  /// effect as undo + closing the slider strip, used by the AppBar's
+  /// Cancel button while a tool is being edited.
+  void _cancelEdit() {
+    setState(() {
+      if (_historyIndex > 0) _historyIndex--;
+      _inEditMode = false;
+    });
+  }
+
+  String _editModeTitle() {
+    switch (_current.tool) {
+      case 'match':
+        return 'Match Color';
+      case 'brightness':
+        return 'Brightness';
+      case 'sharpness':
+        return 'Sharpness';
+      default:
+        return '';
+    }
+  }
+
+  /// Compare is now a canvas toggle, not a one-shot action — flipping
+  /// it renders the edited captured side-by-side with the reference,
+  /// and Save persists whichever view is currently on screen (the
+  /// edited single shot when the toggle is off, the side-by-side
+  /// comparison JPEG when it's on).
+  void _toggleCompare() {
+    if (!_hasReference) return;
+    setState(() => _compareMode = !_compareMode);
   }
 
   Future<void> _save() async {
     if (_saving) return;
     final db = ref.read(databaseProvider);
+    final referenceFile = _referenceFile;
 
     setState(() => _saving = true);
     try {
+      // Compare toggle on: stitch the full-res edited captured next
+      // to the reference and write it as a brand-new `comparison_image`
+      // MediaAsset — the original source file is left alone, so the
+      // user can still save the single shot later.
+      if (_compareMode && referenceFile != null) {
+        final editedBytes = await _resolveBytesForSave() ??
+            await _sourceFile.readAsBytes();
+        final referenceBytes = await referenceFile.readAsBytes();
+        final composed = await compute(
+          generateComparison,
+          ComparisonArgs(
+            capturedBytes: editedBytes,
+            referenceBytes: referenceBytes,
+          ),
+        );
+        final tempFile = File(p.join(
+          Directory.systemTemp.path,
+          'comparison_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        ));
+        await tempFile.writeAsBytes(composed, flush: true);
+
+        final ok = await persistMediaAsset(
+          db: db,
+          source: tempFile,
+          poiId: widget.poiId,
+          type: 'comparison_image',
+          referenceImageId: _referenceImageId,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content:
+                  Text(ok ? 'Comparison saved.' : 'Save failed.')),
+        );
+        if (ok) Navigator.of(context).pop();
+        return;
+      }
+
+      // Single-shot save: write the edited bytes over the source so
+      // persistMediaAsset's copy-into-storage step picks them up, then
+      // record the matching MediaAsset row.
       final bytesToWrite = await _resolveBytesForSave();
       if (bytesToWrite != null) {
         await _sourceFile.writeAsBytes(bytesToWrite, flush: true);
@@ -256,9 +728,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(ok ? 'Photo saved.' : 'Save failed.')),
       );
-      if (ok) {
-        Navigator.of(context).pop();
-      }
+      if (ok) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -345,6 +815,10 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       if (_current.tool == 'match') {
         _pushHistory(const _EditState());
       }
+      // Changing the reference invalidates any in-progress edit; drop
+      // back to main mode so the user can re-enter a tool against the
+      // new reference.
+      _inEditMode = false;
     });
   }
 
@@ -356,29 +830,431 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     });
   }
 
-  /// Resolves the bytes that should be written over the source file at
-  /// Save time. For Match Color with `strength < 1.0`, this lerps the
-  /// original source bytes against the matched bytes — at strength 1
-  /// we can skip the lerp because the matched bytes already are the
-  /// answer; at strength 0 we skip the overwrite entirely so the user
-  /// keeps the untouched source.
+  /// Save reads the cached background full-res result for the current
+  /// history step instead of replaying filters inline. The Future is
+  /// scheduled at Confirm time, so by the time the user reaches Save
+  /// it is either already done (instant) or just finishing (waits the
+  /// remaining ms). If nothing has been Confirmed yet, returns null
+  /// so persistMediaAsset records the original untouched source.
   Future<Uint8List?> _resolveBytesForSave() async {
-    final state = _current;
-    if (state.tool == 'match' && state.matchedBaseBytes != null) {
-      final t = state.strength.clamp(0.0, 1.0);
-      if (t >= 0.999) return state.matchedBaseBytes;
-      if (t <= 0.001) return null; // original — don't overwrite
-      final origBytes = await _sourceFile.readAsBytes();
-      return compute(
-        lerpJpegs,
-        LerpArgs(
-          jpegA: origBytes,
-          jpegB: state.matchedBaseBytes!,
-          strength: t,
+    if (_historyIndex <= 0) return null;
+    if (!_fullResCheckpoints.containsKey(_historyIndex)) {
+      _scheduleFullResCheckpoint(_historyIndex);
+    }
+    final future = _fullResCheckpoints[_historyIndex];
+    if (future == null) return null;
+    try {
+      return await future;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Bottom strip — centered slider for the active tool's continuous
+  /// param above, horizontal row of icon-above-label tool buttons +
+  /// Save below. Modelled on Google Photos: each tool reads as a
+  /// little icon with its label underneath, the slider lives on its
+  /// own centered row above the tool icons so it doesn't have to
+  /// share width with the buttons.
+  Widget _buildBottomStrip(
+    ThemeData theme,
+    bool hasReference,
+    String? activeTool,
+  ) {
+    final slider = _activeSliderForTool(activeTool, theme);
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (slider != null) ...[
+            slider,
+            if (!_inEditMode) const SizedBox(height: 4),
+          ],
+          // Tool row hides while a tool is being dialled in — the
+          // AppBar's Cancel / Confirm pair is the only legal way to
+          // switch tools while editing, so the row would just be a
+          // distracting accidental-tap target if it stayed visible.
+          if (!_inEditMode)
+            SizedBox(
+              // 72 px (not 64) gives the two-line "Match\nColor" label
+              // enough vertical room without truncating; single-line
+              // labels stay vertically centered.
+              height: 72,
+              child: Center(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                // 4 buttons × ~72 px easily fits the narrowest phone
+                // width, so Center keeps them as a balanced row in the
+                // middle. The scroll view is just a safety net for if
+                // a 5th tool gets added later and overflows a small
+                // screen.
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _ToolButton(
+                      icon: Icons.palette,
+                      // Force two lines so the label stays readable
+                      // inside the 72 px button — `Match Color` on one
+                      // line gets truncated to `Match C…`.
+                      label: 'Match\nColor',
+                      enabled: hasReference && !_processing,
+                      disabledHint:
+                          hasReference ? null : 'No reference image',
+                      selected: activeTool == 'match',
+                      onTap: () => _runMatch(
+                        'match',
+                        reinhardMatch,
+                        storeMatchedBase: true,
+                      ),
+                    ),
+                    _ToolButton(
+                      icon: Icons.brightness_6,
+                      label: 'Brightness',
+                      enabled: !_processing,
+                      selected: activeTool == 'brightness',
+                      onTap: _runBrightness,
+                    ),
+                    _ToolButton(
+                      icon: Icons.deblur,
+                      label: 'Sharpness',
+                      enabled: !_processing,
+                      selected: activeTool == 'sharpness',
+                      onTap: _runSharpness,
+                    ),
+                    _ToolButton(
+                      icon: Icons.compare_arrows,
+                      label: 'Compare',
+                      enabled: hasReference && !_processing,
+                      disabledHint:
+                          hasReference ? null : 'No reference image',
+                      // Compare is a toggle now — the canvas renders
+                      // the side-by-side preview while it's on and
+                      // Save persists the comparison instead of the
+                      // single shot.
+                      selected: _compareMode,
+                      onTap: _toggleCompare,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Returns the centered slider widget for the currently-active tool,
+  /// or `null` when the active tool has no continuous param or the
+  /// editor isn't in edit submode (sliders only appear while the user
+  /// is dialling in a tool; the dialled-in result is shown in main
+  /// mode without the slider so the canvas can take the full height).
+  Widget? _activeSliderForTool(String? activeTool, ThemeData theme) {
+    if (!_inEditMode) return null;
+    switch (activeTool) {
+      case 'match':
+        if (_current.matchedBaseBytes == null) return null;
+        return _LabelledSlider(
+          label: 'Strength',
+          value: _current.strength.clamp(0.0, 1.0),
+          min: 0,
+          max: 1,
+          theme: theme,
+          onChanged: _setStrength,
+        );
+      case 'brightness':
+        return _LabelledSlider(
+          label: 'Brightness',
+          value: _current.brightness.clamp(-0.5, 0.5),
+          min: -0.5,
+          max: 0.5,
+          centerZero: true,
+          theme: theme,
+          onChanged: _setBrightness,
+        );
+      case 'sharpness':
+        return _LabelledSlider(
+          label: 'Sharpness',
+          value: _current.sharpness.clamp(0.0, 1.0),
+          min: 0,
+          max: 1,
+          theme: theme,
+          onChanged: _setSharpness,
+          onChangeEnd: _commitSharpness,
+        );
+      default:
+        return null;
+    }
+  }
+
+  /// Builds the edited captured image.
+  ///
+  /// In edit submode the preview chains on top of the current step's
+  /// `toolBaseBytes` (= the previous filter's committed result). That
+  /// way a Match Color → Brightness → Sharpness sequence visibly
+  /// stacks instead of resetting to the source each time. Outside of
+  /// edit mode the canvas just renders the current step's committed
+  /// `bytes`, or the editing base when nothing has been committed.
+  Widget _buildEditingCanvas(Uint8List? currentBytes) {
+    final tool = _current.tool;
+    final base = _editingBaseBytes;
+    Widget baseDisplay() => base != null
+        ? Image.memory(
+            base,
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+          )
+        : Image.file(_sourceFile, fit: BoxFit.contain);
+
+    if (_inEditMode) {
+      final toolBase = _current.toolBaseBytes ?? base;
+      Widget toolBaseDisplay() => toolBase != null
+          ? Image.memory(toolBase,
+              fit: BoxFit.contain, gaplessPlayback: true)
+          : baseDisplay();
+
+      if (tool == 'match' && _current.matchedBaseBytes != null) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            toolBaseDisplay(),
+            Opacity(
+              opacity: _current.strength.clamp(0.0, 1.0),
+              child: Image.memory(
+                _current.matchedBaseBytes!,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+              ),
+            ),
+          ],
+        );
+      }
+      if (tool == 'brightness') {
+        final b = _current.brightness.clamp(-0.5, 0.5);
+        final s = 1 + b;
+        return ColorFiltered(
+          colorFilter: ColorFilter.matrix(<double>[
+            s, 0, 0, 0, 0,
+            0, s, 0, 0, 0,
+            0, 0, s, 0, 0,
+            0, 0, 0, 1, 0,
+          ]),
+          child: toolBaseDisplay(),
+        );
+      }
+      if (tool == 'sharpness') {
+        // Until the user releases the slider, the canvas shows the
+        // `toolBaseBytes` (no effect yet); after release `bytes` is
+        // populated and we show that.
+        return currentBytes != null
+            ? Image.memory(currentBytes,
+                fit: BoxFit.contain, gaplessPlayback: true)
+            : toolBaseDisplay();
+      }
+    }
+
+    // Main mode — display the committed chain result.
+    return currentBytes != null
+        ? Image.memory(currentBytes,
+            fit: BoxFit.contain, gaplessPlayback: true)
+        : baseDisplay();
+  }
+
+  /// Default-mode AppBar: back/undo/redo on the left, change-ref +
+  /// overlay + Save on the right. Use while no tool is being dialled
+  /// in, so the user can step through edit history and commit to disk.
+  PreferredSizeWidget _buildMainAppBar(
+    ThemeData theme,
+    bool hasReference,
+  ) {
+    return AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      // Wider leading slot to fit back + undo + redo in a row without
+      // pushing the title.
+      leadingWidth: 168,
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip: 'Back',
+            onPressed: _back,
+          ),
+          IconButton(
+            icon: const Icon(Icons.undo),
+            tooltip: 'Undo',
+            onPressed: _canUndo && !_processing ? _undo : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.redo),
+            tooltip: 'Redo',
+            onPressed: _canRedo && !_processing ? _redo : null,
+          ),
+        ],
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.photo_library),
+          tooltip:
+              hasReference ? 'Change reference image' : 'Add reference image',
+          onPressed: _processing ? null : _changeReference,
         ),
+        IconButton(
+          icon: Icon(
+            _showOverlay ? Icons.compare : Icons.compare_outlined,
+          ),
+          tooltip:
+              hasReference ? 'Toggle reference overlay' : 'No reference image',
+          onPressed: hasReference
+              ? () => setState(() => _showOverlay = !_showOverlay)
+              : null,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TextButton(
+            onPressed: _saving ? null : _save,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.primary,
+              disabledForegroundColor: Colors.white38,
+            ),
+            child: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('Save'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Edit-submode AppBar: Cancel ✕ on the left, tool name in the
+  /// title, Confirm on the right. Undo/Redo and the "Save the disk
+  /// version" affordance disappear — the only way out of this
+  /// AppBar is Cancel (discard) or Confirm (keep), matching the
+  /// modal feel of Google Photos' per-tool editing.
+  PreferredSizeWidget _buildEditModeAppBar(
+    ThemeData theme,
+    bool hasReference,
+  ) {
+    return AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        tooltip: 'Cancel edit',
+        onPressed: _processing ? null : _cancelEdit,
+      ),
+      title: Text(
+        _editModeTitle(),
+        style: const TextStyle(fontSize: 16),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.photo_library),
+          tooltip:
+              hasReference ? 'Change reference image' : 'Add reference image',
+          onPressed: _processing ? null : _changeReference,
+        ),
+        IconButton(
+          icon: Icon(
+            _showOverlay ? Icons.compare : Icons.compare_outlined,
+          ),
+          tooltip:
+              hasReference ? 'Toggle reference overlay' : 'No reference image',
+          onPressed: hasReference
+              ? () => setState(() => _showOverlay = !_showOverlay)
+              : null,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TextButton(
+            onPressed: _processing ? null : _confirmEdit,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.primary,
+              disabledForegroundColor: Colors.white38,
+            ),
+            child: const Text('Confirm'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Outer canvas wrapper: in Compare mode the edited captured sits
+  /// next to the reference as a 50 / 50 split; otherwise the canvas
+  /// is the single edited captured (with the optional translucent
+  /// overlay layered on top).
+  Widget _buildCanvasContent(Uint8List? currentBytes, File? reference) {
+    if (_compareMode && reference != null) {
+      return Row(
+        children: [
+          Expanded(child: Center(child: _buildEditingCanvas(currentBytes))),
+          Container(width: 2, color: Colors.white24),
+          Expanded(
+            child: Center(
+              child: Image.file(reference, fit: BoxFit.contain),
+            ),
+          ),
+        ],
       );
     }
-    return state.bytes;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Center(child: _buildEditingCanvas(currentBytes)),
+        if (_showOverlay && reference != null)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onScaleStart: (details) {
+                _gestureStartOffset = _overlayOffset;
+                _gestureStartFocalPoint = details.focalPoint;
+                _gestureStartScale = _overlayScale;
+              },
+              onScaleUpdate: (details) {
+                setState(() {
+                  _overlayOffset = _gestureStartOffset +
+                      (details.focalPoint - _gestureStartFocalPoint);
+                  _overlayScale =
+                      (_gestureStartScale * details.scale)
+                          .clamp(0.35, 4)
+                          .toDouble();
+                });
+              },
+              child: Center(
+                child: Transform.translate(
+                  offset: _overlayOffset,
+                  child: Transform.scale(
+                    scale: _overlayScale,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 2,
+                        ),
+                      ),
+                      child: Opacity(
+                        opacity: _overlayOpacity,
+                        child: Image.file(reference, fit: BoxFit.contain),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   @override
@@ -391,53 +1267,9 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        // Wider leading slot to fit back + undo + redo in a row without
-        // pushing the title — the editor has no title anyway.
-        leadingWidth: 168,
-        leading: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back),
-              tooltip: 'Back',
-              onPressed: _back,
-            ),
-            IconButton(
-              icon: const Icon(Icons.undo),
-              tooltip: 'Undo',
-              onPressed: _canUndo && !_processing ? _undo : null,
-            ),
-            IconButton(
-              icon: const Icon(Icons.redo),
-              tooltip: 'Redo',
-              onPressed: _canRedo && !_processing ? _redo : null,
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.photo_library),
-            tooltip: hasReference
-                ? 'Change reference image'
-                : 'Add reference image',
-            onPressed: _processing ? null : _changeReference,
-          ),
-          IconButton(
-            icon: Icon(
-              _showOverlay ? Icons.compare : Icons.compare_outlined,
-            ),
-            tooltip: hasReference
-                ? 'Toggle reference overlay'
-                : 'No reference image',
-            onPressed: hasReference
-                ? () => setState(() => _showOverlay = !_showOverlay)
-                : null,
-          ),
-        ],
-      ),
+      appBar: _inEditMode
+          ? _buildEditModeAppBar(theme, hasReference)
+          : _buildMainAppBar(theme, hasReference),
       body: SafeArea(
         child: Column(
           children: [
@@ -445,127 +1277,22 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  PageView(
-                    controller: _pageController,
-                    // When the user is dragging / pinching the overlay,
-                    // the PageView mustn't steal the gesture as a
-                    // swipe-to-reference — that would yank them to
-                    // page 1 mid-edit. So lock the swipe while overlay
-                    // mode is on (and obviously when there's no
-                    // reference page to swipe to).
-                    physics: hasReference && !_showOverlay
-                        ? const PageScrollPhysics()
-                        : const NeverScrollableScrollPhysics(),
-                    onPageChanged: (p) => setState(() => _page = p),
-                    children: [
-                      Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Center(
-                            child: _current.tool == 'match' &&
-                                    _current.matchedBaseBytes != null
-                                ? Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      Image.file(_sourceFile,
-                                          fit: BoxFit.contain),
-                                      Opacity(
-                                        opacity: _current.strength
-                                            .clamp(0.0, 1.0),
-                                        child: Image.memory(
-                                          _current.matchedBaseBytes!,
-                                          fit: BoxFit.contain,
-                                          gaplessPlayback: true,
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : (currentBytes != null
-                                    ? Image.memory(currentBytes,
-                                        fit: BoxFit.contain)
-                                    : Image.file(_sourceFile,
-                                        fit: BoxFit.contain)),
-                          ),
-                          if (hasReference && _showOverlay)
-                            Positioned.fill(
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.translucent,
-                                onScaleStart: (details) {
-                                  _gestureStartOffset = _overlayOffset;
-                                  _gestureStartFocalPoint =
-                                      details.focalPoint;
-                                  _gestureStartScale = _overlayScale;
-                                },
-                                onScaleUpdate: (details) {
-                                  setState(() {
-                                    _overlayOffset = _gestureStartOffset +
-                                        (details.focalPoint -
-                                            _gestureStartFocalPoint);
-                                    _overlayScale = (_gestureStartScale *
-                                            details.scale)
-                                        .clamp(0.35, 4)
-                                        .toDouble();
-                                  });
-                                },
-                                child: Center(
-                                  child: Transform.translate(
-                                    offset: _overlayOffset,
-                                    child: Transform.scale(
-                                      scale: _overlayScale,
-                                      // Border lives OUTSIDE the
-                                      // Opacity so it stays full-alpha
-                                      // regardless of how transparent
-                                      // the user dials the overlay —
-                                      // a 20 % image with a 20 % frame
-                                      // is invisible against a busy
-                                      // captured scene, which beats
-                                      // the whole point of "here is
-                                      // where the reference sits".
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          border: Border.all(
-                                            color: Colors.white,
-                                            width: 2,
-                                          ),
-                                        ),
-                                        child: Opacity(
-                                          opacity: _overlayOpacity,
-                                          child: Image.file(
-                                            reference!,
-                                            fit: BoxFit.contain,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      if (hasReference)
-                        Center(
-                          child: Image.file(reference!, fit: BoxFit.contain),
-                        ),
-                    ],
-                  ),
-                  if (_processing)
+                  _buildCanvasContent(currentBytes, reference),
+                  if (_processing || _preparingEditingBase)
                     const Positioned.fill(
                       child: ColoredBox(
                         color: Color(0x66000000),
                         child: Center(
-                          child: CircularProgressIndicator(color: Colors.white),
+                          child:
+                              CircularProgressIndicator(color: Colors.white),
                         ),
                       ),
                     ),
-                  if (hasReference && !_showOverlay)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 8,
-                      child: _SwipeHint(page: _page),
-                    ),
-                  if (hasReference && _showOverlay)
+                  // Floating opacity bar — only when the AppBar overlay
+                  // is on AND Compare mode is off (Compare already
+                  // shows both images, so the overlay layer is hidden
+                  // and its controls go with it).
+                  if (hasReference && _showOverlay && !_compareMode)
                     Positioned(
                       left: 12,
                       right: 12,
@@ -581,78 +1308,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                 ],
               ),
             ),
-            Container(
-              color: Colors.black,
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    height: 64,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        _ToolChip(
-                          icon: Icons.palette,
-                          label: 'Match Color',
-                          enabled: hasReference && !_processing,
-                          disabledHint: hasReference
-                              ? null
-                              : 'No reference image',
-                          selected: activeTool == 'match',
-                          onTap: () => _runMatch(
-                            'match',
-                            reinhardMatch,
-                            storeMatchedBase: true,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Match Color strength slider keeps its dedicated
-                  // line in the bottom strip. Overlay opacity now lives
-                  // in a floating bar above the chip row (see
-                  // `_FloatingOverlayBar` in the canvas Stack) so the
-                  // two controls don't compete for the same slot when
-                  // the user is both blending and matching at once.
-                  if (activeTool == 'match' &&
-                      _current.matchedBaseBytes != null) ...[
-                    const SizedBox(height: 4),
-                    _LabelledSlider(
-                      label: 'Strength',
-                      value: _current.strength.clamp(0.0, 1.0),
-                      min: 0,
-                      max: 1,
-                      theme: theme,
-                      onChanged: _setStrength,
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton.icon(
-                      onPressed: _saving ? null : _save,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: theme.colorScheme.onPrimary,
-                      ),
-                      icon: _saving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.save),
-                      label: const Text('Save'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildBottomStrip(theme, hasReference, activeTool),
           ],
         ),
       ),
@@ -735,16 +1391,23 @@ class _FloatingOverlayBar extends StatelessWidget {
   }
 }
 
-/// Label + Slider + "NN%" row. Used for both the overlay-opacity
-/// control and the Match Color strength control so the two read as the
-/// same affordance from the user's side.
+/// Label + centered Slider + value indicator. Used for the active
+/// tool's slider strip (Match Color strength, Brightness, Sharpness)
+/// and for the floating overlay-opacity bar.
+///
+/// When [centerZero] is true the indicator shows signed percentages
+/// (`-50%` / `+25%`) so a slider whose default is the midpoint reads
+/// the way Lightroom / Google Photos do; otherwise it shows
+/// `0%`–`100%` over the [min]–[max] range.
 class _LabelledSlider extends StatelessWidget {
   final String label;
   final double value;
   final double min;
   final double max;
+  final bool centerZero;
   final ThemeData theme;
   final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
 
   const _LabelledSlider({
     required this.label,
@@ -753,12 +1416,24 @@ class _LabelledSlider extends StatelessWidget {
     required this.max,
     required this.theme,
     required this.onChanged,
+    this.centerZero = false,
+    this.onChangeEnd,
   });
 
   @override
   Widget build(BuildContext context) {
-    final span = (max - min);
-    final percent = span > 0 ? ((value - min) / span) * 100 : 0;
+    final String readout;
+    if (centerZero) {
+      final extent = (max - min).abs() / 2;
+      final percent = extent > 0 ? (value / extent) * 100 : 0;
+      readout =
+          '${percent >= 0 ? '+' : ''}${percent.round()}%';
+    } else {
+      final span = (max - min);
+      final percent = span > 0 ? ((value - min) / span) * 100 : 0;
+      readout = '${percent.round()}%';
+    }
+
     return Row(
       children: [
         Padding(
@@ -782,13 +1457,14 @@ class _LabelledSlider extends StatelessWidget {
               min: min,
               max: max,
               onChanged: onChanged,
+              onChangeEnd: onChangeEnd,
             ),
           ),
         ),
         SizedBox(
-          width: 44,
+          width: 52,
           child: Text(
-            '${percent.round()}%',
+            readout,
             style: const TextStyle(color: Colors.white70),
             textAlign: TextAlign.right,
           ),
@@ -799,36 +1475,11 @@ class _LabelledSlider extends StatelessWidget {
   }
 }
 
-/// Two small dots at the bottom of the canvas — filled is the current
-/// page, dimmed is the other. Page index is owned by the parent State so
-/// this widget can stay stateless.
-class _SwipeHint extends StatelessWidget {
-  final int page;
-  const _SwipeHint({required this.page});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(2, (i) {
-        final active = i == page;
-        return Container(
-          width: 6,
-          height: 6,
-          margin: const EdgeInsets.symmetric(horizontal: 3),
-          decoration: BoxDecoration(
-            color: active
-                ? Colors.white
-                : Colors.white.withValues(alpha: 0.35),
-            shape: BoxShape.circle,
-          ),
-        );
-      }),
-    );
-  }
-}
-
-class _ToolChip extends StatelessWidget {
+/// Google-Photos-style edit tool button: icon on top, label below,
+/// no border. The active tool's foreground colour goes primary; the
+/// rest sit in dim white so the selection reads at a glance against
+/// the canvas's typically dark surroundings.
+class _ToolButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool enabled;
@@ -836,7 +1487,7 @@ class _ToolChip extends StatelessWidget {
   final String? disabledHint;
   final VoidCallback onTap;
 
-  const _ToolChip({
+  const _ToolButton({
     required this.icon,
     required this.label,
     required this.enabled,
@@ -848,22 +1499,27 @@ class _ToolChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final foreground = enabled
-        ? (selected ? theme.colorScheme.primary : Colors.white)
-        : Colors.white38;
+    final fg = enabled
+        ? (selected ? theme.colorScheme.primary : Colors.white70)
+        : Colors.white24;
     final tile = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      margin: const EdgeInsets.only(right: 8),
-      decoration: BoxDecoration(
-        border: Border.all(color: foreground.withValues(alpha: 0.6)),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
+      width: 72,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: foreground),
-          const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: foreground)),
+          Icon(icon, color: fg, size: 26),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(color: fg, fontSize: 11, height: 1.15),
+            textAlign: TextAlign.center,
+            // Two lines so labels like "Match\nColor" wrap cleanly;
+            // single-word labels just stay one line.
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
@@ -873,7 +1529,7 @@ class _ToolChip extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: enabled ? onTap : null,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(8),
           child: tile,
         ),
       ),

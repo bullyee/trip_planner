@@ -566,6 +566,7 @@ class PoiDetailScreen extends ConsumerWidget {
       'reference_frame' => const Icon(Icons.image),
       'user_photo' => const Icon(Icons.camera_alt),
       'uploaded_image' => const Icon(Icons.save_alt),
+      'comparison_image' => const Icon(Icons.compare),
       'ticket_qr' => const Icon(Icons.qr_code),
       'audio_bgm' => const Icon(Icons.music_note),
       _ => const Icon(Icons.attachment),
@@ -712,6 +713,7 @@ class PoiDetailScreen extends ConsumerWidget {
     final uri = asset.localUri.toLowerCase();
     final isKnownImageType = asset.type == 'user_photo' ||
         asset.type == 'uploaded_image' ||
+        asset.type == 'comparison_image' ||
         asset.type == 'reference_frame' ||
         asset.type == 'ticket_qr';
     final hasImageExtension = uri.endsWith('.jpg') ||
