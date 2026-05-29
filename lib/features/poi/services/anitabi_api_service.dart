@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import 'package:trip_planner/core/database/database.dart';
@@ -57,8 +58,15 @@ class AnitabiApiService {
     final ownsClient = client == null;
     var handedOff = false;
 
+    final stopwatch = Stopwatch()..start();
+    void log(String stage) {
+      debugPrint('[anitabi] $stage at ${stopwatch.elapsedMilliseconds}ms');
+    }
+
     try {
+      log('start subjectId=$subjectId');
       final animeName = await _fetchSubjectTitle(subjectId, httpClient);
+      log('title fetched');
       final pointsUrl = Uri.parse(
         '$_apiBaseUrl/bangumi/$subjectId/points/detail?haveImage=true',
       );
@@ -75,6 +83,7 @@ class AnitabiApiService {
       } catch (_) {
         return null;
       }
+      log('points fetched (${jsonList.length} raw entries)');
 
       if (jsonList.isEmpty) return null;
 
@@ -87,6 +96,7 @@ class AnitabiApiService {
       int skipped = 0;
       final pendingDownloads = <_PendingCover>[];
 
+      log('transaction start');
       await db.transaction(() async {
         for (final raw in jsonList) {
           if (raw is! Map<String, dynamic>) {
@@ -120,6 +130,8 @@ class AnitabiApiService {
         }
       });
 
+      log('transaction done; imported=$imported skipped=$skipped covers=${pendingDownloads.length}');
+
       // Hand the client off to the background downloader; it closes the
       // client (when we own it) once every worker is done.
       final completion = _downloadCoversInBackground(
@@ -129,6 +141,7 @@ class AnitabiApiService {
         closeClientWhenDone: ownsClient,
       );
       handedOff = true;
+      log('returning; covers running in background');
 
       return AnitabiImportResult(
         animeId: animeId,
