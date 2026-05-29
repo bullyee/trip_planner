@@ -235,6 +235,25 @@ class AnitabiApiService {
     String subjectId,
     http.Client httpClient,
   ) async {
+    // Anitabi's cache is cold on the first request for a subject the
+    // server hasn't touched recently — the very first try often times
+    // out at 15 s but the immediate retry hits the now-warm cache in
+    // ~2-3 s. Retry once before giving up so the user only has to tap
+    // Import once.
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      final result = await _fetchPointsListOnce(subjectId, httpClient);
+      if (result != null) return result;
+      if (attempt == 1) {
+        debugPrint('[anitabi] points fetch failed, retrying once');
+      }
+    }
+    return null;
+  }
+
+  static Future<List<dynamic>?> _fetchPointsListOnce(
+    String subjectId,
+    http.Client httpClient,
+  ) async {
     try {
       final pointsUrl = Uri.parse(
         '$_apiBaseUrl/bangumi/$subjectId/points/detail?haveImage=true',
