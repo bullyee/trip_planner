@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import '../../../core/providers/database_provider.dart';
 import '../providers/camera_provider.dart';
 import '../services/color_match_service.dart';
 import '../services/patch_match_service.dart';
+import '../services/reinhard_match_service.dart';
 
 /// One step in the edit history.
 ///
@@ -14,11 +17,40 @@ import '../services/patch_match_service.dart';
 /// highlight that chip and to label the step in tooltips. Carrying tool
 /// alongside bytes means undo/redo restore both the visible image AND
 /// the chip-selected state in a single hop.
+///
+/// For `tool == 'match'` only: `matchedBaseBytes` holds Reinhard's
+/// full-strength output and `strength` ∈ [0, 1] is the current slider
+/// position. The canvas renders a Stack of the original captured image
+/// + the matched bytes at `opacity = strength` so dragging the slider
+/// is free (Flutter blends in the GPU), and Save flattens the lerp into
+/// a single JPEG via `lerpJpegs` when `strength < 1.0`.
 @immutable
 class _EditState {
   final Uint8List? bytes;
   final String? tool;
-  const _EditState({this.bytes, this.tool});
+  final Uint8List? matchedBaseBytes;
+  final double strength;
+
+  const _EditState({
+    this.bytes,
+    this.tool,
+    this.matchedBaseBytes,
+    this.strength = 1.0,
+  });
+
+  _EditState copyWith({
+    Uint8List? bytes,
+    String? tool,
+    Uint8List? matchedBaseBytes,
+    double? strength,
+  }) {
+    return _EditState(
+      bytes: bytes ?? this.bytes,
+      tool: tool ?? this.tool,
+      matchedBaseBytes: matchedBaseBytes ?? this.matchedBaseBytes,
+      strength: strength ?? this.strength,
+    );
+  }
 }
 
 /// Post-capture editor. Owns its own Scaffold so it sits in place of the
@@ -84,8 +116,9 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
   /// step back through previously-applied filters.
   Future<void> _runMatch(
     String activeTool,
-    Future<Uint8List> Function(MatchArgs) algorithm,
-  ) async {
+    Future<Uint8List> Function(MatchArgs) algorithm, {
+    bool storeMatchedBase = false,
+  }) async {
     final camState = ref.read(cameraProvider);
     final captured = camState.capturedPhoto;
     final reference = camState.referenceImage;
@@ -104,7 +137,14 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
         ),
       );
       if (!mounted) return;
-      setState(() => _pushHistory(_EditState(bytes: result, tool: activeTool)));
+      setState(() => _pushHistory(_EditState(
+            bytes: result,
+            tool: activeTool,
+            // Keep the full-strength match alongside so the slider can
+            // lerp against the original without recomputing the filter.
+            matchedBaseBytes: storeMatchedBase ? result : null,
+            strength: 1.0,
+          )));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -113,6 +153,19 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
     } finally {
       if (mounted) setState(() => _processing = false);
     }
+  }
+
+  /// Updates the strength of the current Match Color state in place.
+  /// Slider drags shouldn't push a new history step every frame, so we
+  /// mutate the current entry — undo still goes back to before Match
+  /// Color was tapped.
+  void _setStrength(double value) {
+    if (_current.tool != 'match' || _current.matchedBaseBytes == null) return;
+    setState(() {
+      final newHistory = List<_EditState>.from(_history);
+      newHistory[_historyIndex] = _current.copyWith(strength: value);
+      _history = newHistory;
+    });
   }
 
   Future<void> _save() async {
@@ -128,9 +181,9 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
       // If there's an in-memory edit, write it over the captured file so
       // the existing savePhoto pipeline copies the edited bytes into app
       // storage rather than the untouched shutter capture.
-      final currentBytes = _current.bytes;
-      if (currentBytes != null) {
-        await captured.writeAsBytes(currentBytes, flush: true);
+      final bytesToWrite = await _resolveBytesForSave(captured);
+      if (bytesToWrite != null) {
+        await captured.writeAsBytes(bytesToWrite, flush: true);
       }
       final ok = await notifier.savePhoto(db);
       if (!mounted) return;
@@ -150,6 +203,31 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
 
   void _back() {
     ref.read(cameraProvider.notifier).clearCapture();
+  }
+
+  /// Resolves the bytes that should be written over the captured file at
+  /// Save time. For Match Color with `strength < 1.0`, this lerps the
+  /// original captured bytes against the matched bytes — at strength 1
+  /// we can skip the lerp because the matched bytes already are the
+  /// answer; at strength 0 we skip the overwrite entirely so the user
+  /// keeps the untouched shutter capture.
+  Future<Uint8List?> _resolveBytesForSave(File captured) async {
+    final state = _current;
+    if (state.tool == 'match' && state.matchedBaseBytes != null) {
+      final t = state.strength.clamp(0.0, 1.0);
+      if (t >= 0.999) return state.matchedBaseBytes;
+      if (t <= 0.001) return null; // original — don't overwrite
+      final origBytes = await captured.readAsBytes();
+      return compute(
+        lerpJpegs,
+        LerpArgs(
+          jpegA: origBytes,
+          jpegB: state.matchedBaseBytes!,
+          strength: t,
+        ),
+      );
+    }
+    return state.bytes;
   }
 
   @override
@@ -233,11 +311,38 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
                       Stack(
                         fit: StackFit.expand,
                         children: [
+                          // For Match Color: stack the original captured
+                          // image and the full-strength Reinhard output,
+                          // overlaying the matched bytes at `opacity =
+                          // strength`. Flutter blends in the GPU, so the
+                          // slider can drag at 60 fps without re-running
+                          // the filter. For all other tools the canvas
+                          // is a single Image of either the JPEG bytes
+                          // or the original file.
                           Center(
-                            child: currentBytes != null
-                                ? Image.memory(currentBytes,
-                                    fit: BoxFit.contain)
-                                : Image.file(captured, fit: BoxFit.contain),
+                            child: _current.tool == 'match' &&
+                                    _current.matchedBaseBytes != null
+                                ? Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      Image.file(captured,
+                                          fit: BoxFit.contain),
+                                      Opacity(
+                                        opacity: _current.strength
+                                            .clamp(0.0, 1.0),
+                                        child: Image.memory(
+                                          _current.matchedBaseBytes!,
+                                          fit: BoxFit.contain,
+                                          gaplessPlayback: true,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : (currentBytes != null
+                                    ? Image.memory(currentBytes,
+                                        fit: BoxFit.contain)
+                                    : Image.file(captured,
+                                        fit: BoxFit.contain)),
                           ),
                           if (hasReference && _showOverlay)
                             Positioned.fill(
@@ -290,6 +395,24 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
                       scrollDirection: Axis.horizontal,
                       children: [
                         _ToolChip(
+                          icon: Icons.palette,
+                          label: 'Match Color',
+                          enabled: hasReference && !_processing,
+                          disabledHint: hasReference
+                              ? null
+                              : 'Pick a reference image first',
+                          selected: activeTool == 'match',
+                          // Reinhard LAB transfer at full strength. The
+                          // slider below the chip strip lets the user
+                          // dial it back via Flutter Stack opacity, no
+                          // recompute needed.
+                          onTap: () => _runMatch(
+                            'match',
+                            reinhardMatch,
+                            storeMatchedBase: true,
+                          ),
+                        ),
+                        _ToolChip(
                           icon: Icons.brightness_6,
                           label: 'Enhance (Brightness)',
                           enabled: hasReference && !_processing,
@@ -330,6 +453,45 @@ class _PhotoEditorScreenState extends ConsumerState<PhotoEditorScreen> {
                       ],
                     ),
                   ),
+                  if (activeTool == 'match' &&
+                      _current.matchedBaseBytes != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(left: 4, right: 6),
+                          child: Text(
+                            'Strength',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              activeTrackColor: theme.colorScheme.primary,
+                              inactiveTrackColor: Colors.white24,
+                              thumbColor: theme.colorScheme.primary,
+                              overlayColor: theme.colorScheme.primary
+                                  .withValues(alpha: 0.2),
+                            ),
+                            child: Slider(
+                              value: _current.strength.clamp(0.0, 1.0),
+                              onChanged: _setStrength,
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 44,
+                          child: Text(
+                            '${(_current.strength * 100).round()}%',
+                            style: const TextStyle(color: Colors.white70),
+                            textAlign: TextAlign.right,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Align(
                     alignment: Alignment.centerRight,
