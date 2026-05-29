@@ -116,7 +116,13 @@ class _TagEditScreenState extends ConsumerState<TagEditScreen> {
       description: _descController.text,
     );
 
-    if (success && mounted) context.pop();
+    if (success && mounted) {
+      context.pop();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to save tag. Please try again.')),
+      );
+    }
   }
 
   Future<void> _confirmDelete() async {

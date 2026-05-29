@@ -129,7 +129,13 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
       description: _descController.text,
     );
 
-    if (success && mounted) context.pop();
+    if (success && mounted) {
+      context.pop();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to save anime. Please try again.')),
+      );
+    }
   }
 
   Future<void> _confirmDelete() async {

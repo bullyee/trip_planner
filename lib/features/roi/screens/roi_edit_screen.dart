@@ -105,6 +105,12 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
       existingCreatedAt: _existing?.createdAt,
     );
 
-    if (success && mounted) context.pop();
+    if (success && mounted) {
+      context.pop();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to save ROI. Please try again.')),
+      );
+    }
   }
 }

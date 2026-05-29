@@ -50,15 +50,15 @@ class PoiController extends _$PoiController {
       );
 
       // Execute database operations 
-      // (TODO: Consider wrapping these in a db.transaction() for safety)
-      if (id != null) {
-        await db.updatePoi(companion);
-      } else {
-        await db.insertPoi(companion);
-      }
-
-      await db.setAnimesForPoi(poiId, animeIds);
-      await db.setTagsForPoi(poiId, tagIds);
+      await db.transaction(() async {
+        if (id != null) {
+          await db.updatePoi(companion);
+        } else {
+          await db.insertPoi(companion);
+        }
+        await db.setAnimesForPoi(poiId, animeIds);
+        await db.setTagsForPoi(poiId, tagIds);
+      });
 
       // Success: return to normal data state
       state = const AsyncValue.data(null);
