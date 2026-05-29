@@ -8,6 +8,7 @@ import '../../features/poi/screens/poi_create_screen.dart';
 import '../../features/poi/screens/poi_browse_screen.dart';
 import '../../features/poi/screens/pois_by_filter_screen.dart';
 import '../../features/anime/screens/anime_edit_screen.dart';
+import '../../features/anime/screens/bangumi_search_screen.dart';
 import '../../features/tag/screens/tag_edit_screen.dart';
 import '../../features/calendar/screens/calendar_screen.dart';
 import '../../features/camera/screens/camera_screen.dart';
@@ -106,6 +107,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/sync',
       builder: (context, state) => const SyncScreen(),
+    ),
+    GoRoute(
+      path: '/import/bangumi',
+      builder: (context, state) => const BangumiSearchScreen(),
     ),
   ],
 );

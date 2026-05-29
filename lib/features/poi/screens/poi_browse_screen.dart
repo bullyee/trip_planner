@@ -91,6 +91,11 @@ List<SpeedDialAction> buildDefaultAddActions(
       icon: Icons.label_outline,
       onTap: () => context.push('/tags/new/edit'),
     ),
+    SpeedDialAction(
+      label: 'Import from Bangumi',
+      icon: Icons.cloud_download,
+      onTap: () => context.push('/import/bangumi'),
+    ),
   ];
 }
 
