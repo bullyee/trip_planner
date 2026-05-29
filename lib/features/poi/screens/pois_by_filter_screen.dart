@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/database/database.dart';
+import '../providers/poi_provider.dart';
 import '../../../core/widgets/add_speed_dial.dart';
 import '../../roi/providers/roi_provider.dart';
 import '../../anime/providers/anime_provider.dart';
@@ -111,6 +114,39 @@ class PoisByTagScreen extends ConsumerWidget {
   }
 }
 
+/// Small leading thumbnail used on POI list tiles. Prefers a user-set
+/// cover, otherwise falls back to the first Anitabi-imported reference
+/// image. When neither exists (or the file is gone) renders the generic
+/// location icon.
+class _PoiThumbnail extends ConsumerWidget {
+  final Poi poi;
+  const _PoiThumbnail({required this.poi});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final refsAsync = ref.watch(referenceImagesByPoiProvider(poi.id));
+    String? uri = poi.coverImageUri;
+    uri ??= refsAsync.maybeWhen(
+      data: (refs) => refs.isEmpty ? null : refs.first.localUri,
+      orElse: () => null,
+    );
+    if (uri == null) return const Icon(Icons.location_on);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Image.file(
+          File(uri),
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const ColoredBox(
+              color: Colors.black12, child: Icon(Icons.location_on)),
+        ),
+      ),
+    );
+  }
+}
+
 class _PoiListView extends ConsumerWidget {
   final AsyncValue poisAsync;
   final String emptyText;
@@ -140,7 +176,7 @@ class _PoiListView extends ConsumerWidget {
             final roiName = poi.roiId == null ? null : roiMap[poi.roiId]?.name;
             return Card(
               child: ListTile(
-                leading: const Icon(Icons.location_on),
+                leading: _PoiThumbnail(poi: poi),
                 title: Text(poi.name),
                 subtitle: roiName != null ? Text(roiName) : null,
                 trailing: const Icon(Icons.chevron_right),

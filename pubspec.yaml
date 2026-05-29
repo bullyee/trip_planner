@@ -75,6 +75,10 @@ dev_dependencies:
   json_serializable: ^6.9.4
   freezed: ^3.0.0
 
+  # Test helpers (used to mock plugin platform implementations)
+  path_provider_platform_interface: ^2.1.0
+  plugin_platform_interface: ^2.1.0
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
