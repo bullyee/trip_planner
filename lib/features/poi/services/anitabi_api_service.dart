@@ -34,9 +34,34 @@ class AnitabiImportResult {
   });
 }
 
+/// Thrown when Anitabi can't be reached (network error or repeated
+/// timeouts), as distinct from a subject that simply has no POIs. Lets the
+/// UI tell "check your connection" apart from "this anime has none".
+class AnitabiUnavailableException implements Exception {
+  final String message;
+  const AnitabiUnavailableException([this.message = 'Anitabi is unreachable']);
+  @override
+  String toString() => 'AnitabiUnavailableException: $message';
+}
+
 class AnitabiApiService {
   static const String _apiBaseUrl = 'https://api.anitabi.cn';
   static const int _coverDownloadConcurrency = 5;
+
+  /// Warm the DNS + TLS path to Anitabi for this session. The first network
+  /// call after launch pays DNS resolution, a TLS handshake, and (on
+  /// cellular) the radio waking up, which is why the very first import of a
+  /// session is slow while every later one reuses the cached connection.
+  /// Calling this when the search screen opens pays that cost up front, off
+  /// the import's critical path. Fire-and-forget.
+  static void prewarmConnection() {
+    final client = http.Client();
+    client
+        .get(Uri.parse(_apiBaseUrl))
+        .timeout(const Duration(seconds: 10))
+        .then((_) {}, onError: (_) {})
+        .whenComplete(client.close);
+  }
 
   /// Fetch POIs for a bangumi subject from Anitabi, upsert the Anime row by
   /// bangumi_id (so re-import dedupes), insert each POI, link them via the
@@ -51,6 +76,7 @@ class AnitabiApiService {
   static Future<AnitabiImportResult?> importBangumiSubject(
     AppDatabase db,
     String subjectId, {
+    String? fallbackName,
     http.Client? client,
   }) async {
     final httpClient = client ?? http.Client();
@@ -58,18 +84,28 @@ class AnitabiApiService {
     var handedOff = false;
 
     try {
-      // Title and points endpoints are independent — fire them in
-      // parallel so the slower of the two becomes the wall-clock cost
-      // instead of the sum.
+      // Anitabi's title is the Japanese name, which matches the POI data, so
+      // it stays the source of truth. But the title call is a 5s, no-retry
+      // request that on a cold first import times out and leaves the anime
+      // named "Bangumi <id>". When that happens, fall back to the name the
+      // caller already has from Bangumi search (its original/Japanese
+      // `name`, not the Chinese `name_cn`) instead of the placeholder.
+      //
+      // Title and points are independent — fire them in parallel so the
+      // slower of the two becomes the wall-clock cost instead of the sum.
       final futures = await Future.wait([
-        _fetchSubjectTitle(subjectId, httpClient),
+        _fetchSubjectTitle(subjectId, httpClient, fallbackName: fallbackName),
         _fetchPointsList(subjectId, httpClient),
       ]);
       final animeName = futures[0] as String;
       final jsonList = futures[1] as List<dynamic>?;
 
-      if (jsonList == null) return null;
-
+      // Distinguish "couldn't reach Anitabi" (null = network error / timeout
+      // after retries) from "subject genuinely has no POIs" (empty list), so
+      // the UI shows the right message instead of a misleading "no POIs".
+      if (jsonList == null) {
+        throw const AnitabiUnavailableException();
+      }
       if (jsonList.isEmpty) return null;
 
       final animeId = await db.upsertAnimeByBangumiId(
@@ -100,11 +136,26 @@ class AnitabiApiService {
           }
 
           try {
+            final poiId = companion.id.value;
+            final alreadyImported = await (db.select(db.pois)
+                  ..where((t) => t.id.equals(poiId)))
+                .getSingleOrNull();
+
             await db.into(db.pois).insert(
                   companion,
                   mode: InsertMode.insertOrIgnore,
                 );
-            await db.addAnimeToPoi(companion.id.value, animeId);
+            // Anime link is idempotent (insertOrIgnore), so it's safe to
+            // re-run; this keeps a shared location linked if it shows up
+            // under another subject.
+            await db.addAnimeToPoi(poiId, animeId);
+
+            if (alreadyImported != null) {
+              // Seen in a previous import: don't re-queue the cover (which
+              // would add another reference_images row) or double-count it.
+              skipped++;
+              continue;
+            }
             imported++;
 
             final rawImage = (raw['image'] ?? '').toString();
@@ -112,7 +163,7 @@ class AnitabiApiService {
               final url =
                   rawImage.replaceAll('?plan=h160', '?plan=h360');
               pendingDownloads.add(_PendingCover(
-                poiId: companion.id.value,
+                poiId: poiId,
                 url: url,
                 metadata: _referenceMetadata(raw),
               ));
@@ -203,10 +254,9 @@ class AnitabiApiService {
   ) async {
     // Anitabi's cache is cold on the first request for a subject the
     // server hasn't touched recently — the very first try often times
-    // out at 15 s but the immediate retry hits the now-warm cache in
-    // ~2-3 s. Retry once before giving up so the user only has to tap
-    // Import once.
-    for (var attempt = 1; attempt <= 2; attempt++) {
+    // out at 15 s but a follow-up hits the now-warm cache in ~2-3 s. Try
+    // up to three times before giving up.
+    for (var attempt = 1; attempt <= 3; attempt++) {
       final result = await _fetchPointsListOnce(subjectId, httpClient);
       if (result != null) return result;
     }
@@ -240,8 +290,9 @@ class AnitabiApiService {
 
   static Future<String> _fetchSubjectTitle(
     String subjectId,
-    http.Client httpClient,
-  ) async {
+    http.Client httpClient, {
+    String? fallbackName,
+  }) async {
     try {
       final response = await httpClient
           .get(Uri.parse('$_apiBaseUrl/bangumi/$subjectId'))
@@ -256,7 +307,10 @@ class AnitabiApiService {
     } catch (_) {
       // fall through to fallback
     }
-    return 'Bangumi $subjectId';
+    // Anitabi title unavailable: prefer the caller's Bangumi name over the
+    // bare "Bangumi <id>" placeholder.
+    final fb = fallbackName?.trim();
+    return (fb != null && fb.isNotEmpty) ? fb : 'Bangumi $subjectId';
   }
 
   static double? _toDouble(dynamic v) {
@@ -300,7 +354,10 @@ class AnitabiApiService {
         'Ep $ep - $timeString\nSource: $origin\n$originUrl'.trim();
 
     return PoisCompanion(
-      id: Value(const Uuid().v4()),
+      // Deterministic id derived from the Anitabi point id so re-importing
+      // the same subject hits insertOrIgnore instead of creating a fresh
+      // UUID (and a duplicate POI) every run.
+      id: Value('anitabi:$id'),
       name: Value(name),
       lat: Value(lat),
       lng: Value(lng),

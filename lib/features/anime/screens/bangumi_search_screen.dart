@@ -28,6 +28,14 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
   String? _importing; // bangumi subject id currently being imported
 
   @override
+  void initState() {
+    super.initState();
+    // Pay the session's first DNS + TLS cost up front so the first import
+    // isn't the one that eats it (and times out). Fire-and-forget.
+    AnitabiApiService.prewarmConnection();
+  }
+
+  @override
   void dispose() {
     _debounce?.cancel();
     _queryController.dispose();
@@ -95,7 +103,30 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
     setState(() => _importing = subject.id);
 
     final db = ref.read(databaseProvider);
-    final result = await AnitabiApiService.importBangumiSubject(db, subject.id);
+    final AnitabiImportResult? result;
+    try {
+      result = await AnitabiApiService.importBangumiSubject(
+        db,
+        subject.id,
+        // Anitabi's Japanese title is preferred; this is only the fallback
+        // when that fetch fails, so use Bangumi's original (Japanese) name,
+        // not the Chinese name_cn.
+        fallbackName: subject.name,
+      );
+    } on AnitabiUnavailableException {
+      // Network/timeout — not the same as "this anime has no POIs".
+      if (!mounted) return;
+      setState(() => _importing = null);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            "Couldn't reach Anitabi for \"${subject.nameCn ?? subject.name}\". "
+            'Check your connection and tap Import again.',
+          ),
+        ),
+      );
+      return;
+    }
 
     if (!mounted) return;
     setState(() => _importing = null);
