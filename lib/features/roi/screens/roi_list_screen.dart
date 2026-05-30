@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:drift/drift.dart' show Value;
-import 'package:uuid/uuid.dart';
+//import 'package:drift/drift.dart' show Value;
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
 import '../providers/roi_provider.dart';
+import '../controllers/roi_controller.dart';
 
 class RoiListScreen extends ConsumerWidget {
   const RoiListScreen({super.key});
@@ -94,15 +92,13 @@ class RoiListScreen extends ConsumerWidget {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
 
-              final db = ref.read(databaseProvider);
-              db.insertRoi(RoisCompanion.insert(
-                id: const Uuid().v4(),
+              // 🌟 CLEAN UI: Delegate the action to the controller.
+              // No database syntax, no Uuid(), no Value() in the UI layer.
+              ref.read(roiControllerProvider.notifier).addRoi(
                 name: name,
-                description: Value(descController.text.trim().isEmpty
-                    ? null
-                    : descController.text.trim()),
-                createdAt: DateTime.now().millisecondsSinceEpoch,
-              ));
+                description: descController.text,
+              );
+              
               Navigator.pop(context);
             },
             child: const Text('Create'),
