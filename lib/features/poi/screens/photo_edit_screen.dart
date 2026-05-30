@@ -696,13 +696,21 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
         ));
         await tempFile.writeAsBytes(composed, flush: true);
 
-        final ok = await persistMediaAsset(
-          db: db,
-          source: tempFile,
-          poiId: widget.poiId,
-          type: 'comparison_image',
-          referenceImageId: _referenceImageId,
-        );
+        final bool ok;
+        try {
+          ok = await persistMediaAsset(
+            db: db,
+            source: tempFile,
+            poiId: widget.poiId,
+            type: 'comparison_image',
+            referenceImageId: _referenceImageId,
+          );
+        } finally {
+          // persistMediaAsset copies the stitch into permanent storage, so
+          // the systemTemp staging file is no longer needed — delete it to
+          // stop the temp dir from growing on every Compare save.
+          if (await tempFile.exists()) await tempFile.delete();
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
