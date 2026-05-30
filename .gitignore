@@ -53,8 +53,3 @@ prd_page*.png
 
 # Flutter plugin registry
 .flutter-plugins
-
-# Firebase config files
-lib/firebase_options.dart
-android/app/google-services.json
-ios/Runner/GoogleService-Info.plist
