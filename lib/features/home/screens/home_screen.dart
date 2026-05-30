@@ -1,19 +1,66 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:trip_planner/features/auth/providers/auth_provider.dart';
 
-class HomeScreen extends StatelessWidget {
+
+class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    
+    // Watch the authentication state to determine which button to show
+    final authState = ref.watch(authStateChangesProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trip Planner'),
+        actions: [
+          authState.when(
+            data: (user) {
+              final isLoggedIn = user != null;
+              if (isLoggedIn) {
+                // Show logout button if the user is already authenticated
+                return IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'Sign Out',
+                  onPressed: () async {
+                    // Make sure to use your actual auth provider's sign out method
+                    await ref.read(authControllerProvider.notifier).signOut();
+                  },
+                );
+              } else {
+                // Show an opt-in login button for offline-first users
+                return TextButton.icon(
+                  icon: const Icon(Icons.cloud_sync),
+                  label: const Text('Sign In'),
+                  onPressed: () => context.push('/login'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.onPrimary,
+                  ),
+                );
+              }
+            },
+            // Show a subtle loading indicator while checking auth state
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+            // Hide the button gracefully if an error occurs
+            error: (_, _) => const SizedBox.shrink(),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Padding(

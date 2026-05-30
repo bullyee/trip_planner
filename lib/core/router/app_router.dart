@@ -25,33 +25,38 @@ import '../../features/home/screens/sync_screen.dart';
 /// Wrap the existing router in a Provider to react to Auth state changes.
 final routerProvider = Provider<GoRouter>((ref) {
   // Watch the auth state from our previously created provider.
-  final authState = ref.watch(authStateChangesProvider);
+  ref.watch(authStateChangesProvider);
 
   return GoRouter(
     initialLocation: '/',
     
     // AUTH REDIRECT LOGIC
     redirect: (context, state) {
-      // If Firebase is still initializing or checking state, don't redirect yet.
-      if (authState.isLoading || authState.hasError) return null;
+      final authState = ref.read(authStateChangesProvider);
+      
+      // 1. Loading state: Do not force redirect, wait for resolution.
+      if (authState.isLoading) return null; 
 
-      final bool isLoggedIn = authState.valueOrNull != null;
-      final bool isGoingToLogin = state.matchedLocation == '/login';
+      // 2. Safely check if user is logged in (handles both data and error states cleanly).
+      final isLoggedIn = authState.valueOrNull != null;
 
-      // 1. If not logged in and not on login page -> Send to /login
-      if (!isLoggedIn && !isGoingToLogin) {
+      // 3. Define explicit cloud-only routes that require authentication.
+      final isCloudRoute = state.uri.path.startsWith('/sync') || 
+                           state.uri.path.startsWith('/cloud-share');
+
+      // 4. Gatekeeper: Unauthenticated users trying to access cloud routes.
+      if (!isLoggedIn && isCloudRoute) {
         return '/login';
       }
 
-      // 2. If already logged in and trying to go to login page -> Send to home
-      if (isLoggedIn && isGoingToLogin) {
+      // 5. Anti-bounce: Authenticated users should not see the login screen.
+      if (isLoggedIn && state.uri.path == '/login') {
         return '/';
       }
 
-      // No redirect needed for other cases
+      // 6. DEFAULT (Offline-first core): Allow all other navigation (e.g., '/', '/map', '/pois').
       return null;
     },
-
     routes: [
       // Add the new Login route
       GoRoute(
