@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
@@ -55,21 +56,32 @@ class IsnetCutoutService {
     await _ensureSession();
     final session = _session!;
 
-    // Resize to the model input (ignore aspect — the mask is mapped back to the
-    // original dims later, so the squash cancels out).
-    final resized = img.copyResize(
+    // Letterbox the original into the square model input — a plain squash
+    // distorts the character (thin parts like limbs/hair fall below the model's
+    // resolution and get dropped). Preserve aspect, pad with black; the same
+    // letterbox transform is recomputed in buildCutoutPng to map the mask back.
+    final scale =
+        math.min(inputRes / original.width, inputRes / original.height);
+    final newW = math.max(1, (original.width * scale).round());
+    final newH = math.max(1, (original.height * scale).round());
+    final padX = ((inputRes - newW) / 2).floor();
+    final padY = ((inputRes - newH) / 2).floor();
+    final fit = img.copyResize(
       original,
-      width: inputRes,
-      height: inputRes,
+      width: newW,
+      height: newH,
       interpolation: img.Interpolation.cubic,
     );
+    final canvas = img.Image(width: inputRes, height: inputRes, numChannels: 3);
+    img.fill(canvas, color: img.ColorRgb8(0, 0, 0));
+    img.compositeImage(canvas, fit, dstX: padX, dstY: padY);
 
     // Build NCHW float tensor (R,G,B planes), x/255 - 0.5. Capture luma too.
     // Read the raw RGB byte buffer once — getPixel() per-pixel is an order of
     // magnitude slower (allocates a Pixel view each call) and was freezing the
     // UI. This loop is now sub-100ms for 1024².
     const plane = inputRes * inputRes;
-    final rgb = resized.getBytes(order: img.ChannelOrder.rgb);
+    final rgb = canvas.getBytes(order: img.ChannelOrder.rgb);
     final input = Float32List(3 * plane);
     final guideLuma = Float32List(plane);
     for (var i = 0; i < plane; i++) {

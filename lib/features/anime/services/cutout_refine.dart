@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
@@ -14,26 +15,46 @@ import 'isnet_cutout_service.dart';
 /// - feather: box-blur (×3 ≈ gaussian) — softens the remaining edge.
 class RefineOptions {
   final bool guided;
-  final int erode; // min-filter radius, px @1024
+
+  /// Soft-mask multiplier, 1 = off. >1 recovers faint, low-confidence
+  /// foreground the model almost dropped ("keep more of the character").
+  final double gain;
+
+  /// Fill background pockets fully enclosed by foreground (interior holes).
+  final bool fillHoles;
+
   final double feather; // blur radius, px @1024
   const RefineOptions({
     this.guided = false,
-    this.erode = 0,
+    this.gain = 1,
+    this.fillHoles = false,
     this.feather = 0,
   });
 }
 
 /// Refines [m] per [opt] and composites onto [original] → transparent PNG bytes.
-Uint8List buildCutoutPng(img.Image original, IsnetMask m, RefineOptions opt) {
+///
+/// [brush] is an optional per-pixel add/erase override at [original] resolution
+/// (length w*h: 0 = none, 1 = force opaque, 2 = force transparent) — the
+/// add-back brush, applied after the soft mask so the user can recover dropped
+/// parts or cut extras with guaranteed effect.
+Uint8List buildCutoutPng(img.Image original, IsnetMask m, RefineOptions opt,
+    {Uint8List? brush}) {
   final res = m.res;
   var mask = Float32List.fromList(m.mask);
 
-  // Order matters: guided (edge-snap) → erode (de-halo) → feather (soften).
+  // Order: guided (edge-snap) → gain (recover faint fg) → fill holes →
+  // feather (soften).
   if (opt.guided) {
     mask = _guidedFilter(m.guideLuma, mask, res, res, radius: 8, eps: 1e-4);
   }
-  if (opt.erode > 0) {
-    mask = _erode(mask, res, res, opt.erode);
+  if (opt.gain != 1.0) {
+    for (var i = 0; i < mask.length; i++) {
+      mask[i] = (mask[i] * opt.gain).clamp(0.0, 1.0);
+    }
+  }
+  if (opt.fillHoles) {
+    mask = _fillHoles(mask, res, res);
   }
   if (opt.feather > 0) {
     mask = _boxBlur(mask, res, res, opt.feather.round(), passes: 3);
@@ -43,15 +64,26 @@ Uint8List buildCutoutPng(img.Image original, IsnetMask m, RefineOptions opt) {
   // other main-thread freeze (Pixel-object alloc per call over a full-res image).
   final w = original.width;
   final h = original.height;
+  // Same letterbox transform segment() used, recomputed to map mask → original.
+  final scale = math.min(res / w, res / h);
+  final padX = (res - w * scale) / 2;
+  final padY = (res - h * scale) / 2;
   final origRgb = original.getBytes(order: img.ChannelOrder.rgb);
   final out = Uint8List(w * h * 4);
-  final sx = res / w;
-  final sy = res / h;
   var o = 0;
   for (var y = 0; y < h; y++) {
-    final my = y * sy;
+    final my = padY + y * scale;
     for (var x = 0; x < w; x++) {
-      final a = _sampleBilinear(mask, res, res, x * sx, my).clamp(0.0, 1.0);
+      var a =
+          _sampleBilinear(mask, res, res, padX + x * scale, my).clamp(0.0, 1.0);
+      if (brush != null) {
+        final b = brush[y * w + x];
+        if (b == 1) {
+          a = 1.0;
+        } else if (b == 2) {
+          a = 0.0;
+        }
+      }
       final si = (y * w + x) * 3;
       out[o++] = origRgb[si];
       out[o++] = origRgb[si + 1];
@@ -67,6 +99,36 @@ Uint8List buildCutoutPng(img.Image original, IsnetMask m, RefineOptions opt) {
     order: img.ChannelOrder.rgba,
   );
   return img.encodePng(outImg);
+}
+
+/// Feather (and optionally erode) the alpha of an existing RGBA cutout PNG.
+/// Used to soften hard-edged cutouts like ML Kit subject bitmaps — erode first
+/// to pull the edge into solid foreground (kills the halo / dark fringe), then
+/// feather to soften. Returns the input unchanged if both are zero.
+Uint8List featherCutoutPng(Uint8List rgbaPng, {int erode = 0, double feather = 0}) {
+  if (erode <= 0 && feather <= 0) return rgbaPng;
+  final im = img.decodeImage(rgbaPng);
+  if (im == null) return rgbaPng;
+  final w = im.width;
+  final h = im.height;
+  final rgba = im.getBytes(order: img.ChannelOrder.rgba);
+  var a = Float32List(w * h);
+  for (var i = 0; i < w * h; i++) {
+    a[i] = rgba[i * 4 + 3] / 255.0;
+  }
+  if (erode > 0) a = _erode(a, w, h, erode);
+  if (feather > 0) a = _boxBlur(a, w, h, feather.round(), passes: 3);
+  for (var i = 0; i < w * h; i++) {
+    rgba[i * 4 + 3] = (a[i].clamp(0.0, 1.0) * 255).round();
+  }
+  final out = img.Image.fromBytes(
+    width: w,
+    height: h,
+    bytes: rgba.buffer,
+    numChannels: 4,
+    order: img.ChannelOrder.rgba,
+  );
+  return img.encodePng(out);
 }
 
 // ---- mask ops (row-major Float32, 0..1) ---------------------------------
@@ -135,6 +197,43 @@ Float32List _erode(Float32List src, int w, int h, int e) {
       }
       dst[y * w + x] = mn;
     }
+  }
+  return dst;
+}
+
+/// Fill background pockets fully enclosed by foreground: flood-fill background
+/// inward from the borders, then promote any unreached below-threshold pixel
+/// (an interior hole) to solid foreground.
+Float32List _fillHoles(Float32List src, int w, int h, {double thr = 0.5}) {
+  final n = w * h;
+  final reached = Uint8List(n); // 1 = background reachable from the border
+  final stack = <int>[];
+  void seed(int i) {
+    if (src[i] < thr && reached[i] == 0) {
+      reached[i] = 1;
+      stack.add(i);
+    }
+  }
+
+  for (var x = 0; x < w; x++) {
+    seed(x);
+    seed((h - 1) * w + x);
+  }
+  for (var y = 0; y < h; y++) {
+    seed(y * w);
+    seed(y * w + w - 1);
+  }
+  while (stack.isNotEmpty) {
+    final i = stack.removeLast();
+    final x = i % w, y = i ~/ w;
+    if (x > 0) seed(i - 1);
+    if (x < w - 1) seed(i + 1);
+    if (y > 0) seed(i - w);
+    if (y < h - 1) seed(i + w);
+  }
+  final dst = Float32List.fromList(src);
+  for (var i = 0; i < n; i++) {
+    if (src[i] < thr && reached[i] == 0) dst[i] = 1.0; // enclosed hole
   }
   return dst;
 }

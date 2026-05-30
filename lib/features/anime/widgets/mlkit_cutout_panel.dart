@@ -6,46 +6,39 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_subject_segmentation/google_mlkit_subject_segmentation.dart';
 import 'package:image/image.dart' as img;
-import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../services/cutout_refine.dart';
-import '../widgets/cutout_checker.dart';
+import 'cutout_checker.dart';
 
-/// SPIKE — anime-cutout proof (Path A: ML Kit Subject Segmentation, on-device,
-/// Android). Pick a reference image, optionally drag a BOX to constrain to the
-/// object, run auto subject segmentation, then tap a detected subject's
-/// transparent-PNG cutout.
-///
-/// ML Kit has no prompt input — it auto-detects the prominent subjects. A box
-/// simply CROPS the image before segmenting so the model focuses on the region
-/// you want. (A brush/pre-mask was tried and removed: blacking out the
-/// background strips the context ML Kit needs, so it detects poorly. Real
-/// freeform prompting needs SAM, not ML Kit.) Throwaway screen at /cutout-spike;
-/// see docs/anime-cutout-decision.md.
-class CutoutSpikeScreen extends StatefulWidget {
-  const CutoutSpikeScreen({super.key});
+/// Reusable ML Kit (Google) subject-cutout panel: optionally box-crop [source],
+/// auto-detect subjects, tap one, feather its edge. Reports the current cutout
+/// PNG via [onResult]. Mirrors [IsnetCutoutPanel]'s contract so the collage
+/// cutout editor can swap engines.
+class MlkitCutoutPanel extends StatefulWidget {
+  final File source;
+  final ValueChanged<Uint8List?> onResult;
+  const MlkitCutoutPanel({
+    super.key,
+    required this.source,
+    required this.onResult,
+  });
 
   @override
-  State<CutoutSpikeScreen> createState() => _CutoutSpikeScreenState();
+  State<MlkitCutoutPanel> createState() => _MlkitCutoutPanelState();
 }
 
-class _CutoutSpikeScreenState extends State<CutoutSpikeScreen> {
-  final _picker = ImagePicker();
-
-  File? _imageFile;
+class _MlkitCutoutPanelState extends State<MlkitCutoutPanel> {
   int _origW = 0;
   int _origH = 0;
 
-  // Box ROI in ORIGINAL-IMAGE pixel coords (null = whole image).
   Rect? _roi;
   Offset? _dragStart;
 
   List<Subject> _results = const [];
   int? _selected;
 
-  // 邊緣羽化 — applied to the selected subject's cutout alpha.
   double _erode = 0;
   double _feather = 4;
   Uint8List? _refinedPng;
@@ -53,52 +46,58 @@ class _CutoutSpikeScreenState extends State<CutoutSpikeScreen> {
   bool _processing = false;
   String? _status;
 
-  Future<void> _pickImage() async {
-    final picked = await _picker.pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
-    final file = File(picked.path);
-    final bytes = await file.readAsBytes();
+  @override
+  void initState() {
+    super.initState();
+    _readDims();
+  }
+
+  @override
+  void didUpdateWidget(MlkitCutoutPanel old) {
+    super.didUpdateWidget(old);
+    if (old.source.path != widget.source.path) _readDims();
+  }
+
+  Future<void> _readDims() async {
+    final bytes = await widget.source.readAsBytes();
     final codec = await ui.instantiateImageCodec(bytes);
     final frame = await codec.getNextFrame();
-    final w = frame.image.width;
-    final h = frame.image.height;
+    final w = frame.image.width, h = frame.image.height;
     frame.image.dispose();
+    if (!mounted) return;
     setState(() {
-      _imageFile = file;
       _origW = w;
       _origH = h;
       _roi = null;
       _results = const [];
       _selected = null;
       _refinedPng = null;
-      _status = 'Optionally drag a box around the object, then "Cut out".';
+      _status = 'Optionally box the object, then "Cut out".';
     });
+    widget.onResult(null);
   }
 
-  // Crop to the ROI before segmenting (null ROI = whole image).
   Future<File> _cropToBox() async {
     final roi = _roi;
-    if (roi == null || _imageFile == null) return _imageFile!;
+    if (roi == null) return widget.source;
     final left = roi.left.clamp(0, (_origW - 1).toDouble());
     final top = roi.top.clamp(0, (_origH - 1).toDouble());
     final width = roi.width.clamp(1, _origW - left).toDouble();
     final height = roi.height.clamp(1, _origH - top).toDouble();
-
-    final decoded = img.decodeImage(await _imageFile!.readAsBytes());
-    if (decoded == null) return _imageFile!;
+    final decoded = img.decodeImage(await widget.source.readAsBytes());
+    if (decoded == null) return widget.source;
     final crop = img.copyCrop(decoded,
         x: left.round(),
         y: top.round(),
         width: width.round(),
         height: height.round());
     final dir = await getTemporaryDirectory();
-    final path = p.join(dir.path, 'cutout_roi_crop.png');
+    final path = p.join(dir.path, 'mlkit_roi_crop.png');
     await File(path).writeAsBytes(img.encodePng(crop), flush: true);
     return File(path);
   }
 
   Future<void> _segment() async {
-    if (_imageFile == null) return;
     setState(() {
       _processing = true;
       _results = const [];
@@ -106,7 +105,7 @@ class _CutoutSpikeScreenState extends State<CutoutSpikeScreen> {
       _refinedPng = null;
       _status = _roi != null ? 'Segmenting selection…' : 'Segmenting whole…';
     });
-
+    widget.onResult(null);
     final segmenter = SubjectSegmenter(
       options: SubjectSegmenterOptions(
         enableForegroundBitmap: false,
@@ -126,96 +125,60 @@ class _CutoutSpikeScreenState extends State<CutoutSpikeScreen> {
         _results = result.subjects;
         _processing = false;
         _status = result.subjects.isEmpty
-            ? 'No subjects detected — tighten the box around the object.'
+            ? 'No subjects detected — tighten the box.'
             : '${result.subjects.length} subject'
-                '${result.subjects.length == 1 ? '' : 's'} — tap a cutout below.';
+                '${result.subjects.length == 1 ? '' : 's'} — tap one below.';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _processing = false;
-        _status = 'Failed (model may still be downloading — retry): $e';
+        _status = 'Failed (model may be downloading — retry): $e';
       });
     } finally {
       await segmenter.close();
     }
   }
 
-  // Feather/erode the selected subject's alpha. Fast (small subject bitmap),
-  // so it runs synchronously inside setState on selection / slider change.
   void _applyRefine() {
     final i = _selected;
     final bmp = i == null ? null : _results[i].bitmap;
     _refinedPng = bmp == null
         ? null
         : featherCutoutPng(bmp, erode: _erode.round(), feather: _feather);
+    widget.onResult(_refinedPng);
   }
-
-  Future<void> _saveSelected() async {
-    final i = _selected;
-    if (i == null) return;
-    final bitmap = _refinedPng ?? _results[i].bitmap;
-    if (bitmap == null) return;
-    final dir = await getTemporaryDirectory();
-    final path = p.join(dir.path, 'cutout_spike_$i.png');
-    await File(path).writeAsBytes(bitmap, flush: true);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Saved PNG: $path')));
-  }
-
-  void _clearSelection() => setState(() => _roi = null);
 
   @override
   Widget build(BuildContext context) {
-    final imgAreaH = MediaQuery.sizeOf(context).height * 0.45;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Cutout spike (ML Kit, box)')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _processing ? null : _pickImage,
-        icon: const Icon(Icons.image),
-        label: Text(_imageFile == null ? 'Pick image' : 'Pick another'),
-      ),
-      body: _imageFile == null
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text(
-                  'Pick a reference image, optionally box the object, and cut it '
-                  'out. A tight box gives the model a cleaner region to segment.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            )
-          : Column(
-              children: [
-                SizedBox(
-                  height: imgAreaH,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Center(child: _buildImage(imgAreaH - 24)),
-                  ),
-                ),
-                _buildControls(),
-                const Divider(height: 1),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      if (_processing)
-                        const Center(child: CircularProgressIndicator())
-                      else if (_status != null)
-                        Text(_status!,
-                            style: Theme.of(context).textTheme.bodyMedium),
-                      if (_results.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        _buildResults(),
-                      ],
-                    ],
-                  ),
-                ),
+    final canvasH = MediaQuery.sizeOf(context).height * 0.34;
+    return Column(
+      children: [
+        SizedBox(
+          height: canvasH,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Center(child: _buildImage(canvasH - 24)),
+          ),
+        ),
+        _buildControls(),
+        const Divider(height: 1),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (_processing)
+                const Center(child: CircularProgressIndicator())
+              else if (_status != null)
+                Text(_status!, style: Theme.of(context).textTheme.bodyMedium),
+              if (_results.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _buildResults(),
               ],
-            ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -227,28 +190,31 @@ class _CutoutSpikeScreenState extends State<CutoutSpikeScreen> {
             : math.min(constraints.maxWidth / _origW, maxH / _origH);
         final dispW = _origW * scale;
         final dispH = _origH * scale;
-
         Offset toOrig(Offset local) => Offset(
               (local.dx / scale).clamp(0, _origW.toDouble()),
               (local.dy / scale).clamp(0, _origH.toDouble()),
             );
-
         return SizedBox(
           width: dispW,
           height: dispH,
           child: GestureDetector(
-            onPanStart: (d) => setState(() {
-              _dragStart = toOrig(d.localPosition);
-              _roi = Rect.fromPoints(_dragStart!, _dragStart!);
-            }),
-            onPanUpdate: (d) => setState(() {
-              if (_dragStart != null) {
-                _roi = Rect.fromPoints(_dragStart!, toOrig(d.localPosition));
-              }
-            }),
+            onPanStart: _processing
+                ? null
+                : (d) => setState(() {
+                      _dragStart = toOrig(d.localPosition);
+                      _roi = Rect.fromPoints(_dragStart!, _dragStart!);
+                    }),
+            onPanUpdate: _processing
+                ? null
+                : (d) => setState(() {
+                      if (_dragStart != null) {
+                        _roi = Rect.fromPoints(
+                            _dragStart!, toOrig(d.localPosition));
+                      }
+                    }),
             child: Stack(
               children: [
-                Image.file(_imageFile!,
+                Image.file(widget.source,
                     width: dispW, height: dispH, fit: BoxFit.fill),
                 if (_roi != null)
                   Positioned.fromRect(
@@ -281,7 +247,7 @@ class _CutoutSpikeScreenState extends State<CutoutSpikeScreen> {
           ),
           const Spacer(),
           TextButton(
-            onPressed: _processing ? null : _clearSelection,
+            onPressed: _processing ? null : () => setState(() => _roi = null),
             child: const Text('Clear box'),
           ),
         ],
@@ -330,24 +296,18 @@ class _CutoutSpikeScreenState extends State<CutoutSpikeScreen> {
                 _refinedPng ?? _results[_selected!].bitmap ?? Uint8List(0)),
           ),
           const SizedBox(height: 8),
-          _refineSlider('Erode (de-halo)', _erode, 0, 6, (v) => _erode = v),
+          _refineSlider('Erode', _erode, 0, 6, (v) => _erode = v),
           _refineSlider('Feather (羽化)', _feather, 0, 12, (v) => _feather = v),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _saveSelected,
-            icon: const Icon(Icons.save),
-            label: const Text('Save PNG to temp'),
-          ),
         ],
       ],
     );
   }
 
-  Widget _refineSlider(String label, double value, double min, double max,
-      ValueChanged<double> set) {
+  Widget _refineSlider(
+      String label, double value, double min, double max, ValueChanged<double> set) {
     return Row(
       children: [
-        SizedBox(width: 130, child: Text('$label  ${value.round()}')),
+        SizedBox(width: 120, child: Text('$label  ${value.round()}')),
         Expanded(
           child: Slider(
             min: min,
