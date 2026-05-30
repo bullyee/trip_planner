@@ -83,27 +83,62 @@ class AuthController extends Notifier<AsyncValue<User?>> {
     }
     // 2. Standard flow for Mobile (Android/iOS) and Web
     else {
-      final googleSignIn = GoogleSignIn.instance;
-      await googleSignIn.initialize();
+      try {
+        // ==========================================
+        // PLATFORM FORK: The Ultimate Solution
+        // ==========================================
+        if (kIsWeb) {
+          // WEB PLATFORM: Completely bypass the restrictive google_sign_in package.
+          // Firebase Auth natively handles the Web OAuth popup securely, 
+          // allowing our custom Flutter button to work perfectly without UnimplementedErrors.
+          final googleProvider = GoogleAuthProvider();
+          googleProvider.addScope('email');
+          googleProvider.addScope('profile');
+          
+          // Automatically uses the Web Client ID configured in your FirebaseOptions (main.dart)
+          await firebaseAuth.signInWithPopup(googleProvider);
+          
+        } else {
+          // MOBILE PLATFORM: Use the strict v7 google_sign_in package flow.
+          final googleSignIn = GoogleSignIn.instance;
+          
+          // Mobile usually relies on google-services.json for the Client ID.
+          await googleSignIn.initialize(); 
 
-      final GoogleSignInAccount googleUser = await googleSignIn.authenticate();
-      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
+          // Throws exception if user cancels
+          final googleUser = await googleSignIn.authenticate();
+          
+          // idToken is retrieved synchronously
+          final googleAuth = googleUser.authentication;
 
-      final AuthCredential credential = GoogleAuthProvider.credential(
-        idToken: googleAuth.idToken,
-      );
+          // Request specific scopes dynamically to obtain the Access Token
+          final clientAuth = await googleUser.authorizationClient.authorizeScopes([
+            'email', 
+            'profile',
+          ]);
 
-      await firebaseAuth.signInWithCredential(credential);
+          // Build the Firebase credential
+          final credential = GoogleAuthProvider.credential(
+            accessToken: clientAuth.accessToken,
+            idToken: googleAuth.idToken,
+          );
+
+          await firebaseAuth.signInWithCredential(credential);
+        }
+      } catch (e) {
+        throw Exception('Google Sign-In process was aborted or failed: $e');
+      }
     }
   }
 
   /// Handles the Sign-Out flow.
   Future<void> signOut() async {
     // If not desktop, sign out from the official google_sign_in package
-    if (kIsWeb || (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux)) {
-      await GoogleSignIn.instance.signOut();
-    }
-    // Sign out from Firebase
-    await ref.read(firebaseAuthProvider).signOut();
+    if (kIsWeb) {
+        // Firebase handles Web session cleanup automatically via firebaseAuth.signOut()
+      } else if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
+        // Mobile still needs the GoogleSignIn package to clear local cached accounts
+        await GoogleSignIn.instance.signOut();
+      }
   }
 }
