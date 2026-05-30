@@ -100,11 +100,26 @@ class AnitabiApiService {
           }
 
           try {
+            final poiId = companion.id.value;
+            final alreadyImported = await (db.select(db.pois)
+                  ..where((t) => t.id.equals(poiId)))
+                .getSingleOrNull();
+
             await db.into(db.pois).insert(
                   companion,
                   mode: InsertMode.insertOrIgnore,
                 );
-            await db.addAnimeToPoi(companion.id.value, animeId);
+            // Anime link is idempotent (insertOrIgnore), so it's safe to
+            // re-run; this keeps a shared location linked if it shows up
+            // under another subject.
+            await db.addAnimeToPoi(poiId, animeId);
+
+            if (alreadyImported != null) {
+              // Seen in a previous import: don't re-queue the cover (which
+              // would add another reference_images row) or double-count it.
+              skipped++;
+              continue;
+            }
             imported++;
 
             final rawImage = (raw['image'] ?? '').toString();
@@ -112,7 +127,7 @@ class AnitabiApiService {
               final url =
                   rawImage.replaceAll('?plan=h160', '?plan=h360');
               pendingDownloads.add(_PendingCover(
-                poiId: companion.id.value,
+                poiId: poiId,
                 url: url,
                 metadata: _referenceMetadata(raw),
               ));
@@ -300,7 +315,10 @@ class AnitabiApiService {
         'Ep $ep - $timeString\nSource: $origin\n$originUrl'.trim();
 
     return PoisCompanion(
-      id: Value(const Uuid().v4()),
+      // Deterministic id derived from the Anitabi point id so re-importing
+      // the same subject hits insertOrIgnore instead of creating a fresh
+      // UUID (and a duplicate POI) every run.
+      id: Value('anitabi:$id'),
       name: Value(name),
       lat: Value(lat),
       lng: Value(lng),
