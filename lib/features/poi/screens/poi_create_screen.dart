@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
@@ -12,6 +11,7 @@ import '../../anime/providers/anime_provider.dart';
 import '../../tag/providers/tag_provider.dart';
 import '../../roi/providers/roi_provider.dart';
 import '../services/media_asset_service.dart';
+import '../controllers/poi_controller.dart';
 
 class PoiCreateScreen extends ConsumerStatefulWidget {
   final String? roiId;
@@ -221,28 +221,28 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final db = ref.read(databaseProvider);
-    final id = widget.editPoiId ?? const Uuid().v4();
-
-    String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
-
-    final companion = PoisCompanion(
-      id: Value(id),
-      roiId: Value(_roiId),
-      name: Value(_nameController.text.trim()),
-      description: Value(nullIfEmpty(_descController.text)),
-      address: Value(nullIfEmpty(_addressController.text)),
-      lat: Value(double.parse(_latController.text.trim())),
-      lng: Value(double.parse(_lngController.text.trim())),
-      businessHours: Value(nullIfEmpty(_businessHoursController.text)),
-      contactInfo: Value(nullIfEmpty(_contactInfoController.text)),
-      coverImageUri: const Value(null),
+    // The UI only collects strings and passes them to the Controller
+    final success = await ref.read(poiControllerProvider.notifier).savePoi(
+      id: widget.editPoiId,
+      roiId: _roiId,
+      name: _nameController.text,
+      description: _descController.text,
+      address: _addressController.text,
+      latStr: _latController.text,
+      lngStr: _lngController.text,
+      businessHours: _businessHoursController.text,
+      contactInfo: _contactInfoController.text,
+      animeIds: _selectedAnimeIds,
+      tagIds: _selectedTagIds,
     );
 
-    if (widget.editPoiId != null) {
-      await db.updatePoi(companion);
-    } else {
-      await db.insertPoi(companion);
+    // Handle navigation based on the result
+    if (success && mounted) {
+      context.pop();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to save. Please check your input.')),
+      );
     }
 
     await db.setAnimesForPoi(id, _selectedAnimeIds);

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:go_router/go_router.dart';
 
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
+import '../controllers/roi_controller.dart';
 
 class RoiEditScreen extends ConsumerStatefulWidget {
   final String roiId;
@@ -96,18 +96,21 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final db = ref.read(databaseProvider);
-    String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
+    
+    final success = await ref.read(roiControllerProvider.notifier).updateRoi(
+      id: widget.roiId,
+      name: _nameController.text,
+      description: _descController.text,
+      existingIsOfflineCached: _existing?.isOfflineCached,
+      existingCreatedAt: _existing?.createdAt,
+    );
 
-    await db.updateRoi(RoisCompanion(
-      id: Value(widget.roiId),
-      name: Value(_nameController.text.trim()),
-      description: Value(nullIfEmpty(_descController.text)),
-      isOfflineCached: Value(_existing?.isOfflineCached ?? 0),
-      createdAt: Value(
-        _existing?.createdAt ?? DateTime.now().millisecondsSinceEpoch,
-      ),
-    ));
-    if (mounted) context.pop();
+    if (success && mounted) {
+      context.pop();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to save ROI. Please try again.')),
+      );
+    }
   }
 }

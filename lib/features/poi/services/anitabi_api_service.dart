@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import 'package:trip_planner/core/database/database.dart';
@@ -23,7 +22,7 @@ class AnitabiImportResult {
   /// landed on local storage; failures silently leave the original URL
   /// on the POI. Callers can ignore this if they're happy to let covers
   /// appear via Drift's reactive streams as each download finishes.
-  final Future<int> coverDownloadCompletion;
+  final Future<void> coverDownloadCompletion;
 
   const AnitabiImportResult({
     required this.animeId,
@@ -58,14 +57,7 @@ class AnitabiApiService {
     final ownsClient = client == null;
     var handedOff = false;
 
-    final stopwatch = Stopwatch()..start();
-    void log(String stage) {
-      debugPrint('[anitabi] $stage at ${stopwatch.elapsedMilliseconds}ms');
-    }
-
     try {
-      log('start subjectId=$subjectId');
-
       // Title and points endpoints are independent — fire them in
       // parallel so the slower of the two becomes the wall-clock cost
       // instead of the sum.
@@ -75,10 +67,8 @@ class AnitabiApiService {
       ]);
       final animeName = futures[0] as String;
       final jsonList = futures[1] as List<dynamic>?;
-      log('title + points fetched');
 
       if (jsonList == null) return null;
-      log('points list size: ${jsonList.length} raw entries');
 
       if (jsonList.isEmpty) return null;
 
@@ -91,7 +81,6 @@ class AnitabiApiService {
       int skipped = 0;
       final pendingDownloads = <_PendingCover>[];
 
-      log('transaction start');
       await db.transaction(() async {
         for (final raw in jsonList) {
           if (raw is! Map<String, dynamic>) {
@@ -103,7 +92,6 @@ class AnitabiApiService {
           try {
             companion = _parsePoi(raw);
           } catch (e) {
-            debugPrint('[anitabi] _parsePoi threw on id=${raw['id']}: $e');
             companion = null;
           }
           if (companion == null) {
@@ -135,8 +123,6 @@ class AnitabiApiService {
         }
       });
 
-      log('transaction done; imported=$imported skipped=$skipped covers=${pendingDownloads.length}');
-
       // Hand the client off to the background downloader; it closes the
       // client (when we own it) once every worker is done.
       final completion = _downloadCoversInBackground(
@@ -146,7 +132,6 @@ class AnitabiApiService {
         closeClientWhenDone: ownsClient,
       );
       handedOff = true;
-      log('returning; covers running in background');
 
       return AnitabiImportResult(
         animeId: animeId,
@@ -166,26 +151,19 @@ class AnitabiApiService {
   /// queue, fetches the bytes, writes them locally, and updates the POI
   /// row's `coverImageUri`. Per-item failures are swallowed so one bad
   /// CDN response cannot stop the rest of the queue.
-  static Future<int> _downloadCoversInBackground({
+  static Future<void> _downloadCoversInBackground({
     required AppDatabase db,
     required List<_PendingCover> pending,
     required http.Client httpClient,
     required bool closeClientWhenDone,
   }) async {
-    final stopwatch = Stopwatch()..start();
-    final total = pending.length;
-    debugPrint(
-        '[anitabi] cover queue: $total items, $_coverDownloadConcurrency workers');
+    
 
     final queue = List<_PendingCover>.from(pending);
-    var success = 0;
-    var failed = 0;
-    var processed = 0;
 
     Future<void> worker(int workerId) async {
       while (queue.isNotEmpty) {
         final next = queue.removeAt(0);
-        final itemStart = stopwatch.elapsedMilliseconds;
         try {
           final localPath = await downloadCoverImage(
             next.url,
@@ -202,15 +180,11 @@ class AnitabiApiService {
                 metadata: Value(next.metadata),
               ),
             );
-            success++;
-          } else {
-            failed++;
-          }
+          } 
         } catch (_) {
-          failed++;
+          
           // Leave this POI without a reference image; others continue.
-        }
-        processed++;        
+        }    
       }
     }
 
@@ -221,9 +195,6 @@ class AnitabiApiService {
     } finally {
       if (closeClientWhenDone) httpClient.close();
     }
-    debugPrint(
-        '[anitabi] cover queue finished: $success/$total ok in ${stopwatch.elapsedMilliseconds}ms');
-    return success;
   }
 
   static Future<List<dynamic>?> _fetchPointsList(
@@ -238,9 +209,6 @@ class AnitabiApiService {
     for (var attempt = 1; attempt <= 2; attempt++) {
       final result = await _fetchPointsListOnce(subjectId, httpClient);
       if (result != null) return result;
-      if (attempt == 1) {
-        debugPrint('[anitabi] points fetch failed, retrying once');
-      }
     }
     return null;
   }

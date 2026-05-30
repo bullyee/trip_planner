@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:go_router/go_router.dart';
-import 'package:uuid/uuid.dart';
 
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
+import '../controllers/anime_controller.dart';
 
 class AnimeEditScreen extends ConsumerStatefulWidget {
   /// Pass null or "new" for create.
@@ -122,25 +121,21 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final db = ref.read(databaseProvider);
-    String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
+    
+    final success = await ref.read(animeControllerProvider.notifier).saveAnime(
+      isNew: widget.isNew,
+      id: widget.animeId,
+      name: _nameController.text,
+      description: _descController.text,
+    );
 
-    if (widget.isNew) {
-      final id = const Uuid().v4();
-      await db.insertAnime(AnimesCompanion.insert(
-        id: id,
-        name: _nameController.text.trim(),
-        description: Value(nullIfEmpty(_descController.text)),
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ));
-    } else {
-      await db.updateAnime(AnimesCompanion(
-        id: Value(widget.animeId!),
-        name: Value(_nameController.text.trim()),
-        description: Value(nullIfEmpty(_descController.text)),
-      ));
+    if (success && mounted) {
+      context.pop();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to save anime. Please try again.')),
+      );
     }
-    if (mounted) context.pop();
   }
 
   Future<void> _confirmDelete() async {
