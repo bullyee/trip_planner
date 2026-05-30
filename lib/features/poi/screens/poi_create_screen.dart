@@ -221,8 +221,10 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // The UI only collects strings and passes them to the Controller
-    final success = await ref.read(poiControllerProvider.notifier).savePoi(
+    // The UI only collects strings and passes them to the Controller.
+    // The controller persists the POI (plus anime/tag links) in one
+    // transaction and returns its id, or null on failure.
+    final poiId = await ref.read(poiControllerProvider.notifier).savePoi(
       id: widget.editPoiId,
       roiId: _roiId,
       name: _nameController.text,
@@ -236,17 +238,15 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       tagIds: _selectedTagIds,
     );
 
-    // Handle navigation based on the result
-    if (success && mounted) {
-      context.pop();
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to save. Please check your input.')),
-      );
+    // Save failed: surface the error and stay on the form.
+    if (poiId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to save. Please check your input.')),
+        );
+      }
+      return;
     }
-
-    await db.setAnimesForPoi(id, _selectedAnimeIds);
-    await db.setTagsForPoi(id, _selectedTagIds);
 
     // Camera capture-then-create-POI flow: archive the temp capture
     // as a `user_photo` MediaAsset under the new POI before we pop.
@@ -256,9 +256,9 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       final photoFile = File(widget.capturedPhotoPath!);
       if (await photoFile.exists()) {
         await persistMediaAsset(
-          db: db,
+          db: ref.read(databaseProvider),
           source: photoFile,
-          poiId: id,
+          poiId: poiId,
           type: 'user_photo',
         );
       }

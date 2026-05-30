@@ -13,7 +13,11 @@ class PoiController extends _$PoiController {
   FutureOr<void> build() {}
 
   /// Handles business logic and database operations for saving a POI.
-  Future<bool> savePoi({
+  ///
+  /// Returns the POI id on success (the existing id when editing, or a
+  /// freshly generated one when creating) so callers can attach related
+  /// records such as a captured photo. Returns null on failure.
+  Future<String?> savePoi({
     required String? id,
     required String? roiId,
     required String name,
@@ -62,11 +66,11 @@ class PoiController extends _$PoiController {
 
       // Success: return to normal data state
       state = const AsyncValue.data(null);
-      return true; 
+      return poiId;
     } catch (e, st) {
       // Error occurred: propagate the error state
       state = AsyncValue.error(e, st);
-      return false; 
+      return null;
     }
   }
 }
