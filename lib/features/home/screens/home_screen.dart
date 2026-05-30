@@ -125,20 +125,6 @@ class HomeScreen extends ConsumerWidget {
                 subtitle: 'JSON sync between devices',
                 onTap: () => context.push('/sync'),
               ),
-              // SPIKE: temporary entry to the anime-cutout proof. Remove once
-              // the feature lands in the Anime Camera flow.
-              _HomeCard(
-                icon: Icons.content_cut,
-                title: 'Cutout spike',
-                subtitle: 'ML Kit subject cutout (Android, temp)',
-                onTap: () => context.push('/cutout-spike'),
-              ),
-              _HomeCard(
-                icon: Icons.auto_fix_high,
-                title: 'Cutout: isnet',
-                subtitle: 'isnet-anime ONNX + 修毛邊 (Android, temp)',
-                onTap: () => context.push('/cutout-isnet'),
-              ),
             ],
           ),
         ),      
