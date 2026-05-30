@@ -71,6 +71,7 @@ dependencies:
   url_launcher: ^6.3.2
   google_mlkit_subject_segmentation: ^0.0.3
   onnxruntime: ^1.4.1
+  gal: ^2.3.2
 
 dev_dependencies:
   flutter_test:

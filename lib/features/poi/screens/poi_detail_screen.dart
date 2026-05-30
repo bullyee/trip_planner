@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' show Value;
+import 'package:gal/gal.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -1040,12 +1041,23 @@ class _MediaAssetTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (linkedReference != null)
-            IconButton(
-              tooltip: 'View paired reference',
-              icon: const Icon(Icons.link),
-              onPressed: onShowPairedReference,
-            ),
+          IconButton(
+            tooltip: 'Save to device',
+            icon: const Icon(Icons.download),
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              try {
+                await Gal.putImage(asset.localUri);
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('Saved to gallery.')),
+                );
+              } on GalException catch (e) {
+                messenger.showSnackBar(
+                  SnackBar(content: Text('Save failed: ${e.type.message}')),
+                );
+              }
+            },
+          ),
           IconButton(
             tooltip: 'Rename',
             icon: const Icon(Icons.edit_outlined),
