@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
-import '../../shared/database/connection/connection.dart' as db_connection;
+import 'connection/connection.dart' as db_connection;
 import 'tables.dart';
 
 part 'database.g.dart';

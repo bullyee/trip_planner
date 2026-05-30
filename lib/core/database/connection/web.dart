@@ -6,7 +6,9 @@ import 'package:drift/wasm.dart';
 QueryExecutor openConnection() {
   return DatabaseConnection.delayed(Future(() async {
     final result = await WasmDatabase.open(
-      databaseName: 'trip_planner_db',
+      // Aligned with the native filename base ('trip_planner') so the logical
+      // database name is consistent across platforms.
+      databaseName: 'trip_planner',
       sqlite3Uri: Uri.parse('sqlite3.wasm'),
       driftWorkerUri: Uri.parse('drift_worker.js'),
     );
