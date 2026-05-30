@@ -133,6 +133,12 @@ class HomeScreen extends ConsumerWidget {
                 subtitle: 'ML Kit subject cutout (Android, temp)',
                 onTap: () => context.push('/cutout-spike'),
               ),
+              _HomeCard(
+                icon: Icons.auto_fix_high,
+                title: 'Cutout: isnet',
+                subtitle: 'isnet-anime ONNX + 修毛邊 (Android, temp)',
+                onTap: () => context.push('/cutout-isnet'),
+              ),
             ],
           ),
         ),      
