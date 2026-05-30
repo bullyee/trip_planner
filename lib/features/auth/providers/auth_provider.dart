@@ -133,12 +133,21 @@ class AuthController extends Notifier<AsyncValue<User?>> {
 
   /// Handles the Sign-Out flow.
   Future<void> signOut() async {
-    // If not desktop, sign out from the official google_sign_in package
-    if (kIsWeb) {
-        // Firebase handles Web session cleanup automatically via firebaseAuth.signOut()
-      } else if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
-        // Mobile still needs the GoogleSignIn package to clear local cached accounts
-        await GoogleSignIn.instance.signOut();
+      try {
+        // Retrieve the FirebaseAuth instance from your provider
+        final firebaseAuth = ref.read(firebaseAuthProvider);
+
+        // Mobile (Android/iOS) requires GoogleSignIn cleanup to clear the locally cached account.
+        if (!kIsWeb && !(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+          await GoogleSignIn.instance.signOut();
+        }
+
+        // CRITICAL FIX: Explicitly terminate the Firebase session on ALL platforms.
+        // This is the actual trigger for authStateChanges() to emit a null user.
+        await firebaseAuth.signOut();
+        
+      } catch (e) {
+        throw Exception('Sign-out process failed: $e');
       }
-  }
+    }
 }
