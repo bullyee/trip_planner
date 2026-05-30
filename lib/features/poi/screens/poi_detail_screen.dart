@@ -400,16 +400,11 @@ class PoiDetailScreen extends ConsumerWidget {
                         onPreview: _isPreviewableImage(asset)
                             ? () => _showImagePreview(context, asset)
                             : null,
+                        onEdit: _isPreviewableImage(asset)
+                            ? () => _editMediaAsset(context, asset, linkedRef)
+                            : null,
                         title: _mediaAssetTitle(asset),
                         icon: _iconForType(asset.type),
-                        linkedReference: linkedRef,
-                        onShowPairedReference: linkedRef != null
-                            ? () => _showFullscreenImage(
-                                  context,
-                                  uri: linkedRef.localUri,
-                                  title: 'Paired Reference',
-                                )
-                            : null,
                       );
                     }).toList(),
                   );
@@ -848,6 +843,50 @@ class PoiDetailScreen extends ConsumerWidget {
     }
   }
 
+  /// Open the photo editor on an existing media asset. Copies it to a temp file
+  /// first so editing is non-destructive — saving creates a NEW asset and the
+  /// original is preserved. Passes the paired reference (if any) so Match Color
+  /// / Compose are available.
+  Future<void> _editMediaAsset(
+    BuildContext context,
+    MediaAsset asset,
+    ReferenceImage? linkedRef,
+  ) async {
+    final src = File(asset.localUri);
+    if (!await src.exists()) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File not found.')),
+        );
+      }
+      return;
+    }
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final ext = p.extension(asset.localUri).isEmpty
+          ? '.jpg'
+          : p.extension(asset.localUri);
+      final tempPath = p.join(
+        tempDir.path,
+        'edit_${DateTime.now().millisecondsSinceEpoch}$ext',
+      );
+      await src.copy(tempPath);
+      if (!context.mounted) return;
+      final qs = <String, String>{'path': Uri.encodeComponent(tempPath)};
+      if (linkedRef != null) {
+        qs['ref'] = Uri.encodeComponent(linkedRef.localUri);
+        qs['refId'] = asset.referenceImageId!;
+      }
+      final query = qs.entries.map((e) => '${e.key}=${e.value}').join('&');
+      context.push('/pois/${asset.poiId}/photo-edit?$query');
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Edit failed: $e')),
+      );
+    }
+  }
+
   Future<void> _addReferenceImage(
     BuildContext context,
     WidgetRef ref,
@@ -1013,8 +1052,7 @@ class _MediaAssetTile extends StatelessWidget {
   final VoidCallback onRename;
   final VoidCallback onDelete;
   final VoidCallback? onPreview;
-  final ReferenceImage? linkedReference;
-  final VoidCallback? onShowPairedReference;
+  final VoidCallback? onEdit;
 
   const _MediaAssetTile({
     required this.asset,
@@ -1023,8 +1061,7 @@ class _MediaAssetTile extends StatelessWidget {
     required this.onRename,
     required this.onDelete,
     required this.onPreview,
-    this.linkedReference,
-    this.onShowPairedReference,
+    this.onEdit,
   });
 
   @override
@@ -1059,14 +1096,21 @@ class _MediaAssetTile extends StatelessWidget {
             },
           ),
           IconButton(
-            tooltip: 'Rename',
+            tooltip: 'Edit',
             icon: const Icon(Icons.edit_outlined),
-            onPressed: onRename,
+            onPressed: onEdit,
           ),
-          IconButton(
-            tooltip: 'Delete',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: onDelete,
+          PopupMenuButton<String>(
+            tooltip: 'More',
+            icon: const Icon(Icons.more_vert),
+            onSelected: (v) {
+              if (v == 'rename') onRename();
+              if (v == 'delete') onDelete();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'rename', child: Text('Rename')),
+              PopupMenuItem(value: 'delete', child: Text('Delete')),
+            ],
           ),
           IconButton(
             tooltip: 'Preview',

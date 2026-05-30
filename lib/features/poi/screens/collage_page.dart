@@ -76,6 +76,7 @@ class _CollagePageState extends State<CollagePage> {
   Size _baseSize = const Size(1, 1);
 
   bool _compare = false;
+  bool _compareVertical = false; // false = side-by-side, true = stacked
   bool _busy = false;
 
   // Additive undo/redo: each committed op snapshots the layer list. Image refs
@@ -254,10 +255,21 @@ class _CollagePageState extends State<CollagePage> {
       }
       final picture = recorder.endRecording();
       final composed = await picture.toImage(w, h);
-      final png = await composed.toByteData(format: ui.ImageByteFormat.png);
       base.dispose();
-      composed.dispose();
       picture.dispose();
+
+      // With Compare on, save the side-by-side (composed | reference) in the
+      // chosen orientation; otherwise just the composed image.
+      ui.Image finalImg = composed;
+      if (_compare) {
+        final refImg =
+            await _decode(await File(widget.referencePath).readAsBytes());
+        finalImg = await _stitch(composed, refImg, _compareVertical);
+        refImg.dispose();
+        composed.dispose();
+      }
+      final png = await finalImg.toByteData(format: ui.ImageByteFormat.png);
+      finalImg.dispose();
       if (png == null) throw 'compose failed';
 
       // Re-encode to JPEG (opaque result) so the saved file isn't a huge PNG.
@@ -267,7 +279,7 @@ class _CollagePageState extends State<CollagePage> {
       );
       final tmp = File(p.join(
         (await getTemporaryDirectory()).path,
-        'collage_${_layers.length}.jpg',
+        '${_compare ? 'compare' : 'collage'}_${_layers.length}.jpg',
       ));
       await tmp.writeAsBytes(jpg, flush: true);
 
@@ -275,7 +287,7 @@ class _CollagePageState extends State<CollagePage> {
         db: widget.db,
         source: tmp,
         poiId: widget.poiId,
-        type: 'user_photo',
+        type: _compare ? 'comparison_image' : 'user_photo',
       );
       if (await tmp.exists()) await tmp.delete();
       if (!mounted) return;
@@ -290,6 +302,40 @@ class _CollagePageState extends State<CollagePage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Stitch [a] and [b] together — side by side, or stacked when [vertical] —
+  /// at a common height / width, preserving each image's aspect ratio.
+  Future<ui.Image> _stitch(ui.Image a, ui.Image b, bool vertical) async {
+    final aw = a.width.toDouble(), ah = a.height.toDouble();
+    final bw = b.width.toDouble(), bh = b.height.toDouble();
+    final double totalW, totalH;
+    final Rect aDst, bDst;
+    if (vertical) {
+      final cw = aw > bw ? aw : bw;
+      final aH = ah * cw / aw, bH = bh * cw / bw;
+      totalW = cw;
+      totalH = aH + bH;
+      aDst = Rect.fromLTWH(0, 0, cw, aH);
+      bDst = Rect.fromLTWH(0, aH, cw, bH);
+    } else {
+      final ch = ah > bh ? ah : bh;
+      final aW = aw * ch / ah, bW = bw * ch / bh;
+      totalW = aW + bW;
+      totalH = ch;
+      aDst = Rect.fromLTWH(0, 0, aW, ch);
+      bDst = Rect.fromLTWH(aW, 0, bW, ch);
+    }
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, totalW, totalH));
+    canvas.drawColor(Colors.white, BlendMode.src);
+    final paint = Paint()..filterQuality = FilterQuality.high;
+    canvas.drawImageRect(a, Rect.fromLTWH(0, 0, aw, ah), aDst, paint);
+    canvas.drawImageRect(b, Rect.fromLTWH(0, 0, bw, bh), bDst, paint);
+    final pic = recorder.endRecording();
+    final out = await pic.toImage(totalW.round(), totalH.round());
+    pic.dispose();
+    return out;
   }
 
   // ---- build --------------------------------------------------------------
@@ -345,6 +391,7 @@ class _CollagePageState extends State<CollagePage> {
         child: Column(
           children: [
             Expanded(child: _buildCanvas()),
+            if (_compare) _buildCompareBar(theme),
             _buildLayerStrip(theme),
             _buildToolRow(theme),
           ],
@@ -357,19 +404,25 @@ class _CollagePageState extends State<CollagePage> {
     if (_compare) {
       // Each side re-fits to its own half (the composed view has its own
       // LayoutBuilder), so the current image shrinks to fit rather than getting
-      // cropped to half.
-      return Row(
-        children: [
-          Expanded(child: _composedView()),
-          Container(width: 2, color: Colors.white24),
-          Expanded(
-            child: Center(
-              child:
-                  Image.file(File(widget.referencePath), fit: BoxFit.contain),
-            ),
-          ),
-        ],
+      // cropped to half. Side-by-side or stacked per _compareVertical.
+      final composed = Expanded(child: _composedView());
+      final reference = Expanded(
+        child: Center(
+          child: Image.file(File(widget.referencePath), fit: BoxFit.contain),
+        ),
       );
+      if (_compareVertical) {
+        return Column(children: [
+          composed,
+          Container(height: 2, color: Colors.white24),
+          reference,
+        ]);
+      }
+      return Row(children: [
+        composed,
+        Container(width: 2, color: Colors.white24),
+        reference,
+      ]);
     }
     return _composedView();
   }
@@ -515,6 +568,44 @@ class _CollagePageState extends State<CollagePage> {
                 ),
               ],
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompareBar(ThemeData theme) {
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('Compare layout',
+              style: TextStyle(color: Colors.white54, fontSize: 12)),
+          const SizedBox(width: 12),
+          SegmentedButton<bool>(
+            showSelectedIcon: false,
+            style: SegmentedButton.styleFrom(
+              foregroundColor: Colors.white70,
+              selectedForegroundColor: Colors.white,
+              selectedBackgroundColor: theme.colorScheme.primary,
+              side: const BorderSide(color: Colors.white24),
+              visualDensity: VisualDensity.compact,
+            ),
+            segments: const [
+              ButtonSegment(
+                  value: false,
+                  icon: Icon(Icons.vertical_split),
+                  tooltip: 'Side by side'),
+              ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.horizontal_split),
+                  tooltip: 'Stacked'),
+            ],
+            selected: {_compareVertical},
+            onSelectionChanged: (s) =>
+                setState(() => _compareVertical = s.first),
+          ),
         ],
       ),
     );

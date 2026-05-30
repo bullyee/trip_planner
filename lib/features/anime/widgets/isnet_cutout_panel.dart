@@ -138,7 +138,11 @@ class _IsnetCutoutPanelState extends State<IsnetCutoutPanel> {
       _brush = null;
       await _recomposite(setProcessing: false);
       if (!mounted) return;
-      setState(() => _status = 'Done — refine, or Add/Erase to fix parts.');
+      setState(() {
+        // Flip Box → Add so the canvas shows the cutout and brush-fix is ready.
+        _tool = _Tool.add;
+        _status = 'Done — refine, or Add/Erase to fix parts.';
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
