@@ -49,6 +49,9 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
   List<String> _selectedAnimeIds = [];
   List<String> _selectedTagIds = [];
   bool _isLoading = false;
+  // Existing cover URI on the edit path, threaded back through savePoi so a
+  // full-row update doesn't wipe it. Null on the create path.
+  String? _existingCoverUri;
 
   @override
   void initState() {
@@ -72,6 +75,7 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       _businessHoursController.text = poi.businessHours ?? '';
       _contactInfoController.text = poi.contactInfo ?? '';
       _roiId = poi.roiId;
+      _existingCoverUri = poi.coverImageUri;
 
       final animes = await db.watchAnimesForPoi(poi.id).first;
       final tags = await db.watchTagsForPoi(poi.id).first;
@@ -97,6 +101,9 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.editPoiId != null;
+    // Option A: drive the Save button off the controller's loading state so
+    // a second tap can't fire a duplicate insert while the first is in flight.
+    final isSaving = ref.watch(poiControllerProvider).isLoading;
 
     return Scaffold(
       appBar: AppBar(
@@ -208,8 +215,14 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
                   ),
                   const SizedBox(height: 32),
                   FilledButton.icon(
-                    onPressed: _save,
-                    icon: Icon(isEditing ? Icons.save : Icons.add_location),
+                    onPressed: isSaving ? null : _save,
+                    icon: isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(isEditing ? Icons.save : Icons.add_location),
                     label: Text(isEditing ? 'Save Changes' : 'Create Location'),
                   ),
                 ],
@@ -236,6 +249,7 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       contactInfo: _contactInfoController.text,
       animeIds: _selectedAnimeIds,
       tagIds: _selectedTagIds,
+      coverImageUri: _existingCoverUri,
     );
 
     // Save failed: surface the error and stay on the form.

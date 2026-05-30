@@ -29,6 +29,7 @@ class PoiController extends _$PoiController {
     required String contactInfo,
     required List<String> animeIds,
     required List<String> tagIds,
+    String? coverImageUri,
   }) async {
     // Set state to loading to prevent multiple submissions
     state = const AsyncValue.loading();
@@ -50,7 +51,10 @@ class PoiController extends _$PoiController {
         lng: Value(double.parse(lngStr.trim())),
         businessHours: Value(nullIfEmpty(businessHours)),
         contactInfo: Value(nullIfEmpty(contactInfo)),
-        coverImageUri: const Value(null),
+        // Preserve the existing cover on edit. updatePoi does a full-row
+        // replace, so passing null here would wipe an Anitabi-imported or
+        // user-set cover; callers thread the loaded value back through.
+        coverImageUri: Value(coverImageUri),
       );
 
       // Execute database operations 
