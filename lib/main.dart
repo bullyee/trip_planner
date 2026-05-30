@@ -14,18 +14,20 @@ void main() async {
   runApp(const ProviderScope(child: TripPlannerApp()));
 }
 
-class TripPlannerApp extends StatelessWidget {
+class TripPlannerApp extends ConsumerWidget {
   const TripPlannerApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final goRouter = ref.watch(routerProvider);
+
     return MaterialApp.router(
       title: 'Trip Planner',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
-      routerConfig: appRouter,
+      routerConfig: goRouter,
     );
   }
 }

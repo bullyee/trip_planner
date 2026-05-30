@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'; // Add this
 import 'package:go_router/go_router.dart';
+import 'package:trip_planner/features/auth/providers/auth_provider.dart'; // Add this
+import 'package:trip_planner/features/auth/screens/login_screen.dart'; // Add this
+
 import '../../features/home/screens/home_screen.dart';
 import '../../features/roi/screens/roi_list_screen.dart';
 import '../../features/roi/screens/roi_detail_screen.dart';
@@ -18,139 +22,175 @@ import '../../features/map/map_screen.dart';
 import '../../features/ticket/screens/ticket_screen.dart';
 import '../../features/home/screens/sync_screen.dart';
 
-final appRouter = GoRouter(
-  initialLocation: '/',
-  routes: [
-    GoRoute(
-      path: '/',
-      builder: (context, state) => const HomeScreen(),
-    ),
-    GoRoute(
-      path: '/rois',
-      builder: (context, state) => const RoiListScreen(),
-    ),
-    GoRoute(
-      path: '/rois/:roiId',
-      builder: (context, state) => RoiDetailScreen(
-        roiId: state.pathParameters['roiId']!,
+/// Wrap the existing router in a Provider to react to Auth state changes.
+final routerProvider = Provider<GoRouter>((ref) {
+  // Watch the auth state from our previously created provider.
+  ref.watch(authStateChangesProvider);
+
+  return GoRouter(
+    initialLocation: '/',
+    
+    // AUTH REDIRECT LOGIC
+    redirect: (context, state) {
+      final authState = ref.read(authStateChangesProvider);
+      
+      // 1. Loading state: Do not force redirect, wait for resolution.
+      if (authState.isLoading) return null; 
+
+      // 2. Safely check if user is logged in (handles both data and error states cleanly).
+      final isLoggedIn = authState.valueOrNull != null;
+
+      // 3. Define explicit cloud-only routes that require authentication.
+      final isCloudRoute = state.uri.path.startsWith('/sync') || 
+                           state.uri.path.startsWith('/cloud-share');
+
+      // 4. Gatekeeper: Unauthenticated users trying to access cloud routes.
+      if (!isLoggedIn && isCloudRoute) {
+        return '/login';
+      }
+
+      // 5. Anti-bounce: Authenticated users should not see the login screen.
+      if (isLoggedIn && state.uri.path == '/login') {
+        return '/';
+      }
+
+      // 6. DEFAULT (Offline-first core): Allow all other navigation (e.g., '/', '/map', '/pois').
+      return null;
+    },
+    routes: [
+      // Add the new Login route
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => const LoginScreen(),
       ),
-    ),
-    GoRoute(
-      path: '/rois/:roiId/edit',
-      builder: (context, state) => RoiEditScreen(
-        roiId: state.pathParameters['roiId']!,
+
+      // --- Your Existing Routes Start Here ---
+      GoRoute(
+        path: '/',
+        builder: (context, state) => const HomeScreen(),
       ),
-    ),
-    GoRoute(
-      path: '/rois/:roiId/pois/new',
-      builder: (context, state) => PoiCreateScreen(
-        roiId: state.pathParameters['roiId'],
+      GoRoute(
+        path: '/rois',
+        builder: (context, state) => const RoiListScreen(),
       ),
-    ),
-    GoRoute(
-      path: '/pois/new',
-      builder: (context, state) {
-        final capturedPath = state.uri.queryParameters['capturedPath'];
-        return PoiCreateScreen(
-          capturedPhotoPath: capturedPath != null
-              ? Uri.decodeComponent(capturedPath)
-              : null,
-        );
-      },
-    ),
-    GoRoute(
-      path: '/pois/:poiId/edit',
-      builder: (context, state) => PoiCreateScreen(
-        editPoiId: state.pathParameters['poiId'],
+      GoRoute(
+        path: '/rois/:roiId',
+        builder: (context, state) => RoiDetailScreen(
+          roiId: state.pathParameters['roiId']!,
+        ),
       ),
-    ),
-    GoRoute(
-      path: '/pois',
-      builder: (context, state) => PoiBrowseScreen(
-        initialTab: state.uri.queryParameters['tab'],
+      GoRoute(
+        path: '/rois/:roiId/edit',
+        builder: (context, state) => RoiEditScreen(
+          roiId: state.pathParameters['roiId']!,
+        ),
       ),
-    ),
-    GoRoute(
-      path: '/pois/:poiId',
-      builder: (context, state) => PoiDetailScreen(
-        poiId: state.pathParameters['poiId']!,
+      GoRoute(
+        path: '/rois/:roiId/pois/new',
+        builder: (context, state) => PoiCreateScreen(
+          roiId: state.pathParameters['roiId'],
+        ),
       ),
-    ),
-    GoRoute(
-      // Photo editor — opens against `path`, optionally overlaying `ref`
-      // (with `refId` to link the resulting MediaAsset to the
-      // ReferenceImage row). `upload=1` marks the save as
-      // `uploaded_image` rather than `user_photo`. Both the camera
-      // capture flow and the POI detail "Add Image" picker push here.
-      path: '/pois/:poiId/photo-edit',
-      builder: (context, state) {
-        final qp = state.uri.queryParameters;
-        final source = qp['path'];
-        if (source == null) {
-          return const Scaffold(
-            body: Center(child: Text('Missing source path.')),
+      GoRoute(
+        path: '/pois/new',
+        builder: (context, state) {
+          final capturedPath = state.uri.queryParameters['capturedPath'];
+          return PoiCreateScreen(
+            capturedPhotoPath: capturedPath != null
+                ? Uri.decodeComponent(capturedPath)
+                : null,
           );
-        }
-        return PhotoEditScreen(
+        },
+      ),
+      GoRoute(
+        path: '/pois/:poiId/edit',
+        builder: (context, state) => PoiCreateScreen(
+          editPoiId: state.pathParameters['poiId'],
+        ),
+      ),
+      GoRoute(
+        path: '/pois',
+        builder: (context, state) => PoiBrowseScreen(
+          initialTab: state.uri.queryParameters['tab'],
+        ),
+      ),
+      GoRoute(
+        path: '/pois/:poiId',
+        builder: (context, state) => PoiDetailScreen(
           poiId: state.pathParameters['poiId']!,
-          sourcePath: Uri.decodeComponent(source),
-          referencePath: qp['ref'] != null
-              ? Uri.decodeComponent(qp['ref']!)
-              : null,
-          referenceImageId: qp['refId'],
-          wasUpload: qp['upload'] == '1',
-        );
-      },
-    ),
-    GoRoute(
-      path: '/animes/:animeId/edit',
-      builder: (context, state) => AnimeEditScreen(
-        animeId: state.pathParameters['animeId'],
+        ),
       ),
-    ),
-    GoRoute(
-      path: '/anime/:animeId',
-      builder: (context, state) => PoisByAnimeScreen(
-        animeId: state.pathParameters['animeId']!,
+      GoRoute(
+        path: '/pois/:poiId/photo-edit',
+        builder: (context, state) {
+          final qp = state.uri.queryParameters;
+          final source = qp['path'];
+          if (source == null) {
+            return const Scaffold(
+              body: Center(child: Text('Missing source path.')),
+            );
+          }
+          return PhotoEditScreen(
+            poiId: state.pathParameters['poiId']!,
+            sourcePath: Uri.decodeComponent(source),
+            referencePath: qp['ref'] != null
+                ? Uri.decodeComponent(qp['ref']!)
+                : null,
+            referenceImageId: qp['refId'],
+            wasUpload: qp['upload'] == '1',
+          );
+        },
       ),
-    ),
-    GoRoute(
-      path: '/tags/:tagId/edit',
-      builder: (context, state) => TagEditScreen(
-        tagId: state.pathParameters['tagId'],
+      GoRoute(
+        path: '/animes/:animeId/edit',
+        builder: (context, state) => AnimeEditScreen(
+          animeId: state.pathParameters['animeId'],
+        ),
       ),
-    ),
-    GoRoute(
-      path: '/tag/:tagId',
-      builder: (context, state) => PoisByTagScreen(
-        tagId: state.pathParameters['tagId']!,
+      GoRoute(
+        path: '/anime/:animeId',
+        builder: (context, state) => PoisByAnimeScreen(
+          animeId: state.pathParameters['animeId']!,
+        ),
       ),
-    ),
-    GoRoute(
-      path: '/calendar',
-      builder: (context, state) => const CalendarScreen(),
-    ),
-    GoRoute(
-      path: '/camera',
-      builder: (context, state) => CameraScreen(
-        poiId: state.uri.queryParameters['poiId'],
+      GoRoute(
+        path: '/tags/:tagId/edit',
+        builder: (context, state) => TagEditScreen(
+          tagId: state.pathParameters['tagId'],
+        ),
       ),
-    ),
-    GoRoute(
-      path: '/tickets',
-      builder: (context, state) => const TicketScreen(),
-    ),
-    GoRoute(
-      path: '/sync',
-      builder: (context, state) => const SyncScreen(),
-    ),
-    GoRoute(
-      path: '/map',
-      builder: (context, state) => const MapScreen(),
-    ),
-    GoRoute(
-      path: '/import/bangumi',
-      builder: (context, state) => const BangumiSearchScreen(),
-    ),
-  ],
-);
+      GoRoute(
+        path: '/tag/:tagId',
+        builder: (context, state) => PoisByTagScreen(
+          tagId: state.pathParameters['tagId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/calendar',
+        builder: (context, state) => const CalendarScreen(),
+      ),
+      GoRoute(
+        path: '/camera',
+        builder: (context, state) => CameraScreen(
+          poiId: state.uri.queryParameters['poiId'],
+        ),
+      ),
+      GoRoute(
+        path: '/tickets',
+        builder: (context, state) => const TicketScreen(),
+      ),
+      GoRoute(
+        path: '/sync',
+        builder: (context, state) => const SyncScreen(),
+      ),
+      GoRoute(
+        path: '/map',
+        builder: (context, state) => const MapScreen(),
+      ),
+      GoRoute(
+        path: '/import/bangumi',
+        builder: (context, state) => const BangumiSearchScreen(),
+      ),
+    ],
+  );
+});
