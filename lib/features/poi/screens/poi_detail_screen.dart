@@ -88,7 +88,7 @@ class PoiDetailScreen extends ConsumerWidget {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                roi.name,
+                                roi?.name ?? 'Unknown Location',
                                 style: TextStyle(
                                   color: Theme.of(context).colorScheme.primary,
                                   fontWeight: FontWeight.w500,

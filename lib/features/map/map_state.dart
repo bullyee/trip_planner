@@ -1,14 +1,14 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../../core/database/database.dart';
+import '../poi/models/poi_model.dart';
 
 part 'map_state.freezed.dart';
 
 @freezed
 abstract class MapState with _$MapState {
   const factory MapState({
-    @Default([]) List<Poi> pois,
-    Poi? selectedPoi,
+    @Default([]) List<PoiModel> pois,
+    PoiModel? selectedPoi,
     String? selectedRoiId,
     String? selectedDate,
     @Default(false) bool isLoading,

@@ -3,6 +3,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
 
+import '../../poi/models/poi_model.dart';
 import '../models/tag_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
@@ -10,8 +11,14 @@ import '../../../core/providers/database_provider.dart';
 abstract class TagRepository {
   Future<void> addTag(TagModel tag);
   Future<void> updateTag(TagModel tag);
+  Future<TagModel?> getTagById(String id);
+  Future<void> deleteTag(String id);
 
   Stream<List<TagModel>> watchTagsForPoi(String poiId);
+  Stream<List<TagModel>> watchAllTags();
+  Stream<TagModel?> watchTagById(String id);
+  Stream<List<PoiModel>> watchPoisByTag(String tagId);
+  Stream<int> watchPoiCountForTag(String tagId);
 }
 
 class DualTrackTagRepository implements TagRepository {
@@ -61,6 +68,69 @@ class DualTrackTagRepository implements TagRepository {
         createdAt: row.createdAt,
       )).toList();
     });
+  }
+
+  @override
+  Stream<int> watchPoiCountForTag(String tagId) {
+    return localDb.watchPoiCountForTag(tagId);
+  }
+  
+  @override
+  Stream<List<TagModel>> watchAllTags() {
+    return localDb.watchAllTags().map((rows) {
+      return rows.map((row) => TagModel(
+        id: row.id,
+        name: row.name,
+        createdAt: row.createdAt,
+      )).toList();
+    });
+  }
+
+  @override
+  Stream<TagModel?> watchTagById(String id) {
+    return localDb.watchTagById(id).map((row) {
+      if (row == null) return null;
+      return TagModel(
+        id: row.id,
+        name: row.name,
+        createdAt: row.createdAt,
+      );
+    });
+  }
+
+  @override
+  Stream<List<PoiModel>> watchPoisByTag(String tagId) {
+    return localDb.watchPoisByTag(tagId).map((rows) {
+      return rows.map((row) => PoiModel(
+        id: row.id,
+        roiId: row.roiId,
+        name: row.name,
+        description: row.description,
+        address: row.address,
+        lat: row.lat,
+        lng: row.lng,
+        businessHours: row.businessHours,
+        contactInfo: row.contactInfo,
+        coverImageUri: row.coverImageUri,
+        createdAt: row.createdAt,
+      )).toList();
+    });
+  }
+
+  @override
+  Future<TagModel?> getTagById(String id) async {
+    final row = await localDb.getTagById(id);
+    if (row == null) return null;
+    return TagModel(
+      id: row.id,
+      name: row.name,
+      createdAt: row.createdAt,
+    );
+  }
+
+  @override
+  Future<void> deleteTag(String id) async {
+    await localDb.deleteTag(id);
   }
 }
 

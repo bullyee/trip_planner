@@ -18,6 +18,9 @@ abstract class PoiRepository {
   Future<void> deletePoi(String id);
 
   Future<PoiModel> getPoiById(String id);
+  Future<List<PoiModel>> getAllPois();
+  Future<List<PoiModel>> getPoisByRoi(String roiId);
+  Future<List<PoiModel>> getPoisByDate(String date);
 
   Stream<List<PoiModel>> watchPoisByRoi(String roiId);
   Stream<List<PoiModel>> watchPoisWithoutRoi();
@@ -107,7 +110,7 @@ class DualTrackPoiRepository implements PoiRepository {
       businessHours: driftPoi.businessHours,
       contactInfo: driftPoi.contactInfo,
       coverImageUri: driftPoi.coverImageUri,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
+      createdAt: driftPoi.createdAt,
       isShared: false,
     );
   }
@@ -132,6 +135,24 @@ class DualTrackPoiRepository implements PoiRepository {
     return localDb.watchAllPois().map((pois) {
       return {for (final poi in pois) poi.id: _mapPoi(poi)};
     });
+  }
+
+  @override
+  Future<List<PoiModel>> getAllPois() async {
+    final rows = await localDb.getAllPois();
+    return rows.map(_mapPoi).toList();
+  }
+
+  @override
+  Future<List<PoiModel>> getPoisByRoi(String roiId) async {
+    final rows = await localDb.getPoisByRoi(roiId);
+    return rows.map(_mapPoi).toList();
+  }
+
+  @override
+  Future<List<PoiModel>> getPoisByDate(String date) async {
+    final rows = await localDb.getPoisByDate(date);
+    return rows.map(_mapPoi).toList();
   }
 }
 

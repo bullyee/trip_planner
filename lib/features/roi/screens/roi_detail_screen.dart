@@ -26,7 +26,7 @@ class RoiDetailScreen extends ConsumerWidget {
           onPressed: () => context.go('/pois?tab=region'),
         ),
         title: roiAsync.when(
-          data: (roi) => Text(roi.name),
+          data: (roi) => Text(roi?.name ?? 'Unknown'),
           loading: () => const Text('Loading...'),
           error: (_, _) => const Text('Error'),
         ),
@@ -35,21 +35,21 @@ class RoiDetailScreen extends ConsumerWidget {
             data: (roi) => PopupMenuButton<String>(
               onSelected: (action) {
                 if (action == 'edit') {
-                  context.push('/rois/${roi.id}/edit');
+                  context.push('/rois/${roi?.id ?? 'default_id'}/edit');
                 } else if (action == 'delete') {
                   showDialog(
                     context: context,
                     builder: (ctx) => AlertDialog(
                       title: const Text('Delete Region?'),
                       content: Text(
-                          'This will permanently delete "${roi.name}". Locations in this region will become regionless (not deleted).'),
+                          'This will permanently delete "${Text(roi?.name ?? 'Unknown ROI')}". Locations in this region will become regionless (not deleted).'),
                       actions: [
                         TextButton(
                             onPressed: () => Navigator.pop(ctx),
                             child: const Text('Cancel')),
                         FilledButton(
                           onPressed: () async {
-                            await ref.read(roiRepositoryProvider).deleteRoi(roi.id);
+                            await ref.read(roiRepositoryProvider).deleteRoi(roi?.id ?? 'default_id');
                             if (context.mounted) {
                               Navigator.pop(ctx);
                               context.go('/rois');

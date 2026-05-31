@@ -173,7 +173,7 @@ class _PoiListView extends ConsumerWidget {
           itemCount: pois.length,
           itemBuilder: (context, index) {
             final poi = pois[index];
-            final roiName = poi.roiId == null ? null : roiMap[poi.roiId]?.name;
+            final roiName = poi.roiId == null ? null : (roiMap[poi.roiId] as Roi?)?.name;
             return Card(
               child: ListTile(
                 leading: _PoiThumbnail(poi: poi),

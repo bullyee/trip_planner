@@ -45,6 +45,8 @@ class Pois extends Table {
   TextColumn get contactInfo => text().nullable()();
   TextColumn get coverImageUri => text().nullable()();
 
+  IntColumn get createdAt => integer().withDefault(Constant(DateTime.now().millisecondsSinceEpoch))();
+
   @override
   Set<Column> get primaryKey => {id};
 }

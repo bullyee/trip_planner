@@ -163,20 +163,7 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> insertPoi(PoisCompanion poi) => into(pois).insert(poi);
 
-  Future<bool> updatePoi(PoisCompanion poi) => update(pois).replace(
-        Poi(
-          id: poi.id.value,
-          roiId: poi.roiId.value,
-          name: poi.name.value,
-          description: poi.description.value,
-          address: poi.address.value,
-          lat: poi.lat.value,
-          lng: poi.lng.value,
-          businessHours: poi.businessHours.value,
-          contactInfo: poi.contactInfo.value,
-          coverImageUri: poi.coverImageUri.value,
-        ),
-      );
+  Future<bool> updatePoi(PoisCompanion poi) => update(pois).replace(poi);
 
   Future<List<Poi>> getAllPois() => select(pois).get();
 

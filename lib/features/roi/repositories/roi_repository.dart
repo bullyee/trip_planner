@@ -15,6 +15,8 @@ abstract class RoiRepository {
   Future<void> deleteRoi(String id);
 
   Future<RoiModel> getRoiById(String id);
+  Stream<List<RoiModel>> watchAllRois();
+  Stream<RoiModel?> watchRoiById(String id);
 }
 
 class DualTrackRoiRepository implements RoiRepository {
@@ -74,6 +76,30 @@ class DualTrackRoiRepository implements RoiRepository {
   Future<void> deleteRoi(String id) async {
     // TODO: Firestore logic (if shared)
     await localDb.deleteRoi(id);
+  }
+
+  @override
+  Stream<List<RoiModel>> watchAllRois() {
+    return localDb.watchAllRois().map((rows) {
+      return rows.map((row) => RoiModel(
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        createdAt: row.createdAt, 
+      )).toList();
+    });
+  }
+
+  @override
+  Stream<RoiModel?> watchRoiById(String id) {
+    return localDb.watchRoiById(id).map((row) {
+      return RoiModel(
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        createdAt: row.createdAt,
+      );
+    });
   }
 }
 

@@ -480,6 +480,18 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: Constant(DateTime.now().millisecondsSinceEpoch),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -492,6 +504,7 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
     businessHours,
     contactInfo,
     coverImageUri,
+    createdAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -582,6 +595,12 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
         ),
       );
     }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
     return context;
   }
 
@@ -631,6 +650,10 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
         DriftSqlType.string,
         data['${effectivePrefix}cover_image_uri'],
       ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
     );
   }
 
@@ -651,6 +674,7 @@ class Poi extends DataClass implements Insertable<Poi> {
   final String? businessHours;
   final String? contactInfo;
   final String? coverImageUri;
+  final int createdAt;
   const Poi({
     required this.id,
     this.roiId,
@@ -662,6 +686,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     this.businessHours,
     this.contactInfo,
     this.coverImageUri,
+    required this.createdAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -688,6 +713,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     if (!nullToAbsent || coverImageUri != null) {
       map['cover_image_uri'] = Variable<String>(coverImageUri);
     }
+    map['created_at'] = Variable<int>(createdAt);
     return map;
   }
 
@@ -715,6 +741,7 @@ class Poi extends DataClass implements Insertable<Poi> {
       coverImageUri: coverImageUri == null && nullToAbsent
           ? const Value.absent()
           : Value(coverImageUri),
+      createdAt: Value(createdAt),
     );
   }
 
@@ -734,6 +761,7 @@ class Poi extends DataClass implements Insertable<Poi> {
       businessHours: serializer.fromJson<String?>(json['businessHours']),
       contactInfo: serializer.fromJson<String?>(json['contactInfo']),
       coverImageUri: serializer.fromJson<String?>(json['coverImageUri']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
   @override
@@ -750,6 +778,7 @@ class Poi extends DataClass implements Insertable<Poi> {
       'businessHours': serializer.toJson<String?>(businessHours),
       'contactInfo': serializer.toJson<String?>(contactInfo),
       'coverImageUri': serializer.toJson<String?>(coverImageUri),
+      'createdAt': serializer.toJson<int>(createdAt),
     };
   }
 
@@ -764,6 +793,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     Value<String?> businessHours = const Value.absent(),
     Value<String?> contactInfo = const Value.absent(),
     Value<String?> coverImageUri = const Value.absent(),
+    int? createdAt,
   }) => Poi(
     id: id ?? this.id,
     roiId: roiId.present ? roiId.value : this.roiId,
@@ -779,6 +809,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     coverImageUri: coverImageUri.present
         ? coverImageUri.value
         : this.coverImageUri,
+    createdAt: createdAt ?? this.createdAt,
   );
   Poi copyWithCompanion(PoisCompanion data) {
     return Poi(
@@ -800,6 +831,7 @@ class Poi extends DataClass implements Insertable<Poi> {
       coverImageUri: data.coverImageUri.present
           ? data.coverImageUri.value
           : this.coverImageUri,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
 
@@ -815,7 +847,8 @@ class Poi extends DataClass implements Insertable<Poi> {
           ..write('lng: $lng, ')
           ..write('businessHours: $businessHours, ')
           ..write('contactInfo: $contactInfo, ')
-          ..write('coverImageUri: $coverImageUri')
+          ..write('coverImageUri: $coverImageUri, ')
+          ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
@@ -832,6 +865,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     businessHours,
     contactInfo,
     coverImageUri,
+    createdAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -846,7 +880,8 @@ class Poi extends DataClass implements Insertable<Poi> {
           other.lng == this.lng &&
           other.businessHours == this.businessHours &&
           other.contactInfo == this.contactInfo &&
-          other.coverImageUri == this.coverImageUri);
+          other.coverImageUri == this.coverImageUri &&
+          other.createdAt == this.createdAt);
 }
 
 class PoisCompanion extends UpdateCompanion<Poi> {
@@ -860,6 +895,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
   final Value<String?> businessHours;
   final Value<String?> contactInfo;
   final Value<String?> coverImageUri;
+  final Value<int> createdAt;
   final Value<int> rowid;
   const PoisCompanion({
     this.id = const Value.absent(),
@@ -872,6 +908,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     this.businessHours = const Value.absent(),
     this.contactInfo = const Value.absent(),
     this.coverImageUri = const Value.absent(),
+    this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PoisCompanion.insert({
@@ -885,6 +922,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     this.businessHours = const Value.absent(),
     this.contactInfo = const Value.absent(),
     this.coverImageUri = const Value.absent(),
+    this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -901,6 +939,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     Expression<String>? businessHours,
     Expression<String>? contactInfo,
     Expression<String>? coverImageUri,
+    Expression<int>? createdAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -914,6 +953,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
       if (businessHours != null) 'business_hours': businessHours,
       if (contactInfo != null) 'contact_info': contactInfo,
       if (coverImageUri != null) 'cover_image_uri': coverImageUri,
+      if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -929,6 +969,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     Value<String?>? businessHours,
     Value<String?>? contactInfo,
     Value<String?>? coverImageUri,
+    Value<int>? createdAt,
     Value<int>? rowid,
   }) {
     return PoisCompanion(
@@ -942,6 +983,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
       businessHours: businessHours ?? this.businessHours,
       contactInfo: contactInfo ?? this.contactInfo,
       coverImageUri: coverImageUri ?? this.coverImageUri,
+      createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -979,6 +1021,9 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     if (coverImageUri.present) {
       map['cover_image_uri'] = Variable<String>(coverImageUri.value);
     }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -998,6 +1043,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
           ..write('businessHours: $businessHours, ')
           ..write('contactInfo: $contactInfo, ')
           ..write('coverImageUri: $coverImageUri, ')
+          ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3740,6 +3786,7 @@ typedef $$PoisTableCreateCompanionBuilder =
       Value<String?> businessHours,
       Value<String?> contactInfo,
       Value<String?> coverImageUri,
+      Value<int> createdAt,
       Value<int> rowid,
     });
 typedef $$PoisTableUpdateCompanionBuilder =
@@ -3754,6 +3801,7 @@ typedef $$PoisTableUpdateCompanionBuilder =
       Value<String?> businessHours,
       Value<String?> contactInfo,
       Value<String?> coverImageUri,
+      Value<int> createdAt,
       Value<int> rowid,
     });
 
@@ -3922,6 +3970,11 @@ class $$PoisTableFilterComposer extends Composer<_$AppDatabase, $PoisTable> {
 
   ColumnFilters<String> get coverImageUri => $composableBuilder(
     column: $table.coverImageUri,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4127,6 +4180,11 @@ class $$PoisTableOrderingComposer extends Composer<_$AppDatabase, $PoisTable> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$RoisTableOrderingComposer get roiId {
     final $$RoisTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -4194,6 +4252,9 @@ class $$PoisTableAnnotationComposer
     column: $table.coverImageUri,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
   $$RoisTableAnnotationComposer get roiId {
     final $$RoisTableAnnotationComposer composer = $composerBuilder(
@@ -4389,6 +4450,7 @@ class $$PoisTableTableManager
                 Value<String?> businessHours = const Value.absent(),
                 Value<String?> contactInfo = const Value.absent(),
                 Value<String?> coverImageUri = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PoisCompanion(
                 id: id,
@@ -4401,6 +4463,7 @@ class $$PoisTableTableManager
                 businessHours: businessHours,
                 contactInfo: contactInfo,
                 coverImageUri: coverImageUri,
+                createdAt: createdAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4415,6 +4478,7 @@ class $$PoisTableTableManager
                 Value<String?> businessHours = const Value.absent(),
                 Value<String?> contactInfo = const Value.absent(),
                 Value<String?> coverImageUri = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PoisCompanion.insert(
                 id: id,
@@ -4427,6 +4491,7 @@ class $$PoisTableTableManager
                 businessHours: businessHours,
                 contactInfo: contactInfo,
                 coverImageUri: coverImageUri,
+                createdAt: createdAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

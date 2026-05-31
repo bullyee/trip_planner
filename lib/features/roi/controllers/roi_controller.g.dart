@@ -6,7 +6,7 @@ part of 'roi_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$roiControllerHash() => r'71637a566f8bbbb540049e53cdbed2baaf062d64';
+String _$roiControllerHash() => r'd2b16b54b5821625ba58913ebb6440809620b767';
 
 /// See also [RoiController].
 @ProviderFor(RoiController)

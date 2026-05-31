@@ -5,8 +5,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
-import '../../core/database/database.dart';
 import '../../core/widgets/add_speed_dial.dart';
+import '../poi/models/poi_model.dart';
 import '../poi/screens/poi_browse_screen.dart';
 import 'map_notifier.dart';
 import 'poi_bottom_sheet.dart';
@@ -70,30 +70,30 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return _roiColors[roiId.hashCode.abs() % _roiColors.length];
   }
 
-  List<Marker> _buildMarkers(List<Poi> pois, Poi? selected) {
-    return pois
-        .map((p) => Marker(
-              point: LatLng(p.lat, p.lng),
-              width: 40,
-              height: 40,
-              child: GestureDetector(
-                onTap: () {
-                  ref.read(mapNotifierProvider.notifier).selectPoi(p);
-                  _showPoiSheet(p);
-                },
-                child: Icon(
-                  Icons.location_pin,
-                  color: selected?.id == p.id
-                      ? Colors.yellow
-                      : _colorForRoi(p.roiId),
-                  size: 40,
+  List<Marker> _buildMarkers(List<PoiModel> pois, PoiModel? selected) {
+      return pois
+          .map((p) => Marker(
+                point: LatLng(p.lat, p.lng),
+                width: 40,
+                height: 40,
+                child: GestureDetector(
+                  onTap: () {
+                    ref.read(mapNotifierProvider.notifier).selectPoi(p);
+                    _showPoiSheet(p); 
+                  },
+                  child: Icon(
+                    Icons.location_pin,
+                    color: selected?.id == p.id
+                        ? Colors.yellow
+                        : _colorForRoi(p.roiId),
+                    size: 40,
+                  ),
                 ),
-              ),
-            ))
-        .toList();
-  }
+              ))
+          .toList();
+    }
 
-  void _showPoiSheet(Poi poi) {
+  void _showPoiSheet(PoiModel poi) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,

@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/providers/database_provider.dart';
 import '../../poi/services/anitabi_api_service.dart';
 import '../models/bangumi_subject.dart';
+import '../repositories/anime_repository.dart';
 import '../services/bangumi_search_service.dart';
 
 class BangumiSearchScreen extends ConsumerStatefulWidget {
@@ -102,16 +102,12 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
 
     setState(() => _importing = subject.id);
 
-    final db = ref.read(databaseProvider);
+    final animeRepo = ref.read(animeRepositoryProvider);
     final AnitabiImportResult? result;
     try {
-      result = await AnitabiApiService.importBangumiSubject(
-        db,
+      result = await animeRepo.importFromAnitabi(
         subject.id,
-        // Anitabi's Japanese title is preferred; this is only the fallback
-        // when that fetch fails, so use Bangumi's original (Japanese) name,
-        // not the Chinese name_cn.
-        fallbackName: subject.name,
+        subject.name,
       );
     } on AnitabiUnavailableException {
       // Network/timeout — not the same as "this anime has no POIs".

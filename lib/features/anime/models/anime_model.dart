@@ -8,6 +8,7 @@ class AnimeModel {
   // Necessary for offline-first and cloud sync architectures
   final int createdAt;
   final bool isShared;
+  final String? bangumiId;
 
   AnimeModel({
     required this.id,
@@ -15,5 +16,6 @@ class AnimeModel {
     this.description,
     required this.createdAt,
     this.isShared = false,
+    this.bangumiId,
   });
 }

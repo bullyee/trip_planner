@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/database/database.dart';
 import '../anime/providers/anime_provider.dart';
+import '../poi/models/poi_model.dart';
 import '../tag/providers/tag_provider.dart';
 
 class PoiBottomSheet extends ConsumerWidget {
-  final Poi poi;
+  final PoiModel poi;
 
   const PoiBottomSheet({super.key, required this.poi});
 
