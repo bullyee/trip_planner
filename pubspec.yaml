@@ -69,6 +69,9 @@ dependencies:
   google_sign_in: ^7.2.0
   googleapis_auth: ^2.3.1
   url_launcher: ^6.3.2
+  google_mlkit_subject_segmentation: ^0.0.3
+  onnxruntime: ^1.4.1
+  gal: ^2.3.2
 
 dev_dependencies:
   flutter_test:
@@ -97,6 +100,11 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    # isnet-anime cutout model (spike). Gitignored (176 MB) — re-download via:
+    # curl -L https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-anime.onnx -o assets/models/isnet-anime.onnx
+    - assets/models/isnet-anime.onnx
 
   # To add assets to your application, add an assets section, like this:
   # assets:
