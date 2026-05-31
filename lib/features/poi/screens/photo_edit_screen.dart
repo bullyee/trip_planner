@@ -11,7 +11,6 @@ import '../models/reference_image_model.dart';
 import '../providers/poi_provider.dart';
 import '../repositories/media_repository.dart';
 import '../services/brightness_service.dart';
-import '../services/comparison_image_service.dart';
 import '../services/edit_preview_service.dart';
 import '../services/media_asset_service.dart';
 import '../services/sharpness_service.dart';
@@ -172,11 +171,6 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   // every slider release after that.
   PreparedSharpness? _sharpnessCache;
   bool _preparingSharpness = false;
-
-  // Compare toggle — when on, the canvas renders the edited captured
-  // side-by-side with the reference and Save persists a
-  // `comparison_image` MediaAsset instead of overwriting the source.
-  final bool _compareMode = false;
 
   // True while the user is actively dialling in a tool's parameters.
   // In this submode the AppBar swaps to Cancel + tool name + Confirm,
@@ -766,59 +760,11 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   Future<void> _save() async {
     if (_saving) return;
     final mediaRepo = ref.read(mediaRepositoryProvider);
-    final referenceFile = _referenceFile;
 
     setState(() => _saving = true);
     try {
-      // Compare toggle on: stitch the full-res edited captured next
-      // to the reference and write it as a brand-new `comparison_image`
-      // MediaAsset — the original source file is left alone, so the
-      // user can still save the single shot later.
-      if (_compareMode && referenceFile != null) {
-        final editedBytes = await _resolveBytesForSave() ??
-            await _sourceFile.readAsBytes();
-        final referenceBytes = await referenceFile.readAsBytes();
-        final composed = await compute(
-          generateComparison,
-          ComparisonArgs(
-            capturedBytes: editedBytes,
-            referenceBytes: referenceBytes,
-          ),
-        );
-        final tempFile = File(p.join(
-          Directory.systemTemp.path,
-          'comparison_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        ));
-        await tempFile.writeAsBytes(composed, flush: true);
-
-        final bool ok;
-        try {
-          ok = await persistMediaAsset(
-            mediaRepo: ref.read(mediaRepositoryProvider),
-            source: tempFile,
-            poiId: widget.poiId,
-            type: 'comparison_image',
-            referenceImageId: _referenceImageId,
-          );
-        } finally {
-          // persistMediaAsset copies the stitch into permanent storage, so
-          // the systemTemp staging file is no longer needed — delete it to
-          // stop the temp dir from growing on every Compare save.
-          if (await tempFile.exists()) await tempFile.delete();
-        }
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  Text(ok ? 'Comparison saved.' : 'Save failed.')),
-        );
-        if (ok) Navigator.of(context).pop();
-        return;
-      }
-
-      // Single-shot save: write the edited bytes over the source so
-      // persistMediaAsset's copy-into-storage step picks them up, then
-      // record the matching MediaAsset row.
+      // Write the edited bytes over the source so persistMediaAsset's 
+      // copy-into-storage step picks them up, then record the MediaAsset row.
       final bytesToWrite = await _resolveBytesForSave();
       if (bytesToWrite != null) {
         await _sourceFile.writeAsBytes(bytesToWrite, flush: true);
@@ -1285,19 +1231,6 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   /// is the single edited captured (with the optional translucent
   /// overlay layered on top).
   Widget _buildCanvasContent(Uint8List? currentBytes, File? reference) {
-    if (_compareMode && reference != null) {
-      return Row(
-        children: [
-          Expanded(child: Center(child: _buildEditingCanvas(currentBytes))),
-          Container(width: 2, color: Colors.white24),
-          Expanded(
-            child: Center(
-              child: Image.file(reference, fit: BoxFit.contain),
-            ),
-          ),
-        ],
-      );
-    }
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1382,7 +1315,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                   // is on AND Compare mode is off (Compare already
                   // shows both images, so the overlay layer is hidden
                   // and its controls go with it).
-                  if (hasReference && !_compareMode)
+                  if (hasReference)
                     Positioned(
                       left: 12,
                       right: 12,

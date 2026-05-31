@@ -17,7 +17,6 @@ abstract class MediaRepository {
   Future<void> updateMediaAssetLocalUri(String id, String newUri);
   Future<void> updateReferenceImageLocalUri(String id, String newUri);
   
-
   Stream<List<MediaAssetModel>> watchMediaAssetsByPoi(String poiId);
   Stream<List<ReferenceImageModel>> watchReferenceImagesByPoi(String poiId);
   Stream<List<MediaAssetModel>> watchMediaAssetsByType(String type);
@@ -38,6 +37,8 @@ class DualTrackMediaRepository implements MediaRepository {
           poiId: asset.poiId,
           localUri: asset.localUri,
           type: asset.type ?? 'unknown', 
+          remoteUrl: Value(asset.remoteUrl), // FIXED: Prevent silent data loss
+          metadata: Value(asset.metadata),   // FIXED: Prevent silent data loss
           referenceImageId: Value(asset.referenceImageId),
         )
       );
@@ -59,6 +60,8 @@ class DualTrackMediaRepository implements MediaRepository {
           id: image.id,
           poiId: image.poiId,
           localUri: image.localUri, 
+          remoteUrl: Value(image.remoteUrl), // FIXED: Prevent silent data loss
+          metadata: Value(image.metadata),   // FIXED: Prevent silent data loss
         )
       );
     }
@@ -77,6 +80,8 @@ class DualTrackMediaRepository implements MediaRepository {
         poiId: asset.poiId,
         localUri: asset.localUri,
         type: asset.type, 
+        remoteUrl: asset.remoteUrl, // FIXED: Map missing fields
+        metadata: asset.metadata,   // FIXED: Map missing fields
         referenceImageId: asset.referenceImageId,
         createdAt: DateTime.now().millisecondsSinceEpoch,
         isShared: false,
@@ -91,6 +96,8 @@ class DualTrackMediaRepository implements MediaRepository {
         id: img.id,
         poiId: img.poiId,
         localUri: img.localUri,
+        remoteUrl: img.remoteUrl, // FIXED: Map missing fields
+        metadata: img.metadata,   // FIXED: Map missing fields
         createdAt: DateTime.now().millisecondsSinceEpoch,
         isShared: false,
       )).toList();
@@ -111,10 +118,11 @@ class DualTrackMediaRepository implements MediaRepository {
 
   @override
   Stream<List<MediaAssetModel>> watchMediaAssetsByType(String type) {
-    return (localDb.select(localDb.mediaAssets)..where((tbl) => tbl.type.equals(type)))
+    return (localDb.select(localDb.mediaAssets)
+          ..where((tbl) => tbl.type.equals(type))
+          ..orderBy([(m) => OrderingTerm.desc(m.id)])) // FIXED: Restored ordering logic
         .watch()
         .map((rows) {
-          // 將底層的 Drift Entity 轉換成純潔的 Model
           return rows.map((row) => MediaAssetModel(
             id: row.id,
             poiId: row.poiId,

@@ -116,8 +116,8 @@ class AppDatabase extends _$AppDatabase {
   Future<Roi> getRoiById(String id) =>
       (select(rois)..where((r) => r.id.equals(id))).getSingle();
 
-  Stream<Roi> watchRoiById(String id) =>
-      (select(rois)..where((r) => r.id.equals(id))).watchSingle();
+  Stream<Roi?> watchRoiById(String id) =>
+      (select(rois)..where((r) => r.id.equals(id))).watchSingleOrNull();
 
   Future<int> insertRoi(RoisCompanion roi) => into(rois).insert(roi);
 

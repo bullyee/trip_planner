@@ -1,5 +1,3 @@
-// lib/features/poi/repositories/poi_repository.dart
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
 
@@ -8,7 +6,6 @@ import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
 
 abstract class PoiRepository {
-  /// Saves the POI and its associated many-to-many relations in a single transaction.
   Future<void> savePoiWithRelations({
     required PoiModel poi,
     required List<String> animeIds,
@@ -43,8 +40,6 @@ class DualTrackPoiRepository implements PoiRepository {
     if (poi.isShared) {
       // TODO: Route to Firestore SDK when implemented
     } else {
-      // Execute local SQLite operations within a transaction.
-      // Drift-specific 'Value' wrappers are strictly isolated here.
       await localDb.transaction(() async {
         final companion = PoisCompanion(
           id: Value(poi.id),
@@ -57,8 +52,7 @@ class DualTrackPoiRepository implements PoiRepository {
           businessHours: Value(poi.businessHours),
           contactInfo: Value(poi.contactInfo),
           coverImageUri: Value(poi.coverImageUri),
-          // Assuming your local Drift DB has a createdAt column. 
-          // If not, you may need to add it to your Drift table definition later.
+          createdAt: Value(poi.createdAt),
         );
 
         if (isUpdate) {
@@ -67,17 +61,18 @@ class DualTrackPoiRepository implements PoiRepository {
           await localDb.insertPoi(companion);
         }
         
-        // Update many-to-many relationships
         await localDb.setAnimesForPoi(poi.id, animeIds);
         await localDb.setTagsForPoi(poi.id, tagIds);
       });
     }
   }
+
   @override
   Future<void> deletePoi(String id) async {
     // TODO: Check if isShared and route to Firestore
     await localDb.deletePoi(id);
   }
+
   @override
   Future<PoiModel> getPoiById(String id) async {
     final driftPoi = await localDb.getPoiById(id);
@@ -93,7 +88,7 @@ class DualTrackPoiRepository implements PoiRepository {
       businessHours: driftPoi.businessHours,
       contactInfo: driftPoi.contactInfo,
       coverImageUri: driftPoi.coverImageUri,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
+      createdAt: driftPoi.createdAt, // FIXED: driftRow -> driftPoi
       isShared: false, 
     );
   }

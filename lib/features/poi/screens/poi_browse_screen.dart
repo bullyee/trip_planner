@@ -122,9 +122,7 @@ class _ByRegionTab extends ConsumerWidget {
             return Card(
               child: ListTile(
                 leading: Icon(
-                  roi.isOfflineCached == 1
-                      ? Icons.cloud_done
-                      : Icons.cloud_outlined,
+                  roi.isOfflineCached ? Icons.cloud_done : Icons.cloud_outlined,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 title: Text(roi.name),

@@ -37,9 +37,7 @@ class RoiListScreen extends ConsumerWidget {
                       ? Text(roi.description!, maxLines: 2)
                       : null,
                   leading: Icon(
-                    roi.isOfflineCached == 1
-                        ? Icons.cloud_done
-                        : Icons.cloud_outlined,
+                    roi.isOfflineCached ? Icons.cloud_done : Icons.cloud_outlined,
                     color: Theme.of(context).colorScheme.primary,
                   ),
                   trailing: const Icon(Icons.chevron_right),
@@ -87,18 +85,24 @@ class RoiListScreen extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
 
-              // 🌟 CLEAN UI: Delegate the action to the controller.
-              // No database syntax, no Uuid(), no Value() in the UI layer.
-              ref.read(roiControllerProvider.notifier).addRoi(
+              final success = await ref.read(roiControllerProvider.notifier).addRoi(
                 name: name,
                 description: descController.text,
               );
               
-              Navigator.pop(context);
+              if (!context.mounted) return;
+
+              if (success) {
+                Navigator.pop(context);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to create Region.')),
+                );
+              }
             },
             child: const Text('Create'),
           ),

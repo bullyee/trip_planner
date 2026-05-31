@@ -69,6 +69,7 @@ class DualTrackRoiRepository implements RoiRepository {
       name: driftRoi.name,
       description: driftRoi.description,
       createdAt: driftRoi.createdAt, // Assumes Drift has this column
+      isOfflineCached: driftRoi.isOfflineCached == 1,
       isShared: false, // Set default or map from Drift if you have a column for it
     );
   }
@@ -86,6 +87,7 @@ class DualTrackRoiRepository implements RoiRepository {
         name: row.name,
         description: row.description,
         createdAt: row.createdAt, 
+        isOfflineCached: row.isOfflineCached == 1,
       )).toList();
     });
   }
@@ -93,11 +95,13 @@ class DualTrackRoiRepository implements RoiRepository {
   @override
   Stream<RoiModel?> watchRoiById(String id) {
     return localDb.watchRoiById(id).map((row) {
+      if (row == null) return null;
       return RoiModel(
         id: row.id,
         name: row.name,
         description: row.description,
         createdAt: row.createdAt,
+        isOfflineCached: row.isOfflineCached == 1,
       );
     });
   }

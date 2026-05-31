@@ -1,5 +1,3 @@
-// lib/features/tag/repositories/tag_repository.dart
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
 
@@ -51,9 +49,10 @@ class DualTrackTagRepository implements TagRepository {
         TagsCompanion(
           id: Value(tag.id),
           name: Value(tag.name),
-          description: Value(tag.description),
-          // createdAt is intentionally omitted here if your local DB 
-          // doesn't update the creation time on edit.
+          // FIXED: Do not blindly overwrite with null. Use Value.absent() to ignore the column 
+          // during update if the tag model doesn't have a description set.
+          description: tag.description != null ? Value(tag.description) : const Value.absent(),
+          createdAt: Value(tag.createdAt), // FIXED: Preserve original timestamp
         ),
       );
     }
@@ -65,6 +64,7 @@ class DualTrackTagRepository implements TagRepository {
       return rows.map((row) => TagModel(
         id: row.id,
         name: row.name,
+        description: row.description, // FIXED: Prevent silent data loss
         createdAt: row.createdAt,
       )).toList();
     });
@@ -81,6 +81,7 @@ class DualTrackTagRepository implements TagRepository {
       return rows.map((row) => TagModel(
         id: row.id,
         name: row.name,
+        description: row.description, // FIXED: Prevent silent data loss
         createdAt: row.createdAt,
       )).toList();
     });
@@ -93,6 +94,7 @@ class DualTrackTagRepository implements TagRepository {
       return TagModel(
         id: row.id,
         name: row.name,
+        description: row.description, // FIXED: Prevent silent data loss
         createdAt: row.createdAt,
       );
     });
@@ -113,6 +115,7 @@ class DualTrackTagRepository implements TagRepository {
         contactInfo: row.contactInfo,
         coverImageUri: row.coverImageUri,
         createdAt: row.createdAt,
+        isShared: false,
       )).toList();
     });
   }
@@ -124,6 +127,7 @@ class DualTrackTagRepository implements TagRepository {
     return TagModel(
       id: row.id,
       name: row.name,
+      description: row.description, // FIXED: Prevent silent data loss
       createdAt: row.createdAt,
     );
   }

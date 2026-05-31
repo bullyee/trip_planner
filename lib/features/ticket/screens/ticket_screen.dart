@@ -5,7 +5,7 @@ import '../../poi/models/media_asset_model.dart';
 import '../../poi/repositories/media_repository.dart';
 
 final _ticketAssetsProvider = StreamProvider<List<MediaAssetModel>>((ref) {
-  return ref.watch(mediaRepositoryProvider).watchMediaAssetsByType('ticket');
+  return ref.watch(mediaRepositoryProvider).watchMediaAssetsByType('ticket_qr');
 });
 
 class TicketScreen extends ConsumerWidget {

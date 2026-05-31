@@ -32,41 +32,45 @@ class RoiDetailScreen extends ConsumerWidget {
         ),
         actions: [
           roiAsync.when(
-            data: (roi) => PopupMenuButton<String>(
-              onSelected: (action) {
-                if (action == 'edit') {
-                  context.push('/rois/${roi?.id ?? 'default_id'}/edit');
-                } else if (action == 'delete') {
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Delete Region?'),
-                      content: Text(
-                          'This will permanently delete "${Text(roi?.name ?? 'Unknown ROI')}". Locations in this region will become regionless (not deleted).'),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('Cancel')),
-                        FilledButton(
-                          onPressed: () async {
-                            await ref.read(roiRepositoryProvider).deleteRoi(roi?.id ?? 'default_id');
-                            if (context.mounted) {
-                              Navigator.pop(ctx);
-                              context.go('/rois');
-                            }
-                          },
-                          child: const Text('Delete'),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                const PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
-            ),
+            data: (roi) {
+              if (roi == null) return const SizedBox.shrink();
+
+              return PopupMenuButton<String>(
+                onSelected: (action) {
+                  if (action == 'edit') {
+                    context.push('/rois/${roi.id}/edit');
+                  } else if (action == 'delete') {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Delete Region?'),
+                        content: Text(
+                            'This will permanently delete "${roi.name}". Locations in this region will become regionless (not deleted).'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Cancel')),
+                          FilledButton(
+                            onPressed: () async {
+                              await ref.read(roiRepositoryProvider).deleteRoi(roi.id);
+                              if (context.mounted) {
+                                Navigator.pop(ctx);
+                                context.go('/rois');
+                              }
+                            },
+                            child: const Text('Delete'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                ],
+              );
+            },
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
           ),

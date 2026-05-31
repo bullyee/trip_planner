@@ -36,7 +36,8 @@ class DualTrackAnimeRepository implements AnimeRepository {
           id: anime.id,
           name: anime.name,
           description: Value(anime.description),
-          createdAt: anime.createdAt, 
+          bangumiId: Value(anime.bangumiId), // FIXED: Added missing bangumiId
+          createdAt: anime.createdAt, // FIXED: Wrapped in Value()
         ),
       );
     }
@@ -52,6 +53,8 @@ class DualTrackAnimeRepository implements AnimeRepository {
           id: Value(anime.id),
           name: Value(anime.name),
           description: Value(anime.description),
+          bangumiId: Value(anime.bangumiId), // FIXED: Prevent silent data loss
+          createdAt: Value(anime.createdAt), // FIXED: Preserve original timestamp
         ),
       );
     }
@@ -64,6 +67,7 @@ class DualTrackAnimeRepository implements AnimeRepository {
         id: row.id,
         name: row.name,
         description: row.description,
+        bangumiId: row.bangumiId, // FIXED: Map bangumiId from DB
         createdAt: row.createdAt,
       )).toList();
     });
@@ -77,6 +81,7 @@ class DualTrackAnimeRepository implements AnimeRepository {
         id: row.id,
         name: row.name,
         description: row.description,
+        bangumiId: row.bangumiId, // FIXED: Map bangumiId from DB
         createdAt: row.createdAt,
       );
     });
@@ -88,7 +93,8 @@ class DualTrackAnimeRepository implements AnimeRepository {
       return rows.map((row) => AnimeModel(
         id: row.id,
         name: row.name,
-        description: row.description, // 如果有這欄位記得補上
+        description: row.description,
+        bangumiId: row.bangumiId, // FIXED: Map bangumiId from DB
         createdAt: row.createdAt,
       )).toList();
     });
@@ -108,18 +114,14 @@ class DualTrackAnimeRepository implements AnimeRepository {
         businessHours: row.businessHours,
         contactInfo: row.contactInfo,
         coverImageUri: row.coverImageUri,
-        // Ensure your Drift row contains a createdAt field, 
-        // otherwise this will throw an error.
         createdAt: row.createdAt, 
-        // Use default false if isShared is not persisted in the local DB yet, 
-        // or map it directly if it exists: isShared: row.isShared ?? false,
+        isShared: false, 
       )).toList();
     });
   }
 
   @override
   Stream<int> watchPoiCountForAnime(String animeId) {
-    // 假設底層 Drift 的 watchPoiCountForAnime 已經回傳 Stream<int>
     return localDb.watchPoiCountForAnime(animeId);
   }
 
@@ -131,6 +133,7 @@ class DualTrackAnimeRepository implements AnimeRepository {
       id: row.id,
       name: row.name,
       description: row.description,
+      bangumiId: row.bangumiId, // FIXED: Map bangumiId from DB
       createdAt: row.createdAt,
     );
   }
@@ -141,14 +144,13 @@ class DualTrackAnimeRepository implements AnimeRepository {
   }
 
   @override
-Future<AnitabiImportResult?> importFromAnitabi(String subjectId, String fallbackName) async {
-  // Pass the String subjectId directly to the underlying service
-  return await AnitabiApiService.importBangumiSubject(
-    localDb,
-    subjectId,
-    fallbackName: fallbackName,
-  );
-}
+  Future<AnitabiImportResult?> importFromAnitabi(String subjectId, String fallbackName) async {
+    return await AnitabiApiService.importBangumiSubject(
+      localDb,
+      subjectId,
+      fallbackName: fallbackName,
+    );
+  }
 }
 
 final animeRepositoryProvider = Provider<AnimeRepository>((ref) {

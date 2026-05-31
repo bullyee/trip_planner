@@ -5,7 +5,7 @@ class Rois extends Table {
   TextColumn get name => text()();
   TextColumn get description => text().nullable()();
   IntColumn get isOfflineCached => integer().withDefault(const Constant(0))();
-  IntColumn get createdAt => integer()();
+  IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -16,7 +16,7 @@ class Animes extends Table {
   TextColumn get name => text()();
   TextColumn get description => text().nullable()();
   TextColumn get bangumiId => text().nullable().unique()();
-  IntColumn get createdAt => integer()();
+  IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -26,7 +26,7 @@ class Tags extends Table {
   TextColumn get id => text()();
   TextColumn get name => text()();
   TextColumn get description => text().nullable()();
-  IntColumn get createdAt => integer()();
+  IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -44,8 +44,7 @@ class Pois extends Table {
   TextColumn get businessHours => text().nullable()();
   TextColumn get contactInfo => text().nullable()();
   TextColumn get coverImageUri => text().nullable()();
-
-  IntColumn get createdAt => integer().withDefault(Constant(DateTime.now().millisecondsSinceEpoch))();
+  IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override
   Set<Column> get primaryKey => {id};
