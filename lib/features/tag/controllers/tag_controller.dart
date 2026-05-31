@@ -1,9 +1,10 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
-import 'package:drift/drift.dart';
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
+// IMPORTANT: Removed drift and direct database imports.
+// Added the pure domain model and repository imports.
+import '../models/tag_model.dart';
+import '../repositories/tag_repository.dart';
 
 part 'tag_controller.g.dart';
 
@@ -12,31 +13,39 @@ class TagController extends _$TagController {
   @override
   FutureOr<void> build() {}
 
+  /// Handles business logic for saving a Tag.
+  /// Delegates all database operations to the Repository layer.
   Future<bool> saveTag({
     required bool isNew,
     String? id,
     required String name,
     required String description,
+    // Added for Dual-Track Sync architecture
+    int? existingCreatedAt,
+    bool isShared = false,
   }) async {
     state = const AsyncValue.loading();
     try {
-      final db = ref.read(databaseProvider);
       String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
 
+      // 1. Resolve ID and construct the pure Domain Model
+      final tagId = isNew ? const Uuid().v4() : id!;
+
+      final tagModel = TagModel(
+        id: tagId,
+        name: name.trim(),
+        description: nullIfEmpty(description),
+        // Preserve timestamp on edit, generate new one on creation
+        createdAt: existingCreatedAt ?? DateTime.now().millisecondsSinceEpoch,
+        isShared: isShared,
+      );
+
+      // 2. Delegate to the Repository Layer
+      final repository = ref.read(tagRepositoryProvider);
       if (isNew) {
-        final newId = const Uuid().v4();
-        await db.insertTag(TagsCompanion.insert(
-          id: newId,
-          name: name.trim(),
-          description: Value(nullIfEmpty(description)),
-          createdAt: DateTime.now().millisecondsSinceEpoch,
-        ));
+        await repository.addTag(tagModel);
       } else {
-        await db.updateTag(TagsCompanion(
-          id: Value(id!),
-          name: Value(name.trim()),
-          description: Value(nullIfEmpty(description)),
-        ));
+        await repository.updateTag(tagModel);
       }
 
       state = const AsyncValue.data(null);

@@ -1,9 +1,10 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
-import 'package:drift/drift.dart';
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
+// IMPORTANT: Removed drift and direct database imports.
+// Added the pure domain model and repository imports.
+import '../models/poi_model.dart';
+import '../repositories/poi_repository.dart';
 
 part 'poi_controller.g.dart';
 
@@ -12,11 +13,8 @@ class PoiController extends _$PoiController {
   @override
   FutureOr<void> build() {}
 
-  /// Handles business logic and database operations for saving a POI.
-  ///
-  /// Returns the POI id on success (the existing id when editing, or a
-  /// freshly generated one when creating) so callers can attach related
-  /// records such as a captured photo. Returns null on failure.
+  /// Handles business logic for saving a POI.
+  /// Delegates all database transactions and relational mappings to the Repository.
   Future<String?> savePoi({
     required String? id,
     required String? roiId,
@@ -30,49 +28,48 @@ class PoiController extends _$PoiController {
     required List<String> animeIds,
     required List<String> tagIds,
     String? coverImageUri,
+    // Added for Dual-Track Sync architecture
+    int? existingCreatedAt, 
+    bool isShared = false,  
   }) async {
-    // Set state to loading to prevent multiple submissions
     state = const AsyncValue.loading();
     
     try {
-      final db = ref.read(databaseProvider);
       final poiId = id ?? const Uuid().v4();
-
-      // Business logic: clean up empty strings to store null in DB
+      
+      // Business logic: clean up empty strings
       String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
 
-      final companion = PoisCompanion(
-        id: Value(poiId),
-        roiId: Value(roiId),
-        name: Value(name.trim()),
-        description: Value(nullIfEmpty(description)),
-        address: Value(nullIfEmpty(address)),
-        lat: Value(double.parse(latStr.trim())),
-        lng: Value(double.parse(lngStr.trim())),
-        businessHours: Value(nullIfEmpty(businessHours)),
-        contactInfo: Value(nullIfEmpty(contactInfo)),
-        // Preserve the existing cover on edit. updatePoi does a full-row
-        // replace, so passing null here would wipe an Anitabi-imported or
-        // user-set cover; callers thread the loaded value back through.
-        coverImageUri: Value(coverImageUri),
+      // 1. Construct the pure Domain Model
+      final poiModel = PoiModel(
+        id: poiId,
+        roiId: roiId,
+        name: name.trim(),
+        description: nullIfEmpty(description),
+        address: nullIfEmpty(address),
+        lat: double.parse(latStr.trim()),
+        lng: double.parse(lngStr.trim()),
+        businessHours: nullIfEmpty(businessHours),
+        contactInfo: nullIfEmpty(contactInfo),
+        coverImageUri: coverImageUri,
+        // Preserve timestamp on edit, generate new one on creation
+        createdAt: existingCreatedAt ?? DateTime.now().millisecondsSinceEpoch,
+        isShared: isShared,
       );
 
-      // Execute database operations 
-      await db.transaction(() async {
-        if (id != null) {
-          await db.updatePoi(companion);
-        } else {
-          await db.insertPoi(companion);
-        }
-        await db.setAnimesForPoi(poiId, animeIds);
-        await db.setTagsForPoi(poiId, tagIds);
-      });
+      // 2. Delegate to the Repository Layer
+      // The repository will handle the transaction, updating the POI, 
+      // and setting the relational anime/tag connections.
+      await ref.read(poiRepositoryProvider).savePoiWithRelations(
+        poi: poiModel,
+        animeIds: animeIds,
+        tagIds: tagIds,
+        isUpdate: id != null,
+      );
 
-      // Success: return to normal data state
       state = const AsyncValue.data(null);
       return poiId;
     } catch (e, st) {
-      // Error occurred: propagate the error state
       state = AsyncValue.error(e, st);
       return null;
     }
