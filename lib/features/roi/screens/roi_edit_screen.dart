@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
 import '../controllers/roi_controller.dart';
+import '../models/roi_model.dart';
+import '../repositories/roi_repository.dart';
 
 class RoiEditScreen extends ConsumerStatefulWidget {
   final String roiId;
@@ -20,7 +20,7 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
   bool _isLoading = true;
-  Roi? _existing;
+  RoiModel? _existing;
 
   @override
   void initState() {
@@ -29,23 +29,25 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
   }
 
   Future<void> _load() async {
-    try {
-      final db = ref.read(databaseProvider);
-      final roi = await db.getRoiById(widget.roiId);
-      _existing = roi;
-      _nameController.text = roi.name;
-      _descController.text = roi.description ?? '';
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Region not found.')),
-        );
-        context.pop();
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+  try {
+    // Delegate fetching to the repository instead of Drift DB
+    final repository = ref.read(roiRepositoryProvider);
+    final roi = await repository.getRoiById(widget.roiId);
+
+    _existing = roi;
+    _nameController.text = roi.name;
+    _descController.text = roi.description ?? '';
+  } catch (_) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Region not found.')),
+      );
+      context.pop();
     }
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
+}
 
   @override
   void dispose() {
@@ -97,12 +99,17 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     
+    // Check if the data was successfully loaded before saving
+    if (_existing == null) return; 
+
     final success = await ref.read(roiControllerProvider.notifier).updateRoi(
       id: widget.roiId,
       name: _nameController.text,
       description: _descController.text,
-      existingIsOfflineCached: _existing?.isOfflineCached,
-      existingCreatedAt: _existing?.createdAt,
+      createdAt: _existing!.createdAt,                     // Extract from _existing
+      // NOTE: If your Drift 'Roi' class doesn't have an 'isShared' column yet, 
+      // just pass 'false' here for now.
+      isShared: false,                                     
     );
 
     if (success && mounted) {

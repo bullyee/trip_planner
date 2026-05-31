@@ -1,74 +1,78 @@
 // lib/features/roi/repositories/roi_repository.dart
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:drift/drift.dart'; 
 import '../models/roi_model.dart';
-// import 'package:trip_planner/core/database/database.dart'; // Import your actual Drift DB here
+import '../../../core/database/database.dart'; 
+import '../../../core/providers/database_provider.dart';
 
 abstract class RoiRepository {
-  // MUST declare the method signature here so the Controller can see it
   Future<void> updateRoi(
     RoiModel roi, {
     int? existingIsOfflineCached,
-    int? existingCreatedAt,
   });
   Future<void> addRoi(RoiModel roi);
-  
-  // Future<List<RoiModel>> getRois();
-  // Future<void> addRoi(RoiModel roi);
+
+  Future<RoiModel> getRoiById(String id);
 }
 
 class DualTrackRoiRepository implements RoiRepository {
-  // final AppDatabase localDb;
-  // DualTrackRoiRepository(this.localDb);
+  final AppDatabase localDb;
+  
+  DualTrackRoiRepository(this.localDb);
 
   @override
   Future<void> updateRoi(
     RoiModel roi, {
     int? existingIsOfflineCached,
-    int? existingCreatedAt,
   }) async {
     if (roi.isShared) {
       // TODO: Route to Firestore SDK when implemented
-      // await cloudDb.collection('trips').doc(roi.id).update({...});
     } else {
-      // Route to local Drift SQLite.
-      // Notice how the Drift-specific 'Value' wrapper is strictly confined to this layer.
-      /*
       await localDb.updateRoi(
         RoisCompanion(
           id: Value(roi.id),
           name: Value(roi.name),
           description: Value(roi.description),
           isOfflineCached: Value(existingIsOfflineCached ?? 0),
-          createdAt: Value(existingCreatedAt ?? DateTime.now().millisecondsSinceEpoch),
+          createdAt: Value(roi.createdAt), // Extract directly from model
         ),
       );
-      */
     }
   }
-
   @override
   Future<void> addRoi(RoiModel roi) async {
     if (roi.isShared) {
       // TODO: Firestore logic
-      // await cloudDb.collection('trips').doc(roi.id).set({...});
     } else {
-      // Local Drift logic handling the 'Value' wrappers
-      /*
       await localDb.insertRoi(
         RoisCompanion.insert(
           id: roi.id,
           name: roi.name,
           description: Value(roi.description),
-          createdAt: DateTime.now().millisecondsSinceEpoch,
+          createdAt: roi.createdAt, // Extract directly from model
         ),
       );
-      */
     }
+  }
+  @override
+  Future<RoiModel> getRoiById(String id) async {
+    // 1. Fetch the raw Drift entity
+    final driftRoi = await localDb.getRoiById(id);
+    
+    // 2. Map it to the pure Domain Model
+    return RoiModel(
+      id: driftRoi.id,
+      name: driftRoi.name,
+      description: driftRoi.description,
+      createdAt: driftRoi.createdAt, // Assumes Drift has this column
+      isShared: false, // Set default or map from Drift if you have a column for it
+    );
   }
 }
 
 final roiRepositoryProvider = Provider<RoiRepository>((ref) {
-  // return DualTrackRoiRepository(ref.read(databaseProvider));
-  throw UnimplementedError('Initialize with your actual Drift database instance');
+  // Inject the actual Drift database instance
+  final db = ref.read(databaseProvider);
+  return DualTrackRoiRepository(db);
 });

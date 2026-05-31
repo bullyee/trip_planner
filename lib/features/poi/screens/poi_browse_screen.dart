@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:drift/drift.dart' show Value;
+import 'package:trip_planner/features/roi/models/roi_model.dart';
+import 'package:trip_planner/features/roi/repositories/roi_repository.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../../core/widgets/add_speed_dial.dart';
 import '../../roi/providers/roi_provider.dart';
 import '../../anime/providers/anime_provider.dart';
@@ -311,20 +310,30 @@ void showCreateRoiDialog(BuildContext context) {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
 
-              final db = ref.read(databaseProvider);
-              db.insertRoi(RoisCompanion.insert(
+              // 1. Resolve the repository from Riverpod
+              final roiRepository = ref.read(roiRepositoryProvider);
+
+              // 2. Construct the pure domain model (No RoisCompanion or Value wrappers)
+              final newRoi = RoiModel(
                 id: const Uuid().v4(),
                 name: name,
-                description: Value(descController.text.trim().isEmpty
+                description: descController.text.trim().isEmpty
                     ? null
-                    : descController.text.trim()),
+                    : descController.text.trim(),
                 createdAt: DateTime.now().millisecondsSinceEpoch,
-              ));
-              Navigator.pop(ctx);
+              );
+
+              // 3. Delegate the database operation to the repository
+              await roiRepository.addRoi(newRoi);
+
+              // 4. Safely close the dialog
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+              }
             },
             child: const Text('Create'),
           ),

@@ -15,29 +15,28 @@ class RoiController extends _$RoiController {
     required String id,
     required String name,
     required String description,
+    required int createdAt, // 1. Require the original timestamp from UI
+    required bool isShared, // 2. Require the original sync state from UI
     int? existingIsOfflineCached,
-    int? existingCreatedAt,
   }) async {
     state = const AsyncValue.loading();
     try {
       // Helper function to handle empty strings
       String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
 
-      // 1. Construct the pure domain model.
-      // Notice there are no Drift-specific 'Value' or 'RoisCompanion' classes here.
+      // 1. Construct the pure domain model using the passed parameters
       final updatedRoi = RoiModel(
         id: id,
         name: name.trim(),
+        createdAt: createdAt, // Preserve the timestamp
         description: nullIfEmpty(description),
-        isShared: false, // Set to true later when handling cloud synchronization
+        isShared: isShared,   // Preserve the sync state
       );
 
       // 2. Delegate the operation to the Repository layer.
-      // The controller no longer reads 'databaseProvider' directly.
       await ref.read(roiRepositoryProvider).updateRoi(
         updatedRoi,
-        existingIsOfflineCached: existingIsOfflineCached,
-        existingCreatedAt: existingCreatedAt,
+        existingIsOfflineCached: existingIsOfflineCached
       );
 
       state = const AsyncValue.data(null);
@@ -59,6 +58,7 @@ class RoiController extends _$RoiController {
       final newRoi = RoiModel(
         id: const Uuid().v4(), // Generate ID in the controller
         name: name.trim(),
+        createdAt: DateTime.now().millisecondsSinceEpoch,
         description: nullIfEmpty(description),
         isShared: false,
       );
