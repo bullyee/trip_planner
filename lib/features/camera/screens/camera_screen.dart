@@ -11,7 +11,8 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 
-import '../../../core/database/database.dart';
+import '../../poi/models/poi_model.dart';
+import '../../poi/models/reference_image_model.dart';
 import '../../poi/providers/poi_provider.dart';
 import '../providers/camera_provider.dart';
 
@@ -688,7 +689,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       return;
     }
 
-    final picked = await showModalBottomSheet<ReferenceImage>(
+    final picked = await showModalBottomSheet<ReferenceImageModel>(
       context: context,
       backgroundColor: Colors.grey[900],
       builder: (ctx) => ListView.builder(
@@ -835,7 +836,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       return null;
     }
 
-    final picked = await showModalBottomSheet<Poi>(
+    final picked = await showModalBottomSheet<PoiModel>(
       context: context,
       backgroundColor: Colors.grey[900],
       builder: (ctx) => ListView.builder(

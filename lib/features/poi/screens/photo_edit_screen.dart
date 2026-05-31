@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
-import '../../../core/database/database.dart';
 import '../../camera/services/reinhard_match_service.dart';
+import '../models/reference_image_model.dart';
 import '../providers/poi_provider.dart';
 import '../repositories/media_repository.dart';
 import '../services/brightness_service.dart';
@@ -866,7 +866,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       return;
     }
 
-    final picked = await showModalBottomSheet<ReferenceImage>(
+    final picked = await showModalBottomSheet<ReferenceImageModel>(
       context: context,
       backgroundColor: Colors.grey[900],
       builder: (ctx) => ListView.builder(
