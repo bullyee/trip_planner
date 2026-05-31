@@ -5,11 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
+import '../../anime/models/anime_model.dart';
 import '../../anime/providers/anime_provider.dart';
+import '../../anime/repositories/anime_repository.dart';
+import '../../tag/models/tag_model.dart';
 import '../../tag/providers/tag_provider.dart';
 import '../../roi/providers/roi_provider.dart';
+import '../../tag/repositories/tag_repository.dart';
+import '../repositories/media_repository.dart';
+import '../repositories/poi_repository.dart';
 import '../services/media_asset_service.dart';
 import '../controllers/poi_controller.dart';
 
@@ -65,8 +69,7 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
   Future<void> _loadExistingPoi() async {
     setState(() => _isLoading = true);
     try {
-      final db = ref.read(databaseProvider);
-      final poi = await db.getPoiById(widget.editPoiId!);
+      final poi = await ref.read(poiRepositoryProvider).getPoiById(widget.editPoiId!);
       _nameController.text = poi.name;
       _descController.text = poi.description ?? '';
       _addressController.text = poi.address ?? '';
@@ -77,8 +80,10 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       _roiId = poi.roiId;
       _existingCoverUri = poi.coverImageUri;
 
-      final animes = await db.watchAnimesForPoi(poi.id).first;
-      final tags = await db.watchTagsForPoi(poi.id).first;
+      final animeRepo = ref.read(animeRepositoryProvider);
+      final tagRepo = ref.read(tagRepositoryProvider);
+      final animes = await animeRepo.watchAnimesForPoi(poi.id).first;
+      final tags = await tagRepo.watchTagsForPoi(poi.id).first;
       _selectedAnimeIds = animes.map((a) => a.id).toList();
       _selectedTagIds = tags.map((t) => t.id).toList();
     } finally {
@@ -270,7 +275,7 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       final photoFile = File(widget.capturedPhotoPath!);
       if (await photoFile.exists()) {
         await persistMediaAsset(
-          db: ref.read(databaseProvider),
+          mediaRepo: ref.read(mediaRepositoryProvider),
           source: photoFile,
           poiId: poiId,
           type: 'user_photo',
@@ -524,13 +529,16 @@ class _AnimePickerSheetState extends ConsumerState<_AnimePickerSheet> {
                           ),
                         );
                         if (newName == null || newName.isEmpty) return;
-                        final db = ref.read(databaseProvider);
+                        final animeRepo = ref.read(animeRepositoryProvider);
                         final id = const Uuid().v4();
-                        await db.insertAnime(AnimesCompanion.insert(
+
+                        final newAnime = AnimeModel(
                           id: id,
                           name: newName,
                           createdAt: DateTime.now().millisecondsSinceEpoch,
-                        ));
+                        );
+
+                        await animeRepo.addAnime(newAnime);
                         setState(() => _selected.add(id));
                       },
                     ),
@@ -673,13 +681,16 @@ class _TagPickerSheetState extends ConsumerState<_TagPickerSheet> {
                           ),
                         );
                         if (newName == null || newName.isEmpty) return;
-                        final db = ref.read(databaseProvider);
+                        final tagRepo = ref.read(tagRepositoryProvider);
                         final id = const Uuid().v4();
-                        await db.insertTag(TagsCompanion.insert(
+
+                        final newTag = TagModel(
                           id: id,
                           name: newName,
                           createdAt: DateTime.now().millisecondsSinceEpoch,
-                        ));
+                        );
+
+                        await tagRepo.addTag(newTag);
                         setState(() => _selected.add(id));
                       },
                     ),

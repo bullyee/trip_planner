@@ -10,6 +10,8 @@ import '../../../core/providers/database_provider.dart';
 abstract class TagRepository {
   Future<void> addTag(TagModel tag);
   Future<void> updateTag(TagModel tag);
+
+  Stream<List<TagModel>> watchTagsForPoi(String poiId);
 }
 
 class DualTrackTagRepository implements TagRepository {
@@ -48,6 +50,17 @@ class DualTrackTagRepository implements TagRepository {
         ),
       );
     }
+  }
+
+  @override
+  Stream<List<TagModel>> watchTagsForPoi(String poiId) {
+    return localDb.watchTagsForPoi(poiId).map((rows) {
+      return rows.map((row) => TagModel(
+        id: row.id,
+        name: row.name,
+        createdAt: row.createdAt,
+      )).toList();
+    });
   }
 }
 

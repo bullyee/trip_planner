@@ -7,9 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../camera/services/reinhard_match_service.dart';
 import '../providers/poi_provider.dart';
+import '../repositories/media_repository.dart';
 import '../services/brightness_service.dart';
 import '../services/comparison_image_service.dart';
 import '../services/edit_preview_service.dart';
@@ -765,7 +765,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
 
   Future<void> _save() async {
     if (_saving) return;
-    final db = ref.read(databaseProvider);
+    final mediaRepo = ref.read(mediaRepositoryProvider);
     final referenceFile = _referenceFile;
 
     setState(() => _saving = true);
@@ -794,7 +794,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
         final bool ok;
         try {
           ok = await persistMediaAsset(
-            db: db,
+            mediaRepo: ref.read(mediaRepositoryProvider),
             source: tempFile,
             poiId: widget.poiId,
             type: 'comparison_image',
@@ -824,7 +824,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
         await _sourceFile.writeAsBytes(bytesToWrite, flush: true);
       }
       final ok = await persistMediaAsset(
-        db: db,
+        mediaRepo: mediaRepo,
         source: _sourceFile,
         poiId: widget.poiId,
         type: widget.wasUpload ? 'uploaded_image' : 'user_photo',
@@ -1428,7 +1428,6 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
               await _resolveBytesForSave() ?? await _sourceFile.readAsBytes(),
           referencePath: refPath,
           poiId: widget.poiId,
-          db: ref.read(databaseProvider),
           onBack: () => setState(() => _collagePage = false),
         ),
       ],

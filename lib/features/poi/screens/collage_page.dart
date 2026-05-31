@@ -3,12 +3,13 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import '../../../core/database/database.dart';
 import '../../anime/screens/cutout_editor_screen.dart';
+import '../repositories/media_repository.dart';
 import '../services/media_asset_service.dart';
 
 /// 拼貼 / Compose — "edit page v2". Stacks cutout characters (and a translucent
@@ -18,7 +19,7 @@ import '../services/media_asset_service.dart';
 /// Geometry is stored normalized over the base image (centerN 0..1, widthN as a
 /// fraction of base width) so the on-screen preview and the full-res composite
 /// use the same transform regardless of resolution.
-class CollagePage extends StatefulWidget {
+class CollagePage extends ConsumerStatefulWidget {
   /// Downscaled edited photo for the canvas preview.
   final Uint8List basePreview;
 
@@ -27,7 +28,6 @@ class CollagePage extends StatefulWidget {
 
   final String referencePath;
   final String poiId;
-  final AppDatabase db;
 
   /// Return to the Adjust page (back arrow). Layers persist — the parent keeps
   /// this page alive in an IndexedStack.
@@ -39,12 +39,11 @@ class CollagePage extends StatefulWidget {
     required this.resolveFullResBase,
     required this.referencePath,
     required this.poiId,
-    required this.db,
     required this.onBack,
   });
 
   @override
-  State<CollagePage> createState() => _CollagePageState();
+  ConsumerState<CollagePage> createState() => _CollagePageState();
 }
 
 class _CollageLayer {
@@ -70,7 +69,7 @@ class _CollageLayer {
       );
 }
 
-class _CollagePageState extends State<CollagePage> {
+class _CollagePageState extends ConsumerState<CollagePage> {
   final List<_CollageLayer> _layers = [];
   int? _selected;
   Size _baseSize = const Size(1, 1);
@@ -284,7 +283,7 @@ class _CollagePageState extends State<CollagePage> {
       await tmp.writeAsBytes(jpg, flush: true);
 
       final ok = await persistMediaAsset(
-        db: widget.db,
+        mediaRepo: ref.read(mediaRepositoryProvider),
         source: tmp,
         poiId: widget.poiId,
         type: _compare ? 'comparison_image' : 'user_photo',

@@ -15,6 +15,14 @@ abstract class PoiRepository {
     required List<String> tagIds,
     required bool isUpdate,
   });
+  Future<void> deletePoi(String id);
+
+  Future<PoiModel> getPoiById(String id);
+
+  Stream<List<PoiModel>> watchPoisByRoi(String roiId);
+  Stream<List<PoiModel>> watchPoisWithoutRoi();
+  Stream<PoiModel> watchPoiById(String id);
+  Stream<Map<String, PoiModel>> watchAllPois();
 }
 
 class DualTrackPoiRepository implements PoiRepository {
@@ -61,6 +69,69 @@ class DualTrackPoiRepository implements PoiRepository {
         await localDb.setTagsForPoi(poi.id, tagIds);
       });
     }
+  }
+  @override
+  Future<void> deletePoi(String id) async {
+    // TODO: Check if isShared and route to Firestore
+    await localDb.deletePoi(id);
+  }
+  @override
+  Future<PoiModel> getPoiById(String id) async {
+    final driftPoi = await localDb.getPoiById(id);
+    
+    return PoiModel(
+      id: driftPoi.id,
+      roiId: driftPoi.roiId,
+      name: driftPoi.name,
+      description: driftPoi.description,
+      address: driftPoi.address,
+      lat: driftPoi.lat,
+      lng: driftPoi.lng,
+      businessHours: driftPoi.businessHours,
+      contactInfo: driftPoi.contactInfo,
+      coverImageUri: driftPoi.coverImageUri,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      isShared: false, 
+    );
+  }
+
+  PoiModel _mapPoi(dynamic driftPoi) {
+    return PoiModel(
+      id: driftPoi.id,
+      roiId: driftPoi.roiId,
+      name: driftPoi.name,
+      description: driftPoi.description,
+      address: driftPoi.address,
+      lat: driftPoi.lat,
+      lng: driftPoi.lng,
+      businessHours: driftPoi.businessHours,
+      contactInfo: driftPoi.contactInfo,
+      coverImageUri: driftPoi.coverImageUri,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      isShared: false,
+    );
+  }
+
+  @override
+  Stream<List<PoiModel>> watchPoisByRoi(String roiId) {
+    return localDb.watchPoisByRoi(roiId).map((list) => list.map(_mapPoi).toList());
+  }
+
+  @override
+  Stream<List<PoiModel>> watchPoisWithoutRoi() {
+    return localDb.watchPoisWithoutRoi().map((list) => list.map(_mapPoi).toList());
+  }
+
+  @override
+  Stream<PoiModel> watchPoiById(String id) {
+    return localDb.watchPoiById(id).map(_mapPoi);
+  }
+
+  @override
+  Stream<Map<String, PoiModel>> watchAllPois() {
+    return localDb.watchAllPois().map((pois) {
+      return {for (final poi in pois) poi.id: _mapPoi(poi)};
+    });
   }
 }
 

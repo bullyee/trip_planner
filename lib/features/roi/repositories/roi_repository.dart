@@ -12,6 +12,7 @@ abstract class RoiRepository {
     int? existingIsOfflineCached,
   });
   Future<void> addRoi(RoiModel roi);
+  Future<void> deleteRoi(String id);
 
   Future<RoiModel> getRoiById(String id);
 }
@@ -68,6 +69,11 @@ class DualTrackRoiRepository implements RoiRepository {
       createdAt: driftRoi.createdAt, // Assumes Drift has this column
       isShared: false, // Set default or map from Drift if you have a column for it
     );
+  }
+  @override
+  Future<void> deleteRoi(String id) async {
+    // TODO: Firestore logic (if shared)
+    await localDb.deleteRoi(id);
   }
 }
 

@@ -10,6 +10,8 @@ import '../../../core/providers/database_provider.dart';
 abstract class AnimeRepository {
   Future<void> addAnime(AnimeModel anime);
   Future<void> updateAnime(AnimeModel anime);
+
+  Stream<List<AnimeModel>> watchAnimesForPoi(String poiId);
 }
 
 class DualTrackAnimeRepository implements AnimeRepository {
@@ -48,6 +50,17 @@ class DualTrackAnimeRepository implements AnimeRepository {
         ),
       );
     }
+  }
+
+  @override
+  Stream<List<AnimeModel>> watchAnimesForPoi(String poiId) {
+    return localDb.watchAnimesForPoi(poiId).map((rows) {
+      return rows.map((row) => AnimeModel(
+        id: row.id,
+        name: row.name,
+        createdAt: row.createdAt,
+      )).toList();
+    });
   }
 }
 

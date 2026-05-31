@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/providers/database_provider.dart';
 import '../../../core/widgets/add_speed_dial.dart';
 import '../../poi/screens/poi_browse_screen.dart';
 import '../providers/roi_provider.dart';
 import '../../poi/providers/poi_provider.dart';
 import '../../anime/providers/anime_provider.dart';
+import '../repositories/roi_repository.dart';
 
 class RoiDetailScreen extends ConsumerWidget {
   final String roiId;
@@ -49,8 +49,7 @@ class RoiDetailScreen extends ConsumerWidget {
                             child: const Text('Cancel')),
                         FilledButton(
                           onPressed: () async {
-                            final db = ref.read(databaseProvider);
-                            await db.deleteRoi(roi.id);
+                            await ref.read(roiRepositoryProvider).deleteRoi(roi.id);
                             if (context.mounted) {
                               Navigator.pop(ctx);
                               context.go('/rois');
