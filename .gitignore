@@ -56,3 +56,11 @@ prd_page*.png
 
 # Secret environment variables
 env.json
+
+# Large ML models (spike) — re-download, do not commit (GitHub rejects >100 MB)
+assets/models/*.onnx
+
+# 16 KB-aligned ORT native lib (spike) — overrides the plugin's 4 KB-aligned
+# 1.15.1; re-fetch: extract jni/arm64-v8a/libonnxruntime.so from
+# https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.26.0/onnxruntime-android-1.26.0.aar
+android/app/src/main/jniLibs/arm64-v8a/libonnxruntime.so

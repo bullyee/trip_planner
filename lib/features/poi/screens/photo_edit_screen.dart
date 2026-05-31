@@ -15,6 +15,7 @@ import '../services/comparison_image_service.dart';
 import '../services/edit_preview_service.dart';
 import '../services/media_asset_service.dart';
 import '../services/sharpness_service.dart';
+import 'collage_page.dart';
 
 /// One step in the edit history.
 ///
@@ -175,7 +176,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   // Compare toggle — when on, the canvas renders the edited captured
   // side-by-side with the reference and Save persists a
   // `comparison_image` MediaAsset instead of overwriting the source.
-  bool _compareMode = false;
+  final bool _compareMode = false;
 
   // True while the user is actively dialling in a tool's parameters.
   // In this submode the AppBar swaps to Cancel + tool name + Confirm,
@@ -200,6 +201,19 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   _EditState get _current => _history[_historyIndex];
   bool get _canUndo => _historyIndex > 0;
   bool get _canRedo => _historyIndex < _history.length - 1;
+
+  /// Tools with a committed step in the active chain (≤ `_historyIndex`). Their
+  /// tool button shows an "applied" (blue) state; because it's derived from the
+  /// history index, undo/redo automatically re-colours the icons as the stack
+  /// is walked.
+  Set<String> get _appliedTools {
+    final applied = <String>{};
+    for (var i = 1; i <= _historyIndex && i < _history.length; i++) {
+      final step = _history[i];
+      if (step.tool != null && step.bytes != null) applied.add(step.tool!);
+    }
+    return applied;
+  }
 
   /// Bytes that a freshly-tapped tool chip should chain on top of —
   /// the most recent committed bytes in history, or the downscaled
@@ -293,6 +307,11 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     // fine-tune the slider again.
     if (_current.tool == activeTool && _current.matchedBaseBytes != null) {
       setState(() => _inEditMode = true);
+      return;
+    }
+    final existing = _stepIndexForTool(activeTool);
+    if (existing != -1 && _history[existing].matchedBaseBytes != null) {
+      _revisitStep(existing); // revisit the single Match instance
       return;
     }
     // Chain on top of whatever filters have already been confirmed —
@@ -428,6 +447,11 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       setState(() => _inEditMode = true);
       return;
     }
+    final existing = _stepIndexForTool('brightness');
+    if (existing != -1) {
+      _revisitStep(existing); // one instance per tool — revisit, don't stack
+      return;
+    }
     final base = _chainBase;
     if (base == null) return;
     setState(() {
@@ -441,6 +465,13 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       setState(() => _inEditMode = true);
       return;
     }
+    final existing = _stepIndexForTool('sharpness');
+    if (existing != -1) {
+      _revisitStep(existing);
+      _sharpnessCache = null;
+      unawaited(_prepareSharpnessCache());
+      return;
+    }
     final base = _chainBase;
     if (base == null) return;
     setState(() {
@@ -451,6 +482,19 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     // chain step always needs a fresh prepare.
     _sharpnessCache = null;
     unawaited(_prepareSharpnessCache());
+  }
+
+  /// Jump back to an already-applied tool's step to re-dial its value (showing
+  /// its current params). Editing discards any redo branch; tools applied after
+  /// it stay in the chain and are replayed on Confirm.
+  void _revisitStep(int index) {
+    setState(() {
+      if (_historyIndex < _history.length - 1) {
+        _history = _history.sublist(0, _historyIndex + 1);
+      }
+      _historyIndex = index;
+      _inEditMode = true;
+    });
   }
 
   /// Commit the current tool's dialled-in result into the history
@@ -536,19 +580,18 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       if (newBytes != null) {
         _mutateCurrent((s) => s.copyWith(bytes: newBytes));
       }
+      final editedIndex = _historyIndex;
+      // Replay any later tools on top of this step's new result, so revisiting
+      // an earlier adjustment keeps the later ones instead of dropping them.
+      await _replayDownstream(editedIndex);
+      if (!mounted) return;
       setState(() {
-        // Re-Confirming an older step (after undo + re-entry) would
-        // leave a stale redo branch — truncate it so the chain stays
-        // consistent.
-        if (_historyIndex < _history.length - 1) {
-          _history = _history.sublist(0, _historyIndex + 1);
-        }
+        _historyIndex = _history.length - 1; // show the full composed result
         _inEditMode = false;
       });
-      // Drop this step's stale full-res checkpoint (and any from the
-      // now-truncated redo branch) and schedule a fresh background
-      // job — by the time the user reaches Save it's usually done.
-      _fullResCheckpoints.removeWhere((k, _) => k >= _historyIndex);
+      // The edited step + everything downstream changed — drop their stale
+      // full-res checkpoints and reschedule for the chain end.
+      _fullResCheckpoints.removeWhere((k, _) => k >= editedIndex);
       _scheduleFullResCheckpoint(_historyIndex);
     } finally {
       if (mounted) setState(() => _processing = false);
@@ -635,6 +678,63 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     }
   }
 
+  /// Index of the committed step for [tool] in the active chain
+  /// (1.._historyIndex), or -1 — so re-tapping a tool revisits its single
+  /// instance instead of stacking a duplicate.
+  int _stepIndexForTool(String tool) {
+    for (var i = 1; i <= _historyIndex && i < _history.length; i++) {
+      if (_history[i].tool == tool && _history[i].bytes != null) return i;
+    }
+    return -1;
+  }
+
+  /// Re-apply [step]'s tool to [base] (preview resolution) — used to replay the
+  /// later tools after an earlier one is revisited.
+  Future<Uint8List?> _recomputePreview(_EditState step, Uint8List base) async {
+    switch (step.tool) {
+      case 'brightness':
+        if (step.brightness == 0) return base;
+        return compute(applyBrightness,
+            BrightnessArgs(sourceBytes: base, brightness: step.brightness));
+      case 'sharpness':
+        if (step.sharpness == 0) return base;
+        return compute(applySharpness,
+            SharpnessArgs(sourceBytes: base, amount: step.sharpness));
+      case 'match':
+        final ref = _referenceFile;
+        if (ref == null || step.matchedBaseBytes == null) return base;
+        final t = step.strength.clamp(0.0, 1.0);
+        if (t <= 0.001) return base;
+        if (t >= 0.999) return step.matchedBaseBytes;
+        return compute(
+            lerpJpegs,
+            LerpArgs(
+                jpegA: base, jpegB: step.matchedBaseBytes!, strength: t));
+      default:
+        return base;
+    }
+  }
+
+  /// After the step at [from] changes, replay every later tool on top of it so
+  /// revisiting an earlier adjustment keeps the later ones. Re-matches Match
+  /// against the new upstream so its colour transfer stays correct.
+  Future<void> _replayDownstream(int from) async {
+    final ref = _referenceFile;
+    for (var j = from + 1; j < _history.length; j++) {
+      final prev = _history[j - 1].bytes;
+      if (prev == null) continue;
+      var step = _history[j];
+      if (step.tool == 'match' && ref != null) {
+        final refBytes = await ref.readAsBytes();
+        final matched = await compute(
+            reinhardMatch, MatchArgs(capturedBytes: prev, referenceBytes: refBytes));
+        step = step.copyWith(matchedBaseBytes: matched);
+      }
+      final recomputed = await _recomputePreview(step, prev);
+      _history[j] = step.copyWith(toolBaseBytes: prev, bytes: recomputed);
+    }
+  }
+
   /// Discard the tool's history step and exit edit submode — same
   /// effect as undo + closing the slider strip, used by the AppBar's
   /// Cancel button while a tool is being edited.
@@ -658,15 +758,10 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     }
   }
 
-  /// Compare is now a canvas toggle, not a one-shot action — flipping
-  /// it renders the edited captured side-by-side with the reference,
-  /// and Save persists whichever view is currently on screen (the
-  /// edited single shot when the toggle is off, the side-by-side
-  /// comparison JPEG when it's on).
-  void _toggleCompare() {
-    if (!_hasReference) return;
-    setState(() => _compareMode = !_compareMode);
-  }
+
+  /// Switch to the 拼貼 / Compose page (edit v2). Requires a reference image
+  /// (the cutout source) and the prepared editing base.
+  bool _collagePage = false;
 
   Future<void> _save() async {
     if (_saving) return;
@@ -915,6 +1010,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                       disabledHint:
                           hasReference ? null : 'No reference image',
                       selected: activeTool == 'match',
+                      applied: _appliedTools.contains('match'),
                       onTap: () => _runMatch(
                         'match',
                         reinhardMatch,
@@ -926,6 +1022,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                       label: 'Brightness',
                       enabled: !_processing,
                       selected: activeTool == 'brightness',
+                      applied: _appliedTools.contains('brightness'),
                       onTap: _runBrightness,
                     ),
                     _ToolButton(
@@ -933,20 +1030,8 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                       label: 'Sharpness',
                       enabled: !_processing,
                       selected: activeTool == 'sharpness',
+                      applied: _appliedTools.contains('sharpness'),
                       onTap: _runSharpness,
-                    ),
-                    _ToolButton(
-                      icon: Icons.compare_arrows,
-                      label: 'Compare',
-                      enabled: hasReference && !_processing,
-                      disabledHint:
-                          hasReference ? null : 'No reference image',
-                      // Compare is a toggle now — the canvas renders
-                      // the side-by-side preview while it's on and
-                      // Save persists the comparison instead of the
-                      // single shot.
-                      selected: _compareMode,
-                      onTap: _toggleCompare,
                     ),
                   ],
                 ),
@@ -1116,23 +1201,37 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: TextButton(
-            onPressed: _saving ? null : _save,
-            style: TextButton.styleFrom(
-              foregroundColor: theme.colorScheme.primary,
-              disabledForegroundColor: Colors.white38,
-            ),
-            child: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Text('Save'),
-          ),
+          child: hasReference
+              ? TextButton(
+                  // With a reference, the forward action is Compose; Save lives
+                  // on the Compose page (it flattens base + layers).
+                  onPressed: (_processing || _editingBaseBytes == null)
+                      ? null
+                      : () => setState(() => _collagePage = true),
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.primary,
+                    disabledForegroundColor: Colors.white38,
+                  ),
+                  child: const Text('Compose →'),
+                )
+              : TextButton(
+                  // No reference to compose against — save directly.
+                  onPressed: _saving ? null : _save,
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.primary,
+                    disabledForegroundColor: Colors.white38,
+                  ),
+                  child: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Save'),
+                ),
         ),
       ],
     );
@@ -1256,7 +1355,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     final currentBytes = _current.bytes;
     final activeTool = _current.tool;
 
-    return Scaffold(
+    final adjust = Scaffold(
       backgroundColor: Colors.black,
       appBar: _inEditMode
           ? _buildEditModeAppBar(theme, hasReference)
@@ -1306,6 +1405,33 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
           ],
         ),
       ),
+    );
+
+    // Adjust → Compose → Save. Keep Compose alive in an IndexedStack so going
+    // Back to Adjust doesn't lose placed layers. Compose needs a reference
+    // (the cutout source) + the prepared base; without one, Adjust saves
+    // directly and there's no Compose page.
+    final base = _editingBaseBytes;
+    final refPath = _referencePath;
+    if (base == null || refPath == null) {
+      if (_collagePage) _collagePage = false;
+      return adjust;
+    }
+    return IndexedStack(
+      index: _collagePage ? 1 : 0,
+      sizing: StackFit.expand,
+      children: [
+        adjust,
+        CollagePage(
+          basePreview: _chainBase ?? base,
+          resolveFullResBase: () async =>
+              await _resolveBytesForSave() ?? await _sourceFile.readAsBytes(),
+          referencePath: refPath,
+          poiId: widget.poiId,
+          db: ref.read(databaseProvider),
+          onBack: () => setState(() => _collagePage = false),
+        ),
+      ],
     );
   }
 }
@@ -1499,6 +1625,7 @@ class _ToolButton extends StatelessWidget {
   final String label;
   final bool enabled;
   final bool selected;
+  final bool applied;
   final String? disabledHint;
   final VoidCallback onTap;
 
@@ -1508,15 +1635,21 @@ class _ToolButton extends StatelessWidget {
     required this.enabled,
     required this.selected,
     required this.onTap,
+    this.applied = false,
     this.disabledHint,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fg = enabled
-        ? (selected ? theme.colorScheme.primary : Colors.white70)
-        : Colors.white24;
+    // disabled > selected (being dialled in) > applied (committed) > idle.
+    final fg = !enabled
+        ? Colors.white24
+        : selected
+            ? theme.colorScheme.primary
+            : applied
+                ? Colors.lightBlueAccent
+                : Colors.white70;
     final tile = Container(
       width: 72,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
