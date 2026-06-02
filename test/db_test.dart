@@ -3,13 +3,15 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trip_planner/core/database/database.dart';
 import 'package:trip_planner/core/utils/json_sync.dart';
-import 'package:trip_planner/features/anime/repositories/anime_repository.dart';
+import 'package:trip_planner/features/poi/repositories/poi_repository.dart';
 
 void main() {
   late AppDatabase db;
+  late PoiRepository poiRepository;
 
   setUp(() {
     db = AppDatabase.forTesting(NativeDatabase.memory());
+    poiRepository = DualTrackPoiRepository(db);
   });
 
   tearDown(() async {
@@ -202,10 +204,8 @@ void main() {
     // Assuming repositories take AppDatabase as an injected dependency.
     // If your architecture uses Riverpod ProviderContainer for testing, 
     // adjust the instantiation accordingly.
-    late AnimeRepository animeRepository;
     
     setUp(() {
-      animeRepository = DualTrackAnimeRepository(db);
     });
 
     test('watchPoisByAnime properly joins and returns mapped POI models', () async {
@@ -240,7 +240,7 @@ void main() {
 
       // 2. Act: Call the repository method that is slated for refactoring
       // Note: Adjust the method name to match your actual AnimeRepository implementation
-      final poiStream = animeRepository.watchPoisByAnime(animeId);
+      final poiStream = poiRepository.watchPoisByAnime(animeId);
       final pois = await poiStream.first;
 
       // 3. Assert: Verify the repository layer correctly queries and maps the data

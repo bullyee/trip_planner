@@ -3,7 +3,6 @@ import 'package:drift/drift.dart';
 
 import '../../poi/services/anitabi_api_service.dart';
 import '../models/anime_model.dart';
-import '../../poi/models/poi_model.dart'; 
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
 
@@ -16,9 +15,7 @@ abstract class AnimeRepository {
   
   Stream<List<AnimeModel>> watchAllAnimes();
   Stream<AnimeModel?> watchAnimeById(String id);
-  Stream<List<AnimeModel>> watchAnimesForPoi(String poiId);
-  Stream<List<PoiModel>> watchPoisByAnime(String animeId);
-  Stream<int> watchPoiCountForAnime(String animeId);
+  Stream<List<AnimeModel>> watchAnimesForPoi(String poiId); 
 }
 
 class DualTrackAnimeRepository implements AnimeRepository {
@@ -98,31 +95,6 @@ class DualTrackAnimeRepository implements AnimeRepository {
         createdAt: row.createdAt,
       )).toList();
     });
-  }
-
-  @override
-  Stream<List<PoiModel>> watchPoisByAnime(String animeId) {
-    return localDb.watchPoisByAnime(animeId).map((rows) {
-      return rows.map((row) => PoiModel(
-        id: row.id,
-        roiId: row.roiId,
-        name: row.name,
-        description: row.description,
-        address: row.address,
-        lat: row.lat,
-        lng: row.lng,
-        businessHours: row.businessHours,
-        contactInfo: row.contactInfo,
-        coverImageUri: row.coverImageUri,
-        createdAt: row.createdAt, 
-        isShared: false, 
-      )).toList();
-    });
-  }
-
-  @override
-  Stream<int> watchPoiCountForAnime(String animeId) {
-    return localDb.watchPoiCountForAnime(animeId);
   }
 
   @override
