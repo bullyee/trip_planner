@@ -16,3 +16,8 @@ Stream<List<MediaAssetModel>> mediaAssetsByPoi(MediaAssetsByPoiRef ref, String p
 Stream<List<ReferenceImageModel>> referenceImagesByPoi(ReferenceImagesByPoiRef ref, String poiId) {
   return ref.watch(mediaRepositoryProvider).watchReferenceImagesByPoi(poiId);
 }
+
+@riverpod
+Stream<List<MediaAssetModel>> ticketAssets(TicketAssetsRef ref) {
+  return ref.watch(mediaRepositoryProvider).watchMediaAssetsByType('ticket_qr');
+}
