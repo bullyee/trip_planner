@@ -27,10 +27,10 @@ abstract class PoiRepository {
   Stream<int> watchPoiCountForAnime(String animeId);
 }
 
-class DualTrackPoiRepository implements PoiRepository {
+class LocalPoiRepository implements PoiRepository {
   final AppDatabase localDb;
 
-  DualTrackPoiRepository(this.localDb);
+  LocalPoiRepository(this.localDb);
 
   @override
   Future<void> savePoiWithRelations({
@@ -39,39 +39,34 @@ class DualTrackPoiRepository implements PoiRepository {
     required List<String> tagIds,
     required bool isUpdate,
   }) async {
-    if (poi.isShared) {
-      // TODO: Route to Firestore SDK when implemented
-    } else {
-      await localDb.transaction(() async {
-        final companion = PoisCompanion(
-          id: Value(poi.id),
-          roiId: Value(poi.roiId),
-          name: Value(poi.name),
-          description: Value(poi.description),
-          address: Value(poi.address),
-          lat: Value(poi.lat),
-          lng: Value(poi.lng),
-          businessHours: Value(poi.businessHours),
-          contactInfo: Value(poi.contactInfo),
-          coverImageUri: Value(poi.coverImageUri),
-          createdAt: Value(poi.createdAt),
-        );
+    await localDb.transaction(() async {
+      final companion = PoisCompanion(
+        id: Value(poi.id),
+        roiId: Value(poi.roiId),
+        name: Value(poi.name),
+        description: Value(poi.description),
+        address: Value(poi.address),
+        lat: Value(poi.lat),
+        lng: Value(poi.lng),
+        businessHours: Value(poi.businessHours),
+        contactInfo: Value(poi.contactInfo),
+        coverImageUri: Value(poi.coverImageUri),
+        createdAt: Value(poi.createdAt),
+      );
 
-        if (isUpdate) {
-          await localDb.updatePoi(companion);
-        } else {
-          await localDb.insertPoi(companion);
-        }
+      if (isUpdate) {
+        await localDb.updatePoi(companion);
+      } else {
+        await localDb.insertPoi(companion);
+      }
         
-        await localDb.setAnimesForPoi(poi.id, animeIds);
-        await localDb.setTagsForPoi(poi.id, tagIds);
-      });
-    }
+      await localDb.setAnimesForPoi(poi.id, animeIds);
+      await localDb.setTagsForPoi(poi.id, tagIds);
+    });
   }
 
   @override
   Future<void> deletePoi(String id) async {
-    // TODO: Check if isShared and route to Firestore
     await localDb.deletePoi(id);
   }
 
@@ -180,5 +175,5 @@ class DualTrackPoiRepository implements PoiRepository {
 
 final poiRepositoryProvider = Provider<PoiRepository>((ref) {
   final db = ref.read(databaseProvider);
-  return DualTrackPoiRepository(db);
+  return LocalPoiRepository(db);
 });
