@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../roi/models/roi_model.dart';
 import '../models/poi_model.dart';
+import '../providers/media_provider.dart';
 import '../providers/poi_provider.dart';
 import '../../../core/widgets/add_speed_dial.dart';
 import '../../roi/providers/roi_provider.dart';
