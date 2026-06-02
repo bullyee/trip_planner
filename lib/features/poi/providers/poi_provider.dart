@@ -38,3 +38,13 @@ final timeChunksByPoiProvider = StreamProvider.family<List<TimeChunkModel>, Stri
 final allPoisProvider = StreamProvider<Map<String, PoiModel>>((ref) {
   return ref.watch(poiRepositoryProvider).watchAllPois();
 });
+
+final poisByAnimeProvider =
+    StreamProvider.family<List<PoiModel>, String>((ref, animeId) {
+  return ref.watch(poiRepositoryProvider).watchPoisByAnime(animeId);
+});
+
+final poiCountForAnimeProvider =
+    StreamProvider.family<int, String>((ref, animeId) {
+  return ref.watch(poiRepositoryProvider).watchPoiCountForAnime(animeId);
+});

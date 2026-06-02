@@ -23,6 +23,8 @@ abstract class PoiRepository {
   Stream<List<PoiModel>> watchPoisWithoutRoi();
   Stream<PoiModel> watchPoiById(String id);
   Stream<Map<String, PoiModel>> watchAllPois();
+  Stream<List<PoiModel>> watchPoisByAnime(String animeId);
+  Stream<int> watchPoiCountForAnime(String animeId);
 }
 
 class DualTrackPoiRepository implements PoiRepository {
@@ -148,6 +150,31 @@ class DualTrackPoiRepository implements PoiRepository {
   Future<List<PoiModel>> getPoisByDate(String date) async {
     final rows = await localDb.getPoisByDate(date);
     return rows.map(_mapPoi).toList();
+  }
+
+  @override
+  Stream<List<PoiModel>> watchPoisByAnime(String animeId) {
+    return localDb.watchPoisByAnime(animeId).map((rows) {
+      return rows.map((row) => PoiModel(
+        id: row.id,
+        roiId: row.roiId,
+        name: row.name,
+        description: row.description,
+        address: row.address,
+        lat: row.lat,
+        lng: row.lng,
+        businessHours: row.businessHours,
+        contactInfo: row.contactInfo,
+        coverImageUri: row.coverImageUri,
+        createdAt: row.createdAt, 
+        isShared: false, 
+      )).toList();
+    });
+  }
+
+  @override
+  Stream<int> watchPoiCountForAnime(String animeId) {
+    return localDb.watchPoiCountForAnime(animeId);
   }
 }
 
