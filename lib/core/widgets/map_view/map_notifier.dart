@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // Import the Repository and Model instead of the raw database
-import '../poi/repositories/poi_repository.dart';
-import '../poi/models/poi_model.dart';
+import '../../../features/poi/models/poi_model.dart';
+import '../../../features/poi/repositories/poi_repository.dart';
 import 'map_state.dart';
 
 final mapNotifierProvider =
