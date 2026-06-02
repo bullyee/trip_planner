@@ -88,6 +88,7 @@ class ReferenceImages extends Table {
   TextColumn get localUri => text()();
   TextColumn get remoteUrl => text().nullable()();
   TextColumn get metadata => text().nullable()();
+  IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -103,6 +104,7 @@ class MediaAssets extends Table {
   TextColumn get referenceImageId => text()
       .nullable()
       .references(ReferenceImages, #id, onDelete: KeyAction.setNull)();
+  IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override
   Set<Column> get primaryKey => {id};

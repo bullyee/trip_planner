@@ -34,7 +34,7 @@ class DualTrackTagRepository implements TagRepository {
           id: tag.id,
           name: tag.name,
           description: Value(tag.description),
-          createdAt: tag.createdAt,
+          createdAt: Value(tag.createdAt),
         ),
       );
     }

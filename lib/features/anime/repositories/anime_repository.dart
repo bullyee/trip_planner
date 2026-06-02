@@ -37,7 +37,7 @@ class DualTrackAnimeRepository implements AnimeRepository {
           name: anime.name,
           description: Value(anime.description),
           bangumiId: Value(anime.bangumiId), // FIXED: Added missing bangumiId
-          createdAt: anime.createdAt, // FIXED: Wrapped in Value()
+          createdAt: Value(anime.createdAt), // FIXED: Wrapped in Value()
         ),
       );
     }

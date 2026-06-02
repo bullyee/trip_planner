@@ -53,7 +53,7 @@ class DualTrackRoiRepository implements RoiRepository {
           id: roi.id,
           name: roi.name,
           description: Value(roi.description),
-          createdAt: roi.createdAt, // Extract directly from model
+          createdAt: Value(roi.createdAt), // Extract directly from model
         ),
       );
     }

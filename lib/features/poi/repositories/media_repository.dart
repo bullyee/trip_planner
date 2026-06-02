@@ -37,9 +37,10 @@ class DualTrackMediaRepository implements MediaRepository {
           poiId: asset.poiId,
           localUri: asset.localUri,
           type: asset.type ?? 'unknown', 
-          remoteUrl: Value(asset.remoteUrl), // FIXED: Prevent silent data loss
-          metadata: Value(asset.metadata),   // FIXED: Prevent silent data loss
+          remoteUrl: Value(asset.remoteUrl), 
+          metadata: Value(asset.metadata),   
           referenceImageId: Value(asset.referenceImageId),
+          createdAt: Value(asset.createdAt),
         )
       );
     }
@@ -60,8 +61,9 @@ class DualTrackMediaRepository implements MediaRepository {
           id: image.id,
           poiId: image.poiId,
           localUri: image.localUri, 
-          remoteUrl: Value(image.remoteUrl), // FIXED: Prevent silent data loss
-          metadata: Value(image.metadata),   // FIXED: Prevent silent data loss
+          remoteUrl: Value(image.remoteUrl), 
+          metadata: Value(image.metadata),   
+          createdAt: Value(image.createdAt),
         )
       );
     }
@@ -80,10 +82,10 @@ class DualTrackMediaRepository implements MediaRepository {
         poiId: asset.poiId,
         localUri: asset.localUri,
         type: asset.type, 
-        remoteUrl: asset.remoteUrl, // FIXED: Map missing fields
-        metadata: asset.metadata,   // FIXED: Map missing fields
+        remoteUrl: asset.remoteUrl, 
+        metadata: asset.metadata,   
         referenceImageId: asset.referenceImageId,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
+        createdAt: asset.createdAt,
         isShared: false,
       )).toList();
     });
@@ -96,9 +98,9 @@ class DualTrackMediaRepository implements MediaRepository {
         id: img.id,
         poiId: img.poiId,
         localUri: img.localUri,
-        remoteUrl: img.remoteUrl, // FIXED: Map missing fields
-        metadata: img.metadata,   // FIXED: Map missing fields
-        createdAt: DateTime.now().millisecondsSinceEpoch,
+        remoteUrl: img.remoteUrl, 
+        metadata: img.metadata,   
+        createdAt: img.createdAt,
         isShared: false,
       )).toList();
     });
@@ -120,7 +122,7 @@ class DualTrackMediaRepository implements MediaRepository {
   Stream<List<MediaAssetModel>> watchMediaAssetsByType(String type) {
     return (localDb.select(localDb.mediaAssets)
           ..where((tbl) => tbl.type.equals(type))
-          ..orderBy([(m) => OrderingTerm.desc(m.id)])) // FIXED: Restored ordering logic
+          ..orderBy([(m) => OrderingTerm.desc(m.id)]))
         .watch()
         .map((rows) {
           return rows.map((row) => MediaAssetModel(
@@ -131,7 +133,7 @@ class DualTrackMediaRepository implements MediaRepository {
             remoteUrl: row.remoteUrl,
             referenceImageId: row.referenceImageId,
             metadata: row.metadata,
-            createdAt: DateTime.now().millisecondsSinceEpoch, 
+            createdAt: row.createdAt,
           )).toList();
         });
   }

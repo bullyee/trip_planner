@@ -226,7 +226,7 @@ class AppDatabase extends _$AppDatabase {
       name: name,
       description: Value(description),
       bangumiId: Value(bangumiId),
-      createdAt: DateTime.now().millisecondsSinceEpoch,
+      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
     return id;
   }

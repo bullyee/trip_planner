@@ -117,8 +117,8 @@ class JsonSync {
             name: m['name'] as String,
             description: Value(m['description'] as String?),
             isOfflineCached: Value(m['is_offline_cached'] as int? ?? 0),
-            createdAt: m['created_at'] as int? ??
-                DateTime.now().millisecondsSinceEpoch,
+            createdAt: Value(m['created_at'] as int? ??
+                DateTime.now().millisecondsSinceEpoch),
           ));
     }
 
@@ -129,8 +129,8 @@ class JsonSync {
             name: m['name'] as String,
             description: Value(m['description'] as String?),
             bangumiId: Value(m['bangumi_id'] as String?),
-            createdAt: m['created_at'] as int? ??
-                DateTime.now().millisecondsSinceEpoch,
+            createdAt: Value(m['created_at'] as int? ??
+                DateTime.now().millisecondsSinceEpoch),
           ));
     }
 
@@ -140,8 +140,8 @@ class JsonSync {
             id: m['id'] as String,
             name: m['name'] as String,
             description: Value(m['description'] as String?),
-            createdAt: m['created_at'] as int? ??
-                DateTime.now().millisecondsSinceEpoch,
+            createdAt: Value(m['created_at'] as int? ??
+                DateTime.now().millisecondsSinceEpoch),
           ));
     }
 
@@ -214,8 +214,8 @@ class JsonSync {
             name: roi['name'] as String,
             description: Value(roi['description'] as String?),
             isOfflineCached: Value(roi['is_offline_cached'] as int? ?? 0),
-            createdAt: roi['created_at'] as int? ??
-                DateTime.now().millisecondsSinceEpoch,
+            createdAt: Value(roi['created_at'] as int? ??
+                DateTime.now().millisecondsSinceEpoch),
           ));
 
       final pois = (roi['pois'] as List<dynamic>?) ?? const [];
@@ -298,7 +298,7 @@ class JsonSync {
     await db.insertAnime(AnimesCompanion.insert(
       id: id,
       name: name,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
+      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
     return id;
   }
@@ -314,7 +314,7 @@ class JsonSync {
     await db.insertTag(TagsCompanion.insert(
       id: id,
       name: name,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
+      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
     return id;
   }

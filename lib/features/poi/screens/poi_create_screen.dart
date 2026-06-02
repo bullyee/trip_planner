@@ -56,6 +56,7 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
   // Existing cover URI on the edit path, threaded back through savePoi so a
   // full-row update doesn't wipe it. Null on the create path.
   String? _existingCoverUri;
+  int? _existingCreatedAt;
 
   @override
   void initState() {
@@ -79,6 +80,7 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       _contactInfoController.text = poi.contactInfo ?? '';
       _roiId = poi.roiId;
       _existingCoverUri = poi.coverImageUri;
+      _existingCreatedAt = poi.createdAt;
 
       final animeRepo = ref.read(animeRepositoryProvider);
       final tagRepo = ref.read(tagRepositoryProvider);
@@ -255,6 +257,7 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       animeIds: _selectedAnimeIds,
       tagIds: _selectedTagIds,
       coverImageUri: _existingCoverUri,
+      existingCreatedAt: _existingCreatedAt,
     );
 
     // Save failed: surface the error and stay on the form.
