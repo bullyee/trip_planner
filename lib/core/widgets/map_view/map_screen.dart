@@ -5,12 +5,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
-import '../../core/widgets/add_speed_dial.dart';
-import '../poi/models/poi_model.dart';
-import '../poi/screens/poi_browse_screen.dart';
+import '../../../features/poi/models/poi_model.dart';
+import '../../../features/poi/screens/poi_browse_screen.dart';
+import '../../../features/poi/widgets/poi_bottom_sheet.dart';
+import '../../../features/roi/widgets/roi_filter_bar.dart';
+import '../add_speed_dial.dart';
 import 'map_notifier.dart';
-import 'poi_bottom_sheet.dart';
-import 'roi_filter_bar.dart';
+
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});

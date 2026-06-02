@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../roi/providers/roi_provider.dart';
+import '../providers/roi_provider.dart';
 
 class RoiFilterBar extends ConsumerWidget {
   final String? selectedRoiId;

@@ -18,9 +18,9 @@ import '../../features/anime/screens/bangumi_search_screen.dart';
 import '../../features/tag/screens/tag_edit_screen.dart';
 import '../../features/calendar/screens/calendar_screen.dart';
 import '../../features/camera/screens/camera_screen.dart';
-import '../../features/map/map_screen.dart';
 import '../../features/ticket/screens/ticket_screen.dart';
 import '../../features/home/screens/sync_screen.dart';
+import '../widgets/map_view/map_screen.dart';
 
 /// Wrap the existing router in a Provider to react to Auth state changes.
 final routerProvider = Provider<GoRouter>((ref) {
