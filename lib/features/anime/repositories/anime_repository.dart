@@ -1,10 +1,12 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../poi/services/anitabi_api_service.dart';
 import '../models/anime_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
+
+part 'anime_repository.g.dart';
 
 abstract class AnimeRepository {
   Future<void> addAnime(AnimeModel anime);
@@ -119,7 +121,9 @@ class LocalAnimeRepository implements AnimeRepository {
   }
 }
 
-final animeRepositoryProvider = Provider<AnimeRepository>((ref) {
-  final db = ref.read(databaseProvider);
+@riverpod
+AnimeRepository animeRepository(AnimeRepositoryRef ref) {
+  // Use watch instead of read for best practices in providers
+  final db = ref.watch(databaseProvider); 
   return LocalAnimeRepository(db);
-});
+}

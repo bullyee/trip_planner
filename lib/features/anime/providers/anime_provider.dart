@@ -1,19 +1,21 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../repositories/anime_repository.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../models/anime_model.dart';
+import '../repositories/anime_repository.dart';
 
-// --------------------------------------------------
+part 'anime_provider.g.dart';
 
-final allAnimesProvider = StreamProvider<List<AnimeModel>>((ref) {
+@riverpod
+Stream<List<AnimeModel>> allAnimes(AllAnimesRef ref) {
   return ref.watch(animeRepositoryProvider).watchAllAnimes();
-});
+}
 
-final animeByIdProvider = StreamProvider.family<AnimeModel?, String>((ref, id) {
+@riverpod
+Stream<AnimeModel?> animeById(AnimeByIdRef ref, String id) {
   return ref.watch(animeRepositoryProvider).watchAnimeById(id);
-});
+}
 
-final animesForPoiProvider =
-    StreamProvider.family<List<AnimeModel>, String>((ref, poiId) {
+@riverpod
+Stream<List<AnimeModel>> animesForPoi(AnimesForPoiRef ref, String poiId) {
   return ref.watch(animeRepositoryProvider).watchAnimesForPoi(poiId);
-});
-
+}
