@@ -22,28 +22,24 @@ abstract class MediaRepository {
   Stream<List<MediaAssetModel>> watchMediaAssetsByType(String type);
 }
 
-class DualTrackMediaRepository implements MediaRepository {
+class LocalMediaRepository implements MediaRepository {
   final AppDatabase localDb;
-  DualTrackMediaRepository(this.localDb);
+  LocalMediaRepository(this.localDb);
 
   @override
   Future<void> addMediaAsset(MediaAssetModel asset) async {
-    if (asset.isShared) { 
-      // TODO: Firestore logic
-    } else {
-      await localDb.insertMediaAsset(
-        MediaAssetsCompanion.insert(
-          id: asset.id,
-          poiId: asset.poiId,
-          localUri: asset.localUri,
-          type: asset.type ?? 'unknown', 
-          remoteUrl: Value(asset.remoteUrl), 
-          metadata: Value(asset.metadata),   
-          referenceImageId: Value(asset.referenceImageId),
-          createdAt: Value(asset.createdAt),
-        )
-      );
-    }
+    await localDb.insertMediaAsset(
+      MediaAssetsCompanion.insert(
+        id: asset.id,
+        poiId: asset.poiId,
+        localUri: asset.localUri,
+        type: asset.type ?? 'unknown', 
+        remoteUrl: Value(asset.remoteUrl), 
+        metadata: Value(asset.metadata),   
+        referenceImageId: Value(asset.referenceImageId),
+        createdAt: Value(asset.createdAt),
+      )
+    );
   }
 
   @override
@@ -53,20 +49,16 @@ class DualTrackMediaRepository implements MediaRepository {
 
   @override
   Future<void> addReferenceImage(ReferenceImageModel image) async {
-    if (image.isShared) { 
-      // TODO: Firestore logic
-    } else {
-      await localDb.insertReferenceImage(
-        ReferenceImagesCompanion.insert(
-          id: image.id,
-          poiId: image.poiId,
-          localUri: image.localUri, 
-          remoteUrl: Value(image.remoteUrl), 
-          metadata: Value(image.metadata),   
-          createdAt: Value(image.createdAt),
-        )
-      );
-    }
+    await localDb.insertReferenceImage(
+      ReferenceImagesCompanion.insert(
+        id: image.id,
+        poiId: image.poiId,
+        localUri: image.localUri, 
+        remoteUrl: Value(image.remoteUrl), 
+        metadata: Value(image.metadata),   
+        createdAt: Value(image.createdAt),
+      )
+    );
   }
 
   @override
@@ -108,13 +100,11 @@ class DualTrackMediaRepository implements MediaRepository {
 
   @override
   Future<void> updateMediaAssetLocalUri(String id, String newUri) async {
-    // TODO: Firestore logic (if shared)
     await localDb.updateMediaAssetLocalUri(id, newUri);
   }
 
   @override
   Future<void> updateReferenceImageLocalUri(String id, String newUri) async {
-    // TODO: Firestore logic (if shared)
     await localDb.updateReferenceImageLocalUri(id, newUri);
   }
 
@@ -140,5 +130,5 @@ class DualTrackMediaRepository implements MediaRepository {
 }
 
 final mediaRepositoryProvider = Provider<MediaRepository>((ref) {
-  return DualTrackMediaRepository(ref.read(databaseProvider));
+  return LocalMediaRepository(ref.read(databaseProvider));
 });

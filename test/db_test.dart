@@ -2,7 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trip_planner/core/database/database.dart';
-import 'package:trip_planner/core/utils/json_sync.dart';
+import 'package:trip_planner/core/services/sync/json_sync.dart';
 import 'package:trip_planner/features/poi/repositories/poi_repository.dart';
 
 void main() {
@@ -11,7 +11,7 @@ void main() {
 
   setUp(() {
     db = AppDatabase.forTesting(NativeDatabase.memory());
-    poiRepository = DualTrackPoiRepository(db);
+    poiRepository = LocalPoiRepository(db);
   });
 
   tearDown(() async {

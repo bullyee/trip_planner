@@ -19,43 +19,35 @@ abstract class TagRepository {
   Stream<int> watchPoiCountForTag(String tagId);
 }
 
-class DualTrackTagRepository implements TagRepository {
+class LocalTagRepository implements TagRepository {
   final AppDatabase localDb;
 
-  DualTrackTagRepository(this.localDb);
+  LocalTagRepository(this.localDb);
 
   @override
   Future<void> addTag(TagModel tag) async {
-    if (tag.isShared) {
-      // TODO: Route to Firestore SDK when implemented
-    } else {
-      await localDb.insertTag(
-        TagsCompanion.insert(
-          id: tag.id,
-          name: tag.name,
-          description: Value(tag.description),
-          createdAt: Value(tag.createdAt),
-        ),
-      );
-    }
+    await localDb.insertTag(
+      TagsCompanion.insert(
+        id: tag.id,
+        name: tag.name,
+        description: Value(tag.description),
+        createdAt: Value(tag.createdAt),
+      ),
+    );
   }
 
   @override
   Future<void> updateTag(TagModel tag) async {
-    if (tag.isShared) {
-      // TODO: Route to Firestore SDK when implemented
-    } else {
-      await localDb.updateTag(
-        TagsCompanion(
-          id: Value(tag.id),
-          name: Value(tag.name),
-          // FIXED: Do not blindly overwrite with null. Use Value.absent() to ignore the column 
-          // during update if the tag model doesn't have a description set.
-          description: tag.description != null ? Value(tag.description) : const Value.absent(),
-          createdAt: Value(tag.createdAt), // FIXED: Preserve original timestamp
-        ),
-      );
-    }
+    await localDb.updateTag(
+      TagsCompanion(
+        id: Value(tag.id),
+        name: Value(tag.name),
+        // FIXED: Do not blindly overwrite with null. Use Value.absent() to ignore the column 
+        // during update if the tag model doesn't have a description set.
+        description: tag.description != null ? Value(tag.description) : const Value.absent(),
+        createdAt: Value(tag.createdAt), // FIXED: Preserve original timestamp
+      ),
+    );
   }
 
   @override
@@ -140,5 +132,5 @@ class DualTrackTagRepository implements TagRepository {
 
 final tagRepositoryProvider = Provider<TagRepository>((ref) {
   final db = ref.read(databaseProvider);
-  return DualTrackTagRepository(db);
+  return LocalTagRepository(db);
 });

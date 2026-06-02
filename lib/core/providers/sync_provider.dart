@@ -1,7 +1,7 @@
 // lib/core/providers/sync_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../utils/json_sync.dart';
+import '../services/sync/json_sync.dart';
 import 'database_provider.dart';
 
 /// Provides a fully configured JsonSync instance so the UI layer

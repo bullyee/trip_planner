@@ -18,43 +18,37 @@ abstract class AnimeRepository {
   Stream<List<AnimeModel>> watchAnimesForPoi(String poiId); 
 }
 
-class DualTrackAnimeRepository implements AnimeRepository {
+class LocalAnimeRepository implements AnimeRepository {
   final AppDatabase localDb;
 
-  DualTrackAnimeRepository(this.localDb);
+  LocalAnimeRepository(this.localDb);
 
   @override
   Future<void> addAnime(AnimeModel anime) async {
-    if (anime.isShared) {
-      // TODO: Route to Firestore SDK when implemented
-    } else {
-      await localDb.insertAnime(
-        AnimesCompanion.insert(
-          id: anime.id,
-          name: anime.name,
-          description: Value(anime.description),
-          bangumiId: Value(anime.bangumiId), // FIXED: Added missing bangumiId
-          createdAt: Value(anime.createdAt), // FIXED: Wrapped in Value()
-        ),
-      );
-    }
+    await localDb.insertAnime(
+      AnimesCompanion.insert(
+        id: anime.id,
+        name: anime.name,
+        description: Value(anime.description),
+        bangumiId: Value(anime.bangumiId), // FIXED: Added missing bangumiId
+        createdAt: Value(anime.createdAt), // FIXED: Wrapped in Value()
+      ),
+    );
+    
   }
 
   @override
   Future<void> updateAnime(AnimeModel anime) async {
-    if (anime.isShared) {
-      // TODO: Route to Firestore SDK when implemented
-    } else {
-      await localDb.updateAnime(
-        AnimesCompanion(
-          id: Value(anime.id),
-          name: Value(anime.name),
-          description: Value(anime.description),
-          bangumiId: Value(anime.bangumiId), // FIXED: Prevent silent data loss
-          createdAt: Value(anime.createdAt), // FIXED: Preserve original timestamp
-        ),
-      );
-    }
+    await localDb.updateAnime(
+      AnimesCompanion(
+        id: Value(anime.id),
+        name: Value(anime.name),
+        description: Value(anime.description),
+        bangumiId: Value(anime.bangumiId), // FIXED: Prevent silent data loss
+        createdAt: Value(anime.createdAt), // FIXED: Preserve original timestamp
+      ),
+    );
+    
   }
 
   @override
@@ -127,5 +121,5 @@ class DualTrackAnimeRepository implements AnimeRepository {
 
 final animeRepositoryProvider = Provider<AnimeRepository>((ref) {
   final db = ref.read(databaseProvider);
-  return DualTrackAnimeRepository(db);
+  return LocalAnimeRepository(db);
 });
