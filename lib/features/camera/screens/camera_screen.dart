@@ -13,6 +13,7 @@ import 'package:path/path.dart' as p;
 
 import '../../poi/models/poi_model.dart';
 import '../../poi/models/reference_image_model.dart';
+import '../../poi/providers/media_provider.dart';
 import '../../poi/providers/poi_provider.dart';
 import '../providers/camera_provider.dart';
 

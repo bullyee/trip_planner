@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 
 import '../../camera/services/reinhard_match_service.dart';
 import '../models/reference_image_model.dart';
-import '../providers/poi_provider.dart';
+import '../providers/media_provider.dart';
 import '../repositories/media_repository.dart';
 import '../services/brightness_service.dart';
 import '../services/edit_preview_service.dart';

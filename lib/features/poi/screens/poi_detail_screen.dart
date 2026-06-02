@@ -11,10 +11,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../calendar/models/time_chunk_model.dart';
+import '../../calendar/providers/calendar_provider.dart';
 import '../../calendar/repositories/time_chunk_repository.dart';
 import '../models/media_asset_model.dart';
 import '../models/poi_model.dart';
 import '../models/reference_image_model.dart';
+import '../providers/media_provider.dart';
 import '../providers/poi_provider.dart';
 import '../../roi/providers/roi_provider.dart';
 import '../../anime/providers/anime_provider.dart';

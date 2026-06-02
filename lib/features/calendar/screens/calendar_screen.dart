@@ -44,7 +44,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             icon: const Icon(Icons.today),
             tooltip: 'Today',
             onPressed: () {
-              ref.read(selectedDateProvider.notifier).state = DateTime.now();
+              ref.read(selectedDateProvider.notifier).updateDate(DateTime.now());
             },
           ),
           IconButton(
@@ -58,7 +58,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 lastDate: DateTime(DateTime.now().year + 10),
               );
               if (picked != null) {
-                ref.read(selectedDateProvider.notifier).state = picked;
+                ref.read(selectedDateProvider.notifier).updateDate(picked);
               }
             },
           ),
@@ -74,22 +74,22 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 IconButton(
                   icon: const Icon(Icons.chevron_left, size: 20),
                   onPressed: () {
-                    ref.read(selectedDateProvider.notifier).state =
-                        selectedDate.subtract(const Duration(days: 7));
+                    ref.read(selectedDateProvider.notifier).updateDate(
+                        selectedDate.subtract(const Duration(days: 7)));
                   },
                 ),
                 Expanded(
                   child: WeekStrip(
                     selectedDate: selectedDate,
                     onDateSelected: (d) =>
-                        ref.read(selectedDateProvider.notifier).state = d,
+                        ref.read(selectedDateProvider.notifier).updateDate(d),
                   ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.chevron_right, size: 20),
                   onPressed: () {
-                    ref.read(selectedDateProvider.notifier).state =
-                        selectedDate.add(const Duration(days: 7));
+                    ref.read(selectedDateProvider.notifier).updateDate(
+                        selectedDate.add(const Duration(days: 7)));
                   },
                 ),
               ],
