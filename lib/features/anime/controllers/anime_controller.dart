@@ -1,10 +1,9 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 
-// IMPORTANT: Removed drift and direct database imports.
-// Added the pure domain model and repository imports.
 import '../models/anime_model.dart';
 import '../repositories/anime_repository.dart';
+import '../../../core/utils/app_result.dart'; // Added AppResult import
 
 part 'anime_controller.g.dart';
 
@@ -13,34 +12,28 @@ class AnimeController extends _$AnimeController {
   @override
   FutureOr<void> build() {}
 
-  /// Handles business logic for saving an Anime.
-  /// Delegates all database operations to the Repository.
-  Future<bool> saveAnime({
+  Future<AppResult<void>> saveAnime({
     required bool isNew,
     String? id,
     required String name,
     required String description,
-    // Added for Dual-Track Sync architecture
     int? existingCreatedAt,
-    bool isShared = false,
   }) async {
     state = const AsyncValue.loading();
     try {
       String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
 
-      // 1. Resolve ID and construct the pure Domain Model
       final animeId = isNew ? const Uuid().v4() : id!;
       
       final animeModel = AnimeModel(
         id: animeId,
         name: name.trim(),
         description: nullIfEmpty(description),
-        // Preserve timestamp on edit, generate new one on creation
         createdAt: existingCreatedAt ?? DateTime.now().millisecondsSinceEpoch,
-        isShared: isShared,
+        isShared: false, // Explicitly set to false since we removed dual-track
       );
 
-      // 2. Delegate to the Repository Layer
+      // Delegate to the pure local repository
       final repository = ref.read(animeRepositoryProvider);
       if (isNew) {
         await repository.addAnime(animeModel);
@@ -49,10 +42,12 @@ class AnimeController extends _$AnimeController {
       }
 
       state = const AsyncValue.data(null);
-      return true;
+      return const Success(null); // Explicit success
+      
     } catch (e, st) {
       state = AsyncValue.error(e, st);
-      return false;
+      // Return explicit failure so UI can show a Snackbar with the exact error
+      return Failure(e.toString(), st); 
     }
   }
 }

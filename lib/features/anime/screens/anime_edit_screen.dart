@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/utils/app_result.dart';
 import '../controllers/anime_controller.dart';
 import '../models/anime_model.dart';
 import '../repositories/anime_repository.dart';
@@ -121,19 +122,25 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     
-    final success = await ref.read(animeControllerProvider.notifier).saveAnime(
+    final result = await ref.read(animeControllerProvider.notifier).saveAnime(
       isNew: widget.isNew,
       id: widget.animeId,
       name: _nameController.text,
       description: _descController.text,
     );
 
-    if (success && mounted) {
-      context.pop();
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to save anime. Please try again.')),
-      );
+    // Early exit if the widget is unmounted during the async operation
+    if (!mounted) return;
+
+    // Utilize Dart 3 pattern matching for precise error handling
+    switch (result) {
+      case Success():
+        context.pop();
+      case Failure(:final error):
+        // Now the UI can display the exact failure reason (e.g., DB lock, validation error)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: $error')),
+        );
     }
   }
 
