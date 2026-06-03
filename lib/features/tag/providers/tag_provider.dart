@@ -1,28 +1,34 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../poi/models/poi_model.dart';
 import '../models/tag_model.dart';
 import '../repositories/tag_repository.dart';
 
-final allTagsProvider = StreamProvider<List<TagModel>>((ref) {
+part 'tag_provider.g.dart';
+
+@riverpod
+Stream<List<TagModel>> allTags(AllTagsRef ref) {
   return ref.watch(tagRepositoryProvider).watchAllTags();
-});
+}
 
-final tagByIdProvider = StreamProvider.family<TagModel?, String>((ref, id) {
+@riverpod
+Stream<TagModel?> tagById(TagByIdRef ref, String id) {
   return ref.watch(tagRepositoryProvider).watchTagById(id);
-});
+}
 
-final tagsForPoiProvider =
-    StreamProvider.family<List<TagModel>, String>((ref, poiId) {
+@riverpod
+Stream<List<TagModel>> tagsForPoi(TagsForPoiRef ref, String poiId) {
   return ref.watch(tagRepositoryProvider).watchTagsForPoi(poiId);
-});
+}
 
-final poisByTagProvider =
-    StreamProvider.family<List<PoiModel>, String>((ref, tagId) {
+// TODO (Tech Debt): These two providers return POI data and should ideally 
+// be refactored into the POI domain (poi_provider.dart) in the future.
+@riverpod
+Stream<List<PoiModel>> poisByTag(PoisByTagRef ref, String tagId) {
   return ref.watch(tagRepositoryProvider).watchPoisByTag(tagId);
-});
+}
 
-final poiCountForTagProvider =
-    StreamProvider.family<int, String>((ref, tagId) {
+@riverpod
+Stream<int> poiCountForTag(PoiCountForTagRef ref, String tagId) {
   return ref.watch(tagRepositoryProvider).watchPoiCountForTag(tagId);
-});
+}

@@ -1,10 +1,10 @@
-// lib/features/roi/repositories/roi_repository.dart
-
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart'; 
 import '../models/roi_model.dart';
 import '../../../core/database/database.dart'; 
 import '../../../core/providers/database_provider.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'roi_repository.g.dart';
 
 abstract class RoiRepository {
   Future<void> updateRoi(
@@ -101,8 +101,8 @@ class LocalRoiRepository implements RoiRepository {
   }
 }
 
-final roiRepositoryProvider = Provider<RoiRepository>((ref) {
-  // Inject the actual Drift database instance
-  final db = ref.read(databaseProvider);
+@riverpod
+RoiRepository roiRepository(RoiRepositoryRef ref) {
+  final db = ref.watch(databaseProvider);
   return LocalRoiRepository(db);
-});
+}
