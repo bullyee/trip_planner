@@ -1,9 +1,11 @@
 import 'package:drift/drift.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/media_asset_model.dart';
 import '../models/reference_image_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'media_repository.g.dart';
 
 abstract class MediaRepository {
   // Media Assets
@@ -129,6 +131,7 @@ class LocalMediaRepository implements MediaRepository {
   }
 }
 
-final mediaRepositoryProvider = Provider<MediaRepository>((ref) {
-  return LocalMediaRepository(ref.read(databaseProvider));
-});
+@riverpod
+MediaRepository mediaRepository(MediaRepositoryRef ref) {
+  return LocalMediaRepository(ref.watch(databaseProvider));
+}

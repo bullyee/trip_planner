@@ -1,10 +1,12 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
 
 import '../../poi/models/poi_model.dart';
 import '../models/tag_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'tag_repository.g.dart';
 
 abstract class TagRepository {
   Future<void> addTag(TagModel tag);
@@ -130,7 +132,8 @@ class LocalTagRepository implements TagRepository {
   }
 }
 
-final tagRepositoryProvider = Provider<TagRepository>((ref) {
-  final db = ref.read(databaseProvider);
+@riverpod
+TagRepository tagRepository(TagRepositoryRef ref) {
+  final db = ref.watch(databaseProvider);
   return LocalTagRepository(db);
-});
+}

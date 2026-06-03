@@ -402,7 +402,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                       selectedRoiId = newRoiId;
                                     });
                                     // persist selection in session state
-                                    dialogRef.read(lastSelectedBacklogRoiProvider.notifier).state = newRoiId;
+                                    ref.read(lastSelectedBacklogRoiProvider.notifier).updateRoi(newRoiId);
                                   }
                                 },
                               ),
@@ -444,7 +444,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                         subtitle: Text(poi.address ?? 'No address'),
                                         onTap: () async {
                                           // persist last selected ROI for backlog block
-                                          dialogRef.read(lastSelectedBacklogRoiProvider.notifier).state = selectedRoiId;
+                                          ref.read(lastSelectedBacklogRoiProvider.notifier).updateRoi(selectedRoiId);
                                           
                                           final newChunk = TimeChunkModel(
                                             id: const Uuid().v4(),

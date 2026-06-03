@@ -1,9 +1,11 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
 
 import '../models/poi_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'poi_repository.g.dart';
 
 abstract class PoiRepository {
   Future<void> savePoiWithRelations({
@@ -173,7 +175,8 @@ class LocalPoiRepository implements PoiRepository {
   }
 }
 
-final poiRepositoryProvider = Provider<PoiRepository>((ref) {
-  final db = ref.read(databaseProvider);
+@riverpod
+PoiRepository poiRepository(PoiRepositoryRef ref) {
+  final db = ref.watch(databaseProvider);
   return LocalPoiRepository(db);
-});
+}

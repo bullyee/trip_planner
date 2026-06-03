@@ -1,11 +1,12 @@
 // lib/features/calendar/repositories/time_chunk_repository.dart
-
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
 
 import '../models/time_chunk_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'time_chunk_repository.g.dart';
 
 abstract class TimeChunkRepository {
   Future<void> addTimeChunk(TimeChunkModel chunk);
@@ -101,7 +102,8 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
   }
 }
 
-final timeChunkRepositoryProvider = Provider<TimeChunkRepository>((ref) {
-  final db = ref.read(databaseProvider);
+@riverpod
+TimeChunkRepository timeChunkRepository(TimeChunkRepositoryRef ref) {
+  final db = ref.watch(databaseProvider);
   return LocalTimeChunkRepository(db);
-});
+}
