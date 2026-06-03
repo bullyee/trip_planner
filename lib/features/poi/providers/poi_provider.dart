@@ -36,3 +36,13 @@ Stream<List<PoiModel>> poisByAnime(PoisByAnimeRef ref, String animeId) {
 Stream<int> poiCountForAnime(PoiCountForAnimeRef ref, String animeId) {
   return ref.watch(poiRepositoryProvider).watchPoiCountForAnime(animeId);
 }
+
+@riverpod
+Stream<List<PoiModel>> poisByTag(PoisByTagRef ref, String tagId) {
+  return ref.watch(poiRepositoryProvider).watchPoisByTag(tagId);
+}
+
+@riverpod
+Stream<int> poiCountForTag(PoiCountForTagRef ref, String tagId) {
+  return ref.watch(poiRepositoryProvider).watchPoiCountForTag(tagId);
+}

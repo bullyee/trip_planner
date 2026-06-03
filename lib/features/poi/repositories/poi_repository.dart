@@ -27,6 +27,8 @@ abstract class PoiRepository {
   Stream<Map<String, PoiModel>> watchAllPois();
   Stream<List<PoiModel>> watchPoisByAnime(String animeId);
   Stream<int> watchPoiCountForAnime(String animeId);
+  Stream<List<PoiModel>> watchPoisByTag(String tagId);
+  Stream<int> watchPoiCountForTag(String tagId);
 }
 
 class LocalPoiRepository implements PoiRepository {
@@ -172,6 +174,31 @@ class LocalPoiRepository implements PoiRepository {
   @override
   Stream<int> watchPoiCountForAnime(String animeId) {
     return localDb.watchPoiCountForAnime(animeId);
+  }
+
+  @override
+  Stream<List<PoiModel>> watchPoisByTag(String tagId) {
+    return localDb.watchPoisByTag(tagId).map((rows) {
+      return rows.map((row) => PoiModel(
+        id: row.id,
+        roiId: row.roiId,
+        name: row.name,
+        description: row.description,
+        address: row.address,
+        lat: row.lat,
+        lng: row.lng,
+        businessHours: row.businessHours,
+        contactInfo: row.contactInfo,
+        coverImageUri: row.coverImageUri,
+        createdAt: row.createdAt,
+        isShared: false,
+      )).toList();
+    });
+  }
+
+  @override
+  Stream<int> watchPoiCountForTag(String tagId) {
+    return localDb.watchPoiCountForTag(tagId);
   }
 }
 

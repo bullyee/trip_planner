@@ -1,7 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../../poi/services/anitabi_api_service.dart';
 import '../models/anime_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
@@ -13,7 +12,6 @@ abstract class AnimeRepository {
   Future<void> updateAnime(AnimeModel anime);
   Future<AnimeModel?> getAnimeById(String id);
   Future<void> deleteAnime(String id);
-  Future<AnitabiImportResult?> importFromAnitabi(String subjectId, String fallbackName);
   
   Stream<List<AnimeModel>> watchAllAnimes();
   Stream<AnimeModel?> watchAnimeById(String id);
@@ -109,15 +107,6 @@ class LocalAnimeRepository implements AnimeRepository {
   @override
   Future<void> deleteAnime(String id) async {
     await localDb.deleteAnime(id);
-  }
-
-  @override
-  Future<AnitabiImportResult?> importFromAnitabi(String subjectId, String fallbackName) async {
-    return await AnitabiApiService.importBangumiSubject(
-      localDb,
-      subjectId,
-      fallbackName: fallbackName,
-    );
   }
 }
 

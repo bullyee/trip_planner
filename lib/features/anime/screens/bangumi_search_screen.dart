@@ -6,8 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../poi/services/anitabi_api_service.dart';
 import '../models/bangumi_subject.dart';
-import '../repositories/anime_repository.dart';
 import '../services/bangumi_search_service.dart';
+import '../../../core/providers/database_provider.dart';
 
 class BangumiSearchScreen extends ConsumerStatefulWidget {
   const BangumiSearchScreen({super.key});
@@ -102,12 +102,16 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
 
     setState(() => _importing = subject.id);
 
-    final animeRepo = ref.read(animeRepositoryProvider);
+    // 1. Read the database provider instead of the anime repository
+    final db = ref.read(databaseProvider);
     final AnitabiImportResult? result;
+
     try {
-      result = await animeRepo.importFromAnitabi(
+      // 2. Call the Application Service directly
+      result = await AnitabiApiService.importBangumiSubject(
+        db,
         subject.id,
-        subject.name,
+        fallbackName: subject.name,
       );
     } on AnitabiUnavailableException {
       // Network/timeout — not the same as "this anime has no POIs".
