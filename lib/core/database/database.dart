@@ -417,9 +417,9 @@ class AppDatabase extends _$AppDatabase {
   Future<int> insertMediaAsset(MediaAssetsCompanion asset) =>
       into(mediaAssets).insert(asset);
 
-  Future<int> updateMediaAssetLocalUri(String id, String localUri) =>
+  Future<int> updateMediaAssetLocalPath(String id, String? localPath) =>
       (update(mediaAssets)..where((m) => m.id.equals(id))).write(
-        MediaAssetsCompanion(localUri: Value(localUri)),
+        MediaAssetsCompanion(localPath: Value(localPath)),
       );
 
   Future<int> deleteMediaAsset(String id) =>
@@ -435,9 +435,9 @@ class AppDatabase extends _$AppDatabase {
   Future<int> insertReferenceImage(ReferenceImagesCompanion image) =>
       into(referenceImages).insert(image);
 
-  Future<int> updateReferenceImageLocalUri(String id, String localUri) =>
+  Future<int> updateReferenceImageLocalPath(String id, String? localPath) =>
       (update(referenceImages)..where((r) => r.id.equals(id))).write(
-        ReferenceImagesCompanion(localUri: Value(localUri)),
+        ReferenceImagesCompanion(localPath: Value(localPath)),
       );
 
   Future<int> deleteReferenceImage(String id) =>

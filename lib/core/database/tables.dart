@@ -36,6 +36,7 @@ class Pois extends Table {
   TextColumn get id => text()();
   TextColumn get roiId =>
       text().nullable().references(Rois, #id, onDelete: KeyAction.setNull)();
+  TextColumn get authorId => text()();
   TextColumn get name => text()();
   TextColumn get description => text().nullable()();
   TextColumn get address => text().nullable()();
@@ -43,7 +44,8 @@ class Pois extends Table {
   RealColumn get lng => real()();
   TextColumn get businessHours => text().nullable()();
   TextColumn get contactInfo => text().nullable()();
-  TextColumn get coverImageUri => text().nullable()();
+  TextColumn get localCoverImagePath => text().nullable()();
+  TextColumn get remoteCoverImageUrl => text().nullable()();
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override
@@ -85,7 +87,8 @@ class TimeChunks extends Table {
 class ReferenceImages extends Table {
   TextColumn get id => text()();
   TextColumn get poiId => text().references(Pois, #id)();
-  TextColumn get localUri => text()();
+  TextColumn get authorId => text()();
+  TextColumn get localPath => text().nullable()();
   TextColumn get remoteUrl => text().nullable()();
   TextColumn get metadata => text().nullable()();
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
@@ -97,8 +100,9 @@ class ReferenceImages extends Table {
 class MediaAssets extends Table {
   TextColumn get id => text()();
   TextColumn get poiId => text().references(Pois, #id)();
+  TextColumn get authorId => text()();
   TextColumn get type => text()();
-  TextColumn get localUri => text()();
+  TextColumn get localPath => text().nullable()();
   TextColumn get remoteUrl => text().nullable()();
   TextColumn get metadata => text().nullable()();
   TextColumn get referenceImageId => text()

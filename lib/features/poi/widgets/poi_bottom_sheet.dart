@@ -38,11 +38,11 @@ class PoiBottomSheet extends ConsumerWidget {
               ),
             ),
           ),
-          if (poi.coverImageUri != null)
+          if (poi.localCoverImagePath != null)
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Image.file(
-                File(poi.coverImageUri!),
+                File(poi.localCoverImagePath!),
                 height: 180,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => Container(

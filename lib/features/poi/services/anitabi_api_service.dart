@@ -1,6 +1,8 @@
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import 'package:trip_planner/core/database/database.dart';
@@ -210,34 +212,42 @@ class AnitabiApiService {
   }) async {
     
 
-    final queue = List<_PendingCover>.from(pending);
+    final queue = Queue<_PendingCover>.from(pending);
 
     Future<void> worker(int workerId) async {
-      while (queue.isNotEmpty) {
-        final next = queue.removeAt(0);
-        try {
-          final localPath = await downloadCoverImage(
-            next.url,
-            subdir: 'reference_images',
-            client: httpClient,
-          );
-          if (localPath != null) {
-            await db.insertReferenceImage(
-              ReferenceImagesCompanion.insert(
-                id: const Uuid().v4(),
-                poiId: next.poiId,
-                localUri: localPath,
-                remoteUrl: Value(next.url),
-                metadata: Value(next.metadata),
-              ),
-            );
-          } 
-        } catch (_) {
-          
-          // Leave this POI without a reference image; others continue.
-        }    
-      }
-    }
+  while (queue.isNotEmpty) {
+    // O(1) operation using dart:collection Queue
+    final next = queue.removeFirst();
+    
+    try {
+      final localPath = await downloadCoverImage(
+        next.url,
+        subdir: 'reference_images',
+        client: httpClient,
+      );
+      
+      if (localPath != null) {
+        // Fetch or assign the required user ID
+        final currentUserId = 'local_test_user'; 
+
+        await db.insertReferenceImage(
+          ReferenceImagesCompanion.insert(
+            id: const Uuid().v4(),
+            poiId: next.poiId,
+            authorId: currentUserId, // CRITICAL: Required for the new model
+            localPath: Value(localPath), // CRITICAL: Wrap in Value for nullable column
+            remoteUrl: Value(next.url),
+            metadata: Value(next.metadata),
+            createdAt: Value(DateTime.now().millisecondsSinceEpoch), // CRITICAL: Missing timestamp
+          ),
+        );
+      } 
+    } catch (e, st) {
+      debugPrint('[Worker $workerId] Failed to process reference image for POI ${next.poiId}: $e');
+      debugPrint(st.toString());
+    }    
+  }
+}
 
     try {
       await Future.wait(
@@ -365,7 +375,7 @@ class AnitabiApiService {
       // photo. It goes to the reference_images table; the POI cover stays
       // null until the user takes their own photo or the camera flow sets
       // it.
-      coverImageUri: const Value(null),
+      localCoverImagePath: const Value(null),
       description: Value(description),
       address: const Value(null),
       businessHours: const Value(null),

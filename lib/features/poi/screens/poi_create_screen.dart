@@ -55,7 +55,8 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
   bool _isLoading = false;
   // Existing cover URI on the edit path, threaded back through savePoi so a
   // full-row update doesn't wipe it. Null on the create path.
-  String? _existingCoverUri;
+  String? _existingLocalCoverImagePath;
+  String? _existingRemoteCoverImageUrl;
   int? _existingCreatedAt;
 
   @override
@@ -79,7 +80,8 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       _businessHoursController.text = poi.businessHours ?? '';
       _contactInfoController.text = poi.contactInfo ?? '';
       _roiId = poi.roiId;
-      _existingCoverUri = poi.coverImageUri;
+      _existingLocalCoverImagePath = poi.localCoverImagePath;
+      _existingRemoteCoverImageUrl = poi.remoteCoverImageUrl;
       _existingCreatedAt = poi.createdAt;
 
       final animeRepo = ref.read(animeRepositoryProvider);
@@ -256,7 +258,8 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       contactInfo: _contactInfoController.text,
       animeIds: _selectedAnimeIds,
       tagIds: _selectedTagIds,
-      coverImageUri: _existingCoverUri,
+      localCoverImagePath: _existingLocalCoverImagePath,
+      remoteCoverImageUrl: _existingRemoteCoverImageUrl,
       existingCreatedAt: _existingCreatedAt,
     );
 

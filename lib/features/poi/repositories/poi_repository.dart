@@ -47,6 +47,7 @@ class LocalPoiRepository implements PoiRepository {
       final companion = PoisCompanion(
         id: Value(poi.id),
         roiId: Value(poi.roiId),
+        authorId: Value(poi.authorId),
         name: Value(poi.name),
         description: Value(poi.description),
         address: Value(poi.address),
@@ -54,7 +55,8 @@ class LocalPoiRepository implements PoiRepository {
         lng: Value(poi.lng),
         businessHours: Value(poi.businessHours),
         contactInfo: Value(poi.contactInfo),
-        coverImageUri: Value(poi.coverImageUri),
+        localCoverImagePath: Value(poi.localCoverImagePath),
+        remoteCoverImageUrl: Value(poi.remoteCoverImageUrl),
         createdAt: Value(poi.createdAt),
       );
 
@@ -81,6 +83,7 @@ class LocalPoiRepository implements PoiRepository {
     return PoiModel(
       id: driftPoi.id,
       roiId: driftPoi.roiId,
+      authorId: driftPoi.authorId,
       name: driftPoi.name,
       description: driftPoi.description,
       address: driftPoi.address,
@@ -88,7 +91,8 @@ class LocalPoiRepository implements PoiRepository {
       lng: driftPoi.lng,
       businessHours: driftPoi.businessHours,
       contactInfo: driftPoi.contactInfo,
-      coverImageUri: driftPoi.coverImageUri,
+      localCoverImagePath: driftPoi.localCoverImagePath,
+      remoteCoverImageUrl: driftPoi.remoteCoverImageUrl,
       createdAt: driftPoi.createdAt, // FIXED: driftRow -> driftPoi
       isShared: false, 
     );
@@ -98,6 +102,7 @@ class LocalPoiRepository implements PoiRepository {
     return PoiModel(
       id: driftPoi.id,
       roiId: driftPoi.roiId,
+      authorId: driftPoi.authorId,
       name: driftPoi.name,
       description: driftPoi.description,
       address: driftPoi.address,
@@ -105,7 +110,8 @@ class LocalPoiRepository implements PoiRepository {
       lng: driftPoi.lng,
       businessHours: driftPoi.businessHours,
       contactInfo: driftPoi.contactInfo,
-      coverImageUri: driftPoi.coverImageUri,
+      localCoverImagePath: driftPoi.localCoverImagePath,
+      remoteCoverImageUrl: driftPoi.remoteCoverImageUrl,
       createdAt: driftPoi.createdAt,
       isShared: false,
     );
@@ -157,6 +163,7 @@ class LocalPoiRepository implements PoiRepository {
       return rows.map((row) => PoiModel(
         id: row.id,
         roiId: row.roiId,
+        authorId: row.authorId,
         name: row.name,
         description: row.description,
         address: row.address,
@@ -164,7 +171,8 @@ class LocalPoiRepository implements PoiRepository {
         lng: row.lng,
         businessHours: row.businessHours,
         contactInfo: row.contactInfo,
-        coverImageUri: row.coverImageUri,
+        localCoverImagePath: row.localCoverImagePath,
+        remoteCoverImageUrl: row.remoteCoverImageUrl,
         createdAt: row.createdAt, 
         isShared: false, 
       )).toList();
@@ -182,6 +190,7 @@ class LocalPoiRepository implements PoiRepository {
       return rows.map((row) => PoiModel(
         id: row.id,
         roiId: row.roiId,
+        authorId: row.authorId,
         name: row.name,
         description: row.description,
         address: row.address,
@@ -189,7 +198,8 @@ class LocalPoiRepository implements PoiRepository {
         lng: row.lng,
         businessHours: row.businessHours,
         contactInfo: row.contactInfo,
-        coverImageUri: row.coverImageUri,
+        localCoverImagePath: row.localCoverImagePath,
+        remoteCoverImageUrl: row.remoteCoverImageUrl,
         createdAt: row.createdAt,
         isShared: false,
       )).toList();

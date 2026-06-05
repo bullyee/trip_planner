@@ -3,6 +3,7 @@
 class PoiModel {
   final String id;
   final String? roiId;
+  final String authorId;
   final String name;
   final String? description;
   final String? address;
@@ -10,7 +11,8 @@ class PoiModel {
   final double lng;
   final String? businessHours;
   final String? contactInfo;
-  final String? coverImageUri;
+  final String? localCoverImagePath;
+  final String? remoteCoverImageUrl;
   
   // Necessary for offline-first and cloud sync architectures
   final int createdAt;
@@ -19,6 +21,7 @@ class PoiModel {
   PoiModel({
     required this.id,
     this.roiId,
+    required this.authorId,
     required this.name,
     this.description,
     this.address,
@@ -26,7 +29,8 @@ class PoiModel {
     required this.lng,
     this.businessHours,
     this.contactInfo,
-    this.coverImageUri,
+    this.localCoverImagePath,
+    this.remoteCoverImageUrl,
     required this.createdAt,
     this.isShared = false,
   });

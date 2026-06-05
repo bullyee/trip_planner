@@ -820,25 +820,47 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
         itemCount: images.length,
         itemBuilder: (ctx, index) {
           final image = images[index];
-          final file = File(image.localUri);
+          final file = (image.localPath != null && image.localPath!.isNotEmpty) 
+              ? File(image.localPath!) 
+              : null;
           return ListTile(
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: SizedBox(
                 width: 52,
                 height: 52,
-                child: Image.file(
-                  file,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const ColoredBox(
-                    color: Colors.black26,
-                    child: Icon(Icons.broken_image, color: Colors.white54),
-                  ),
-                ),
+                // CRITICAL FIX: Conditionally render the image widget based on file existence
+                child: file != null
+                    ? Image.file(
+                        // Dart's type promotion knows 'file' is safely a non-null File here
+                        file,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const ColoredBox(
+                          color: Colors.black26,
+                          child: Icon(Icons.broken_image, color: Colors.white54),
+                        ),
+                      )
+                    // Fallback for cloud-only images: 
+                    // Try to load remoteUrl if available, otherwise show a placeholder.
+                    : (image.remoteUrl != null && image.remoteUrl!.isNotEmpty)
+                        ? Image.network(
+                            image.remoteUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const ColoredBox(
+                              color: Colors.black26,
+                              child: Icon(Icons.broken_image, color: Colors.white54),
+                            ),
+                          )
+                        : const ColoredBox(
+                            color: Colors.black26,
+                            child: Icon(Icons.cloud, color: Colors.white54),
+                          ),
               ),
             ),
             title: Text(
-              p.basenameWithoutExtension(image.localUri),
+              image.localPath != null 
+                ? p.basenameWithoutExtension(image.localPath!)
+                : (image.metadata ?? 'Cloud Image'),
               style: const TextStyle(color: Colors.white),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -850,16 +872,21 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     );
     if (picked == null) return;
     if (!mounted) return;
-    final file = File(picked.localUri);
+    if (picked.localPath == null || picked.localPath!.isEmpty) {
+      debugPrint('Cannot edit: Local path is missing. This is a cloud-only image.');
+      return;
+    }
+
+    final file = File(picked.localPath!);
     if (!await file.exists()) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Image file not found: ${picked.localUri}')),
+        SnackBar(content: Text('Image file not found: ${picked.localPath}')),
       );
       return;
     }
     setState(() {
-      _referencePath = picked.localUri;
+      _referencePath = picked.localPath;
       _referenceImageId = picked.id;
       _overlayOffset = Offset.zero;
       _overlayScale = 0.8;

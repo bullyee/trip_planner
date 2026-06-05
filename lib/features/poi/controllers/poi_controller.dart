@@ -27,8 +27,8 @@ class PoiController extends _$PoiController {
     required String contactInfo,
     required List<String> animeIds,
     required List<String> tagIds,
-    String? coverImageUri,
-    // Added for Dual-Track Sync architecture
+    String? localCoverImagePath,
+    String? remoteCoverImageUrl,
     int? existingCreatedAt, 
     bool isShared = false,  
   }) async {
@@ -40,10 +40,13 @@ class PoiController extends _$PoiController {
       // Business logic: clean up empty strings
       String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
 
+      final currentUserId = 'local_test_user';
+
       // 1. Construct the pure Domain Model
       final poiModel = PoiModel(
         id: poiId,
         roiId: roiId,
+        authorId: currentUserId,
         name: name.trim(),
         description: nullIfEmpty(description),
         address: nullIfEmpty(address),
@@ -51,7 +54,8 @@ class PoiController extends _$PoiController {
         lng: double.parse(lngStr.trim()),
         businessHours: nullIfEmpty(businessHours),
         contactInfo: nullIfEmpty(contactInfo),
-        coverImageUri: coverImageUri,
+        localCoverImagePath: localCoverImagePath,
+        remoteCoverImageUrl: remoteCoverImageUrl,
         // Preserve timestamp on edit, generate new one on creation
         createdAt: existingCreatedAt ?? DateTime.now().millisecondsSinceEpoch,
         isShared: isShared,

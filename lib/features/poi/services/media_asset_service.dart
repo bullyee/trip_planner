@@ -44,7 +44,8 @@ Future<bool> persistMediaAsset({
       id: const Uuid().v4(),
       poiId: poiId,
       type: type,
-      localUri: savedPath,
+      authorId: 'local_test_user',
+      localPath: savedPath,
       referenceImageId: referenceImageId,
       createdAt: DateTime.now().millisecondsSinceEpoch,
     );

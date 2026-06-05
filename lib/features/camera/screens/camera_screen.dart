@@ -698,7 +698,43 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         itemCount: images.length,
         itemBuilder: (ctx, index) {
           final image = images[index];
-          final file = File(image.localUri);
+
+          // 1. Build a safe image widget with fallback strategy (Local -> Remote -> Placeholder)
+          Widget imageWidget;
+          if (image.localPath != null && image.localPath!.isNotEmpty) {
+            imageWidget = Image.file(
+              File(image.localPath!),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const ColoredBox(
+                color: Colors.black26,
+                child: Icon(Icons.broken_image, color: Colors.white54),
+              ),
+            );
+          } else if (image.remoteUrl != null && image.remoteUrl!.isNotEmpty) {
+            imageWidget = Image.network(
+              image.remoteUrl!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const ColoredBox(
+                color: Colors.black26,
+                child: Icon(Icons.broken_image, color: Colors.white54),
+              ),
+            );
+          } else {
+            imageWidget = const ColoredBox(
+              color: Colors.black26,
+              child: Icon(Icons.image_not_supported, color: Colors.white54),
+            );
+          }
+
+          // 2. Build a safe title with fallback text
+          String titleText = 'Unknown Image';
+          if (image.metadata != null && image.metadata!.isNotEmpty) {
+            titleText = image.metadata!;
+          } else if (image.localPath != null && image.localPath!.isNotEmpty) {
+            titleText = p.basenameWithoutExtension(image.localPath!);
+          } else if (image.remoteUrl != null && image.remoteUrl!.isNotEmpty) {
+            titleText = 'Cloud Reference Image'; 
+          }
 
           return ListTile(
             leading: ClipRRect(
@@ -706,18 +742,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               child: SizedBox(
                 width: 52,
                 height: 52,
-                child: Image.file(
-                  file,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const ColoredBox(
-                    color: Colors.black26,
-                    child: Icon(Icons.broken_image, color: Colors.white54),
-                  ),
-                ),
+                child: imageWidget, // Inject the safely resolved widget
               ),
             ),
             title: Text(
-              p.basenameWithoutExtension(image.localUri),
+              titleText,
               style: const TextStyle(color: Colors.white),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -730,11 +759,17 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
     if (picked == null) return;
 
-    final file = File(picked.localUri);
+    if (picked.localPath == null || picked.localPath!.isEmpty) {
+      debugPrint('Local path is missing. This image might be cloud-only.');
+      return; 
+    }
+
+    // 2. Safe instantiation using the bang operator (!) since we verified it's not null
+    final file = File(picked.localPath!);
     if (!await file.exists()) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Image file not found: ${picked.localUri}')),
+        SnackBar(content: Text('Image file not found: ${picked.localPath}')),
       );
       return;
     }

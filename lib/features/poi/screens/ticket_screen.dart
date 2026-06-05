@@ -49,7 +49,7 @@ class TicketScreen extends ConsumerWidget {
               return Card(
                 child: ListTile(
                   leading: const Icon(Icons.qr_code_2, size: 40),
-                  title: Text(ticket.localUri.split('/').last),
+                  title: Text(ticket.localPath?.split('/').last ?? 'Cloud Ticket'),
                   subtitle: ticket.metadata != null
                       ? Text(ticket.metadata!)
                       : null,

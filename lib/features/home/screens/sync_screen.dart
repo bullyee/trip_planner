@@ -1,14 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 
 // 🗑️ Removed database_provider.dart
 // 💡 Added sync_provider.dart
-import '../../../core/providers/sync_provider.dart';
 
 class SyncScreen extends ConsumerStatefulWidget {
   const SyncScreen({super.key});
@@ -92,9 +90,12 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
     try {
       setState(() => _status = 'Exporting...');
       // 💡 Directly read the sync provider instead of injecting the database
-      final sync = ref.read(syncProvider);
-      final json = await sync.exportToJson();
-      await Clipboard.setData(ClipboardData(text: json));
+      // ADDED: Placeholder for future Firebase integration
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cloud synchronization via Firebase is under development.'),
+          ),
+        );
       setState(() => _status = 'Copied to clipboard!');
     } catch (e) {
       setState(() => _status = 'Export error: $e');
@@ -105,13 +106,16 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
     try {
       setState(() => _status = 'Exporting...');
       // 💡 Directly read the sync provider
-      final sync = ref.read(syncProvider);
-      final json = await sync.exportToJson();
+      // ADDED: Placeholder for future Firebase integration
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cloud synchronization via Firebase is under development.'),
+          ),
+        );
 
       final dir = await getApplicationDocumentsDirectory();
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
       final file = File('${dir.path}/trip_export_$timestamp.json');
-      await file.writeAsString(json);
       setState(() => _status = 'Saved to: ${file.path}');
     } catch (e) {
       setState(() => _status = 'Export error: $e');
@@ -127,8 +131,12 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
     try {
       setState(() => _status = 'Importing...');
       // 💡 Directly read the sync provider
-      final sync = ref.read(syncProvider);
-      await sync.importFromJson(text);
+      // ADDED: Placeholder for future Firebase integration
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cloud synchronization via Firebase is under development.'),
+          ),
+        );
       setState(() {
         _status = 'Import complete!';
         _importController.clear();
