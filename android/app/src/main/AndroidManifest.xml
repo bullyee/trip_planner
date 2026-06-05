@@ -40,6 +40,12 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Ask Google Play to download the ML Kit subject-segmentation model at
+             install time, so the cutout panel doesn't fail on first use while the
+             model is still being fetched. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="subject_segment" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

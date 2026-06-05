@@ -38,6 +38,14 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+
+            // Disable R8/code-shrinking. Full-mode R8 strips the native classes of
+            // reflection/channel-based plugins (path_provider's pigeon PathProviderApi,
+            // and JNI bindings), causing "Unable to establish connection on channel" /
+            // "No JNI instance available" at runtime. The APK size is dominated by
+            // native .so libs (onnxruntime, ML Kit), so shrinking Java saves little.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
