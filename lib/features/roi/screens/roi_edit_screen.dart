@@ -107,9 +107,12 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
       name: _nameController.text,
       description: _descController.text,
       createdAt: _existing!.createdAt,                     // Extract from _existing
-      // NOTE: If your Drift 'Roi' class doesn't have an 'isShared' column yet, 
+      // Preserve the existing offline-cache flag; without this the repo defaults
+      // it to 0 and silently clears offline caching on every edit.
+      existingIsOfflineCached: _existing!.isOfflineCached ? 1 : 0,
+      // NOTE: If your Drift 'Roi' class doesn't have an 'isShared' column yet,
       // just pass 'false' here for now.
-      isShared: false,                                     
+      isShared: false,
     );
 
     if (success && mounted) {
