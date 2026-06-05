@@ -146,11 +146,14 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
         ? ''
         : ' Downloading ${result.coversPending} cover'
             '${result.coversPending == 1 ? '' : 's'} in the background…';
+    final mergedMsg = result.poisMerged == 0
+        ? ''
+        : ' Merged ${result.poisMerged} into existing POIs.';
     messenger.showSnackBar(
       SnackBar(
         content: Text(
           'Imported ${result.poisImported} POIs for "${result.animeName}".'
-          '$coversMsg',
+          '$mergedMsg$coversMsg',
         ),
       ),
     );

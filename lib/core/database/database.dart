@@ -184,8 +184,48 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<Poi>> getAllPois() => select(pois).get();
 
+  /// POIs whose coordinates fall inside the [deltaDeg] lat/lng bounding box
+  /// around (lat, lng). A cheap index-friendly prefilter for proximity
+  /// matching; callers refine the hits with a true metric distance.
+  Future<List<Poi>> getPoisNear(double lat, double lng, double deltaDeg) =>
+      (select(pois)
+            ..where((p) =>
+                p.lat.isBetweenValues(lat - deltaDeg, lat + deltaDeg) &
+                p.lng.isBetweenValues(lng - deltaDeg, lng + deltaDeg)))
+          .get();
+
+  /// Removes a POI's child rows (time_chunks, reference_images, media_assets —
+  /// which reference pois WITHOUT an ON DELETE action, so with foreign_keys=ON
+  /// a bare POI delete fails the moment the POI has any of them, e.g. every
+  /// Anitabi-imported POI has a reference image) and then the POI itself.
+  /// poi_animes / poi_tags already cascade on POI delete. Must run inside a
+  /// transaction so the whole removal is atomic.
+  Future<int> _deletePoiCascade(String id) async {
+    await (delete(referenceImages)..where((r) => r.poiId.equals(id))).go();
+    await (delete(mediaAssets)..where((m) => m.poiId.equals(id))).go();
+    await (delete(timeChunks)..where((t) => t.poiId.equals(id))).go();
+    return (delete(pois)..where((p) => p.id.equals(id))).go();
+  }
+
   Future<int> deletePoi(String id) =>
-      (delete(pois)..where((p) => p.id.equals(id))).go();
+      transaction(() => _deletePoiCascade(id));
+
+  /// POI ids linked to [animeId] that have no OTHER anime — the POIs that
+  /// would be left orphaned if this anime were removed. POIs shared with
+  /// another anime are excluded (they stay reachable through it).
+  Future<List<String>> poisOnlyLinkedToAnime(String animeId) async {
+    final linked =
+        await (select(poiAnimes)..where((pa) => pa.animeId.equals(animeId)))
+            .get();
+    final orphans = <String>[];
+    for (final row in linked) {
+      final links =
+          await (select(poiAnimes)..where((pa) => pa.poiId.equals(row.poiId)))
+              .get();
+      if (links.length <= 1) orphans.add(row.poiId);
+    }
+    return orphans;
+  }
 
   // --- Anime Queries ---
   Future<List<Anime>> getAllAnimes() => select(animes).get();
@@ -225,8 +265,22 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  Future<int> deleteAnime(String id) =>
-      (delete(animes)..where((a) => a.id.equals(id))).go();
+  /// Deletes an anime; its poi_animes links cascade away. When
+  /// [deleteOrphanedPois] is true, also deletes the POIs that were linked only
+  /// to this anime (with their child rows) — POIs still referenced by another
+  /// anime are kept. Returns the number of anime rows deleted.
+  Future<int> deleteAnime(String id, {bool deleteOrphanedPois = false}) =>
+      transaction(() async {
+        // Compute orphans BEFORE the delete cascades the links away.
+        final orphans = deleteOrphanedPois
+            ? await poisOnlyLinkedToAnime(id)
+            : const <String>[];
+        final count = await (delete(animes)..where((a) => a.id.equals(id))).go();
+        for (final poiId in orphans) {
+          await _deletePoiCascade(poiId);
+        }
+        return count;
+      });
 
   /// Insert anime if bangumiId not present; otherwise return existing.
   /// Returns the anime id (existing or newly created).
@@ -451,6 +505,18 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> insertReferenceImage(ReferenceImagesCompanion image) =>
       into(referenceImages).insert(image);
+
+  /// Whether [poiId] already has a reference image fetched from [remoteUrl].
+  /// Lets the importer skip re-queueing the same screenshot on re-import so
+  /// duplicate reference_images rows never accumulate.
+  Future<bool> referenceImageExistsForPoi(
+      String poiId, String remoteUrl) async {
+    final row = await (select(referenceImages)
+          ..where((r) => r.poiId.equals(poiId) & r.remoteUrl.equals(remoteUrl))
+          ..limit(1))
+        .getSingleOrNull();
+    return row != null;
+  }
 
   Future<int> updateReferenceImageLocalUri(String id, String localUri) =>
       (update(referenceImages)..where((r) => r.id.equals(id))).write(

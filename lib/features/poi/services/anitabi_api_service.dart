@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
@@ -11,6 +12,14 @@ class AnitabiImportResult {
   final String animeName;
   final int poisImported;
   final int poisSkipped;
+
+  /// POIs that already existed and were reused instead of duplicated — either
+  /// the same Anitabi point re-imported, or a different point within
+  /// [AnitabiApiService.mergeRadiusMeters] of one we already have that also
+  /// shares its name (the same real place appearing in another scene or
+  /// season). Their anime link and any new reference screenshot are still
+  /// attached to the existing POI.
+  final int poisMerged;
 
   /// Number of POIs whose cover image will be fetched in the background.
   /// Reflects the queue size when this result was returned — downloads
@@ -29,6 +38,7 @@ class AnitabiImportResult {
     required this.animeName,
     required this.poisImported,
     required this.poisSkipped,
+    required this.poisMerged,
     required this.coversPending,
     required this.coverDownloadCompletion,
   });
@@ -47,6 +57,22 @@ class AnitabiUnavailableException implements Exception {
 class AnitabiApiService {
   static const String _apiBaseUrl = 'https://api.anitabi.cn';
   static const int _coverDownloadConcurrency = 5;
+
+  /// A new Anitabi point is merged onto an existing POI only when it is both
+  /// within this distance (metres) AND has a matching name. Anitabi stores
+  /// every scene as its own point, so one venue across multiple scenes/seasons
+  /// otherwise becomes a pile of same-named duplicates. Requiring the name to
+  /// match as well as proximity keeps two genuinely different venues that
+  /// happen to sit close together (e.g. neighbouring shops) from collapsing
+  /// into one.
+  static const double mergeRadiusMeters = 40;
+
+  /// Bounding-box half-size (degrees) used to prefilter merge candidates
+  /// before the exact metric check below tightens it to a true radius. 1°
+  /// latitude ≈ 111_320 m; a degree of longitude is shorter (× cos lat), so
+  /// the 2× margin keeps the box ≥ [mergeRadiusMeters] in both axes even at
+  /// high latitudes. Over-covering only costs a few extra candidate rows.
+  static const double _mergeBoxDeg = mergeRadiusMeters / 111320 * 2.0;
 
   /// Warm the DNS + TLS path to Anitabi for this session. The first network
   /// call after launch pays DNS resolution, a TLS handshake, and (on
@@ -114,6 +140,7 @@ class AnitabiApiService {
       );
 
       int imported = 0;
+      int merged = 0;
       int skipped = 0;
       final pendingDownloads = <_PendingCover>[];
 
@@ -136,37 +163,77 @@ class AnitabiApiService {
           }
 
           try {
-            final poiId = companion.id.value;
-            final alreadyImported = await (db.select(db.pois)
-                  ..where((t) => t.id.equals(poiId)))
+            final selfId = companion.id.value;
+            final lat = companion.lat.value;
+            final lng = companion.lng.value;
+            final name = companion.name.value;
+
+            // Resolve the canonical POI this scene belongs to:
+            //   1. an exact id hit — the same Anitabi point re-imported; else
+            //   2. the nearest existing POI within mergeRadiusMeters whose
+            //      name also matches — the same real place under a different
+            //      point id (another scene/season). Both conditions are
+            //      required so adjacent-but-different venues stay separate.
+            // Otherwise it's a brand-new POI.
+            String canonicalId;
+            var createdNew = false;
+
+            final exact = await (db.select(db.pois)
+                  ..where((t) => t.id.equals(selfId)))
                 .getSingleOrNull();
-
-            await db.into(db.pois).insert(
-                  companion,
-                  mode: InsertMode.insertOrIgnore,
-                );
-            // Anime link is idempotent (insertOrIgnore), so it's safe to
-            // re-run; this keeps a shared location linked if it shows up
-            // under another subject.
-            await db.addAnimeToPoi(poiId, animeId);
-
-            if (alreadyImported != null) {
-              // Seen in a previous import: don't re-queue the cover (which
-              // would add another reference_images row) or double-count it.
-              skipped++;
-              continue;
+            if (exact != null) {
+              canonicalId = exact.id;
+            } else {
+              final nearby = await db.getPoisNear(lat, lng, _mergeBoxDeg);
+              Poi? best;
+              var bestDist = double.infinity;
+              for (final p in nearby) {
+                if (!_namesMatch(name, p.name)) continue;
+                final d = _distanceMeters(lat, lng, p.lat, p.lng);
+                if (d <= mergeRadiusMeters && d < bestDist) {
+                  bestDist = d;
+                  best = p;
+                }
+              }
+              if (best != null) {
+                canonicalId = best.id;
+              } else {
+                await db.into(db.pois).insert(
+                      companion,
+                      mode: InsertMode.insertOrIgnore,
+                    );
+                canonicalId = selfId;
+                createdNew = true;
+              }
             }
-            imported++;
 
+            // Idempotent link; keeps a shared place attached to every anime it
+            // appears in, which is exactly what makes a merged POI surface
+            // under each season's list.
+            await db.addAnimeToPoi(canonicalId, animeId);
+
+            if (createdNew) {
+              imported++;
+            } else {
+              merged++;
+            }
+
+            // Queue this scene's reference screenshot even on a merge — a
+            // different scene/season at the same place is a genuinely new
+            // shot — but skip it when this POI already has that exact image so
+            // re-imports don't pile up duplicate reference_images rows.
             final rawImage = (raw['image'] ?? '').toString();
             if (rawImage.isNotEmpty) {
-              final url =
-                  rawImage.replaceAll('?plan=h160', '?plan=h360');
-              pendingDownloads.add(_PendingCover(
-                poiId: poiId,
-                url: url,
-                metadata: _referenceMetadata(raw),
-              ));
+              final url = rawImage.replaceAll('?plan=h160', '?plan=h360');
+              final dup =
+                  await db.referenceImageExistsForPoi(canonicalId, url);
+              if (!dup) {
+                pendingDownloads.add(_PendingCover(
+                  poiId: canonicalId,
+                  url: url,
+                  metadata: _referenceMetadata(raw),
+                ));
+              }
             }
           } catch (_) {
             skipped++;
@@ -189,6 +256,7 @@ class AnitabiApiService {
         animeName: animeName,
         poisImported: imported,
         poisSkipped: skipped,
+        poisMerged: merged,
         coversPending: pendingDownloads.length,
         coverDownloadCompletion: completion,
       );
@@ -311,6 +379,83 @@ class AnitabiApiService {
     // bare "Bangumi <id>" placeholder.
     final fb = fallbackName?.trim();
     return (fb != null && fb.isNotEmpty) ? fb : 'Bangumi $subjectId';
+  }
+
+  /// Equirectangular metres between two lat/lng pairs — accurate to well under
+  /// a metre at the ~40 m scale we care about, and far cheaper than haversine.
+  static double _distanceMeters(
+      double lat1, double lng1, double lat2, double lng2) {
+    const metersPerDegLat = 111320.0;
+    final midLatRad = (lat1 + lat2) / 2 * math.pi / 180;
+    final dx = (lng2 - lng1) * metersPerDegLat * math.cos(midLatRad);
+    final dy = (lat2 - lat1) * metersPerDegLat;
+    return math.sqrt(dx * dx + dy * dy);
+  }
+
+  /// Whether two POI names refer to the same place. Anitabi names a spot then
+  /// appends a scene descriptor — "莵道高 正门 拂晓", "莵道高 正门 清晨 雨" and
+  /// "莵道高 正门 清晨 夏 更近" are all the same gate — so the shared place is a
+  /// common PREFIX, not a full match. Treat names as matching (case-folded,
+  /// whitespace stripped) when they're equal, one contains the other, or they
+  /// agree on at least the first half of the shorter name (min 2 chars).
+  ///
+  /// Prefix matching is blind to a typo in the FIRST character (莵道高 vs
+  /// 菟道高 — 莵 is an uncommon char that's routinely mistyped), which zeroes
+  /// the common prefix and splits one venue into two. So fall back to edit
+  /// distance: a stray wrong/missing/extra character still merges. It's gated
+  /// to names ≥ 4 chars so one edit can't conflate two genuinely different
+  /// short names ("正门" vs "后门"), and the budget scales at roughly one typo
+  /// per six characters. Combined with the proximity check this collapses
+  /// scene variants of one spot without merging genuinely different neighbours.
+  static bool _namesMatch(String a, String b) {
+    String norm(String s) =>
+        s.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
+    final na = norm(a);
+    final nb = norm(b);
+    if (na.isEmpty || nb.isEmpty) return false;
+    if (na == nb || na.contains(nb) || nb.contains(na)) return true;
+    final shorter = na.length <= nb.length ? na : nb;
+    var common = 0;
+    while (common < shorter.length && na[common] == nb[common]) {
+      common++;
+    }
+    if (common >= 2 && common * 2 >= shorter.length) return true;
+
+    if (shorter.length < 4) return false;
+    final budget = math.max(1, shorter.length ~/ 6);
+    return _levenshtein(na, nb, budget) <= budget;
+  }
+
+  /// Levenshtein edit distance between [a] and [b], capped at [maxDistance]:
+  /// once every cell in a row exceeds the cap the distance can only grow from
+  /// there, so we bail out and return [maxDistance] + 1. Keeps the
+  /// typo-tolerance check cheap even though it only ever runs on the handful
+  /// of within-radius merge candidates.
+  static int _levenshtein(String a, String b, int maxDistance) {
+    final n = a.length;
+    final m = b.length;
+    if ((n - m).abs() > maxDistance) return maxDistance + 1;
+    var prev = List<int>.generate(m + 1, (j) => j);
+    var curr = List<int>.filled(m + 1, 0);
+    for (var i = 1; i <= n; i++) {
+      curr[0] = i;
+      var rowMin = curr[0];
+      for (var j = 1; j <= m; j++) {
+        final cost = a[i - 1] == b[j - 1] ? 0 : 1;
+        final del = prev[j] + 1;
+        final ins = curr[j - 1] + 1;
+        final sub = prev[j - 1] + cost;
+        var best = del < ins ? del : ins;
+        if (sub < best) best = sub;
+        curr[j] = best;
+        if (best < rowMin) rowMin = best;
+      }
+      if (rowMin > maxDistance) return maxDistance + 1;
+      final tmp = prev;
+      prev = curr;
+      curr = tmp;
+    }
+    return prev[m];
   }
 
   static double? _toDouble(dynamic v) {

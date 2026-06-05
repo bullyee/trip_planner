@@ -140,26 +140,59 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
 
   Future<void> _confirmDelete() async {
     if (widget.isNew) return;
+    final db = ref.read(databaseProvider);
+
+    // How many POIs are used ONLY by this anime — those are the ones the user
+    // can optionally take down with it. Shared POIs are always kept.
+    final orphanPoiIds = await db.poisOnlyLinkedToAnime(widget.animeId!);
+    final orphanCount = orphanPoiIds.length;
+    if (!mounted) return;
+
+    var alsoDeletePois = false;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Anime?'),
-        content: Text(
-          'This will remove "${_nameController.text}" and unlink it from all POIs. The POIs themselves are not deleted.',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Delete Anime?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This will remove "${_nameController.text}" and unlink it from all POIs.',
+              ),
+              if (orphanCount > 0)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: alsoDeletePois,
+                  onChanged: (v) =>
+                      setLocal(() => alsoDeletePois = v ?? false),
+                  title: Text(
+                    'Also delete $orphanCount POI${orphanCount == 1 ? '' : 's'} used only by this anime',
+                  ),
+                  subtitle: const Text('POIs shared with other anime are kept.'),
+                )
+              else
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text('The POIs themselves are not deleted.'),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Delete')),
-        ],
       ),
     );
     if (confirmed != true) return;
     if (!mounted) return;
-    await ref.read(databaseProvider).deleteAnime(widget.animeId!);
+    await db.deleteAnime(widget.animeId!, deleteOrphanedPois: alsoDeletePois);
     if (mounted) context.pop();
   }
 }
