@@ -6,12 +6,12 @@ part of 'poi_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$poiControllerHash() => r'64c0ec1d83942fd1e92c9a68fe55d202a88334d8';
+String _$poiControllerHash() => r'041ef9cba65158f9de08b1514607d5ae1034e0c9';
 
 /// See also [PoiController].
 @ProviderFor(PoiController)
 final poiControllerProvider =
-    AutoDisposeAsyncNotifierProvider<PoiController, void>.internal(
+    AsyncNotifierProvider<PoiController, void>.internal(
       PoiController.new,
       name: r'poiControllerProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -21,6 +21,6 @@ final poiControllerProvider =
       allTransitiveDependencies: null,
     );
 
-typedef _$PoiController = AutoDisposeAsyncNotifier<void>;
+typedef _$PoiController = AsyncNotifier<void>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

@@ -7,7 +7,7 @@ import '../../../core/utils/app_result.dart';
 
 part 'roi_controller.g.dart';
 
-@riverpod
+@Riverpod(keepAlive: true)
 class RoiController extends _$RoiController {
   @override
   FutureOr<void> build() {}

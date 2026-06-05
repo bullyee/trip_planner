@@ -9,7 +9,7 @@ import '../../../core/utils/app_result.dart';
 
 part 'poi_controller.g.dart';
 
-@riverpod
+@Riverpod(keepAlive: true)
 class PoiController extends _$PoiController {
   @override
   FutureOr<void> build() {}

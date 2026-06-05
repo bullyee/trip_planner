@@ -9,7 +9,7 @@ import '../../../core/utils/app_result.dart';
 
 part 'tag_controller.g.dart';
 
-@riverpod
+@Riverpod(keepAlive: true)
 class TagController extends _$TagController {
   @override
   FutureOr<void> build() {}
