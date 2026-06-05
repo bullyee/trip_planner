@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
 import '../controllers/anime_controller.dart';
+import '../models/anime_model.dart';
+import '../repositories/anime_repository.dart';
 
 class AnimeEditScreen extends ConsumerStatefulWidget {
   /// Pass null or "new" for create.
@@ -23,7 +23,7 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
   bool _isLoading = false;
-  Anime? _existing;
+  AnimeModel? _existing;
 
   @override
   void initState() {
@@ -36,8 +36,7 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
   Future<void> _load() async {
     setState(() => _isLoading = true);
     try {
-      final db = ref.read(databaseProvider);
-      final anime = await db.getAnimeById(widget.animeId!);
+      final anime = await ref.read(animeRepositoryProvider).getAnimeById(widget.animeId!);
       if (anime == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -159,7 +158,7 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
     );
     if (confirmed != true) return;
     if (!mounted) return;
-    await ref.read(databaseProvider).deleteAnime(widget.animeId!);
+    await ref.read(animeRepositoryProvider).deleteAnime(widget.animeId!);
     if (mounted) context.pop();
   }
 }

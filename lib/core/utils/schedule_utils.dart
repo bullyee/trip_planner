@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:intl/intl.dart';
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
+import '../../features/calendar/models/time_chunk_model.dart';
 import '../../features/calendar/providers/calendar_provider.dart';
+import '../../features/calendar/repositories/time_chunk_repository.dart';
 
-Future<void> handleTimeChunkAction(BuildContext context, WidgetRef ref, String action, TimeChunk chunk) async {
-  final db = ref.read(databaseProvider);
+Future<void> handleTimeChunkAction(BuildContext context, WidgetRef ref, String action, TimeChunkModel chunk) async {
   switch (action) {
     case 'delete':
       await confirmDeleteTimeChunkAndRemove(context, ref, chunk);
@@ -19,30 +17,36 @@ Future<void> handleTimeChunkAction(BuildContext context, WidgetRef ref, String a
     case 'scheduled':
     case 'completed':
     case 'skipped':
-      await db.updateTimeChunk(TimeChunksCompanion(
-        id: Value(chunk.id),
-        poiId: Value(chunk.poiId),
-        date: Value(chunk.date),
-        startTime: Value(chunk.startTime),
-        endTime: Value(chunk.endTime),
-        status: Value(action),
-      ));
+      final updatedChunk = TimeChunkModel(
+        id: chunk.id,
+        poiId: chunk.poiId,
+        date: chunk.date,
+        startTime: chunk.startTime,
+        endTime: chunk.endTime,
+        status: action,
+        createdAt: chunk.createdAt,
+        isShared: chunk.isShared,
+      );
+      await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
       break;
     case 'backlog':
-      await db.updateTimeChunk(TimeChunksCompanion(
-        id: Value(chunk.id),
-        poiId: Value(chunk.poiId),
-        date: const Value(null),
-        startTime: const Value(null),
-        endTime: const Value(null),
-        status: Value(action),
-      ));
+      final backlogChunk = TimeChunkModel(
+        id: chunk.id,
+        poiId: chunk.poiId,
+        date: null,
+        startTime: null,
+        endTime: null,
+        status: action,
+        createdAt: chunk.createdAt,
+        isShared: chunk.isShared,
+      );
+      await ref.read(timeChunkRepositoryProvider).updateTimeChunk(backlogChunk);
       break;
   }
 }
 
 void showScheduleEditDialog(
-  BuildContext context, WidgetRef ref, TimeChunk chunk) {
+  BuildContext context, WidgetRef ref, TimeChunkModel chunk) {
 DateTime? selectedDate = chunk.date != null 
   ? DateFormat('yyyy-MM-dd').parse(chunk.date!) 
   : DateTime.now();
@@ -102,18 +106,19 @@ final endController = TextEditingController(text: chunk.endTime ?? '12:00');
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancel')),
           FilledButton(
-            onPressed: () {
-              final db = ref.read(databaseProvider);
-              db.updateTimeChunk(TimeChunksCompanion(
-                id: Value(chunk.id),
-                poiId: Value(chunk.poiId),
-                date: Value(selectedDate != null
-                    ? DateFormat('yyyy-MM-dd').format(selectedDate!)
-                    : null),
-                startTime: Value(startController.text.trim()),
-                endTime: Value(endController.text.trim()),
-                status: Value(chunk.status != 'backlog' ? chunk.status : 'scheduled'),
-              ));
+            onPressed: () async {
+              final updatedChunk = TimeChunkModel(
+                id: chunk.id,
+                poiId: chunk.poiId,
+                date: chunk.date, 
+                startTime: chunk.startTime, 
+                endTime: chunk.endTime, 
+                status: 'scheduled', 
+                createdAt: chunk.createdAt,
+                isShared: chunk.isShared,
+              );
+              await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
+              if (!context.mounted) return;
               Navigator.pop(ctx);
             },
             child: const Text('Edit'),
@@ -125,7 +130,7 @@ final endController = TextEditingController(text: chunk.endTime ?? '12:00');
 }
 
 Future<void> confirmDeleteTimeChunkAndRemove(
-    BuildContext context, WidgetRef ref, TimeChunk chunk) async {
+    BuildContext context, WidgetRef ref, TimeChunkModel chunk) async {
   final confirm = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -148,9 +153,8 @@ Future<void> confirmDeleteTimeChunkAndRemove(
   }
 }
 
-Future<void> _deleteChunk(WidgetRef ref, TimeChunk chunk) async {
-  final db = ref.read(databaseProvider);
-  await db.deleteTimeChunk(chunk.id);
+Future<void> _deleteChunk(WidgetRef ref, TimeChunkModel chunk) async {
+  await ref.read(timeChunkRepositoryProvider).deleteTimeChunk(chunk.id);
 }
 
 class MonthCalendarPicker extends ConsumerStatefulWidget {

@@ -1,12 +1,12 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../../core/database/database.dart';
+import '../models/media_asset_model.dart';
+import '../repositories/media_repository.dart';
 
 /// Copies [source] into the app's permanent `camera_photos` directory
 /// (filename derived from the current timestamp, suffix added on
@@ -20,7 +20,7 @@ import '../../../core/database/database.dart';
 /// Returns `true` on success, `false` on any I/O or database failure
 /// — callers decide whether to surface that via a SnackBar.
 Future<bool> persistMediaAsset({
-  required AppDatabase db,
+  required MediaRepository mediaRepo,
   required File source,
   required String poiId,
   required String type,
@@ -40,15 +40,15 @@ Future<bool> persistMediaAsset({
         await _nextAvailablePath(photosDir.path, timestamp, extension);
     await source.copy(savedPath);
 
-    await db.insertMediaAsset(MediaAssetsCompanion.insert(
+    final newAsset = MediaAssetModel(
       id: const Uuid().v4(),
       poiId: poiId,
       type: type,
       localUri: savedPath,
-      remoteUrl: const Value(null),
-      metadata: const Value(null),
-      referenceImageId: Value(referenceImageId),
-    ));
+      referenceImageId: referenceImageId,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    await mediaRepo.addMediaAsset(newAsset);
     return true;
   } catch (_) {
     return false;

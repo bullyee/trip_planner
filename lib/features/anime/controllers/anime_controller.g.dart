@@ -6,7 +6,7 @@ part of 'anime_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$animeControllerHash() => r'1aede1f4a868363aebb027ec812bc3aaa3445192';
+String _$animeControllerHash() => r'89122dee2e772cd8a632096a9472cf0f67c886f3';
 
 /// See also [AnimeController].
 @ProviderFor(AnimeController)

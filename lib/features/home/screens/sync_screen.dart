@@ -6,8 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/providers/database_provider.dart';
-import '../../../core/utils/json_sync.dart';
+// 🗑️ Removed database_provider.dart
+// 💡 Added sync_provider.dart
+import '../../../core/providers/sync_provider.dart';
 
 class SyncScreen extends ConsumerStatefulWidget {
   const SyncScreen({super.key});
@@ -90,7 +91,8 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
   Future<void> _exportToClipboard() async {
     try {
       setState(() => _status = 'Exporting...');
-      final sync = JsonSync(ref.read(databaseProvider));
+      // 💡 Directly read the sync provider instead of injecting the database
+      final sync = ref.read(syncProvider);
       final json = await sync.exportToJson();
       await Clipboard.setData(ClipboardData(text: json));
       setState(() => _status = 'Copied to clipboard!');
@@ -102,7 +104,8 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
   Future<void> _exportToFile() async {
     try {
       setState(() => _status = 'Exporting...');
-      final sync = JsonSync(ref.read(databaseProvider));
+      // 💡 Directly read the sync provider
+      final sync = ref.read(syncProvider);
       final json = await sync.exportToJson();
 
       final dir = await getApplicationDocumentsDirectory();
@@ -123,7 +126,8 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
     }
     try {
       setState(() => _status = 'Importing...');
-      final sync = JsonSync(ref.read(databaseProvider));
+      // 💡 Directly read the sync provider
+      final sync = ref.read(syncProvider);
       await sync.importFromJson(text);
       setState(() {
         _status = 'Import complete!';

@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:gal/gal.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,13 +10,19 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
+import '../../calendar/models/time_chunk_model.dart';
+import '../../calendar/repositories/time_chunk_repository.dart';
+import '../models/media_asset_model.dart';
+import '../models/poi_model.dart';
+import '../models/reference_image_model.dart';
 import '../providers/poi_provider.dart';
 import '../../roi/providers/roi_provider.dart';
 import '../../anime/providers/anime_provider.dart';
 import '../../tag/providers/tag_provider.dart';
 import '../../../core/utils/schedule_utils.dart';
+import '../repositories/media_repository.dart';
+import '../repositories/poi_repository.dart';
+
 
 class PoiDetailScreen extends ConsumerWidget {
   final String poiId;
@@ -83,7 +88,7 @@ class PoiDetailScreen extends ConsumerWidget {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                roi.name,
+                                roi?.name ?? 'Unknown Location',
                                 style: TextStyle(
                                   color: Theme.of(context).colorScheme.primary,
                                   fontWeight: FontWeight.w500,
@@ -262,7 +267,7 @@ class PoiDetailScreen extends ConsumerWidget {
                     children: chunks
                         .map((chunk) => Card(
                               child: ListTile(
-                                leading: _statusIcon(chunk.status),
+                                leading: _statusIcon(chunk.status ?? 'backlog'),
                                 title: Text(chunk.date ?? 'Backlog'),
                                 subtitle: chunk.startTime != null
                                     ? Text(
@@ -386,7 +391,7 @@ class PoiDetailScreen extends ConsumerWidget {
                   final referenceImagesById =
                       referenceImagesAsync.maybeWhen(
                     data: (refs) => {for (final r in refs) r.id: r},
-                    orElse: () => <String, ReferenceImage>{},
+                    orElse: () => <String, ReferenceImageModel>{},
                   );
                   return Column(
                     children: assets.map((asset) {
@@ -404,7 +409,7 @@ class PoiDetailScreen extends ConsumerWidget {
                             ? () => _editMediaAsset(context, asset, linkedRef)
                             : null,
                         title: _mediaAssetTitle(asset),
-                        icon: _iconForType(asset.type),
+                        icon: _iconForType(asset.type ?? 'unknown'),
                       );
                     }).toList(),
                   );
@@ -418,7 +423,7 @@ class PoiDetailScreen extends ConsumerWidget {
   }
 
   void _handleAction(
-      BuildContext context, WidgetRef ref, String action, Poi poi) {
+      BuildContext context, WidgetRef ref, String action, PoiModel poi) {
     switch (action) {
       case 'edit':
         context.push('/pois/${poi.id}/edit');
@@ -435,8 +440,7 @@ class PoiDetailScreen extends ConsumerWidget {
                   child: const Text('Cancel')),
               FilledButton(
                 onPressed: () async {
-                  final db = ref.read(databaseProvider);
-                  await db.deletePoi(poi.id);
+                  await ref.read(poiRepositoryProvider).deletePoi(poi.id);
                   if (context.mounted) {
                     Navigator.pop(ctx);
                     context.pop();
@@ -522,23 +526,23 @@ class PoiDetailScreen extends ConsumerWidget {
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Cancel')),
             FilledButton(
-              onPressed: () {
-                final db = ref.read(databaseProvider);
-                db.insertTimeChunk(TimeChunksCompanion.insert(
+              onPressed: () async {
+                final newChunk = TimeChunkModel(
                   id: const Uuid().v4(),
                   poiId: poiId,
-                  date: Value(selectedDate != null
-                      ? DateFormat('yyyy-MM-dd').format(selectedDate!)
-                      : null),
-                  startTime: Value(status == 'scheduled'
-                      ? startController.text.trim()
-                      : null),
-                  endTime: Value(status == 'scheduled'
-                      ? endController.text.trim()
-                      : null),
-                  status: Value(status),
-                ));
-                Navigator.pop(ctx);
+                  date: selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : null,
+                  startTime: status == 'scheduled' ? startController.text.trim() : null,
+                  endTime: status == 'scheduled' ? endController.text.trim() : null,
+                  status: status,
+                  createdAt: DateTime.now().millisecondsSinceEpoch,
+                  isShared: false,
+                );
+
+                await ref.read(timeChunkRepositoryProvider).addTimeChunk(newChunk);
+                
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                }
               },
               child: const Text('Add'),
             ),
@@ -569,15 +573,15 @@ class PoiDetailScreen extends ConsumerWidget {
     };
   }
 
-  String _mediaAssetTitle(MediaAsset asset) {
+  String _mediaAssetTitle(MediaAssetModel asset) {
     final fileName = p.basenameWithoutExtension(asset.localUri);
-    return fileName.isEmpty ? asset.type : fileName;
+    return fileName.isEmpty ? (asset.type ?? 'unknown') : fileName;
   }
 
   Future<void> _renameMediaAsset(
     BuildContext context,
     WidgetRef ref,
-    MediaAsset asset,
+    MediaAssetModel asset,
   ) async {
     final oldFile = File(asset.localUri);
     final currentName = p.basenameWithoutExtension(asset.localUri);
@@ -622,7 +626,7 @@ class PoiDetailScreen extends ConsumerWidget {
     try {
       await oldFile.rename(newPath);
 
-      await ref.read(databaseProvider).updateMediaAssetLocalUri(
+      await ref.read(mediaRepositoryProvider).updateMediaAssetLocalUri(
             asset.id,
             newPath,
           );
@@ -642,7 +646,7 @@ class PoiDetailScreen extends ConsumerWidget {
   Future<void> _deleteMediaAsset(
     BuildContext context,
     WidgetRef ref,
-    MediaAsset asset,
+    MediaAssetModel asset,
   ) async {
     final shouldDelete = await showDialog<bool>(
       context: context,
@@ -670,7 +674,7 @@ class PoiDetailScreen extends ConsumerWidget {
         await file.delete();
       }
 
-      await ref.read(databaseProvider).deleteMediaAsset(asset.id);
+      await ref.read(mediaRepositoryProvider).deleteMediaAsset(asset.id);
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -705,7 +709,7 @@ class PoiDetailScreen extends ConsumerWidget {
     return candidate;
   }
 
-  bool _isPreviewableImage(MediaAsset asset) {
+  bool _isPreviewableImage(MediaAssetModel asset) {
     final uri = asset.localUri.toLowerCase();
     final isKnownImageType = asset.type == 'user_photo' ||
         asset.type == 'uploaded_image' ||
@@ -722,8 +726,8 @@ class PoiDetailScreen extends ConsumerWidget {
     return isKnownImageType || hasImageExtension;
   }
 
-  void _showImagePreview(BuildContext context, MediaAsset asset) {
-    _showFullscreenImage(context, uri: asset.localUri, title: asset.type);
+  void _showImagePreview(BuildContext context, MediaAssetModel asset) {
+    _showFullscreenImage(context, uri: asset.localUri, title: asset.type ?? 'unknown');
   }
 
   void _showFullscreenImage(
@@ -797,7 +801,7 @@ class PoiDetailScreen extends ConsumerWidget {
     );
   }
 
-  String _referenceImageTitle(ReferenceImage image) {
+  String _referenceImageTitle(ReferenceImageModel image) {
     final fileName = p.basenameWithoutExtension(image.localUri);
     return fileName.isEmpty ? 'Reference' : fileName;
   }
@@ -849,8 +853,8 @@ class PoiDetailScreen extends ConsumerWidget {
   /// / Compose are available.
   Future<void> _editMediaAsset(
     BuildContext context,
-    MediaAsset asset,
-    ReferenceImage? linkedRef,
+    MediaAssetModel asset,
+    ReferenceImageModel? linkedRef,
   ) async {
     final src = File(asset.localUri);
     if (!await src.exists()) {
@@ -899,13 +903,15 @@ class PoiDetailScreen extends ConsumerWidget {
 
     try {
       final newPath = await _copyReferenceImageToStorage(File(picked.path));
-      await ref.read(databaseProvider).insertReferenceImage(
-            ReferenceImagesCompanion.insert(
-              id: const Uuid().v4(),
-              poiId: poiId,
-              localUri: newPath,
-            ),
-          );
+      final newImage = ReferenceImageModel(
+        id: const Uuid().v4(),
+        poiId: poiId,
+        localUri: newPath,
+        createdAt: DateTime.now().millisecondsSinceEpoch, // 補上建立時間
+        isShared: false, // 預設為尚未同步
+      );
+
+      await ref.read(mediaRepositoryProvider).addReferenceImage(newImage);
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -922,7 +928,7 @@ class PoiDetailScreen extends ConsumerWidget {
   Future<void> _renameReferenceImage(
     BuildContext context,
     WidgetRef ref,
-    ReferenceImage image,
+    ReferenceImageModel image,
   ) async {
     final oldFile = File(image.localUri);
     final currentName = p.basenameWithoutExtension(image.localUri);
@@ -967,7 +973,7 @@ class PoiDetailScreen extends ConsumerWidget {
     try {
       await oldFile.rename(newPath);
 
-      await ref.read(databaseProvider).updateReferenceImageLocalUri(
+      await ref.read(mediaRepositoryProvider).updateReferenceImageLocalUri(
             image.id,
             newPath,
           );
@@ -987,7 +993,7 @@ class PoiDetailScreen extends ConsumerWidget {
   Future<void> _deleteReferenceImage(
     BuildContext context,
     WidgetRef ref,
-    ReferenceImage image,
+    ReferenceImageModel image,
   ) async {
     final shouldDelete = await showDialog<bool>(
       context: context,
@@ -1016,7 +1022,7 @@ class PoiDetailScreen extends ConsumerWidget {
         await file.delete();
       }
 
-      await ref.read(databaseProvider).deleteReferenceImage(image.id);
+      await ref.read(mediaRepositoryProvider).deleteReferenceImage(image.id);
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1046,7 +1052,7 @@ class PoiDetailScreen extends ConsumerWidget {
 }
 
 class _MediaAssetTile extends StatelessWidget {
-  final MediaAsset asset;
+  final MediaAssetModel asset;
   final String title;
   final Widget icon;
   final VoidCallback onRename;
@@ -1174,7 +1180,7 @@ class _RenameDialogState extends State<_RenameDialog> {
 }
 
 class _ReferenceImageTile extends StatelessWidget {
-  final ReferenceImage image;
+  final ReferenceImageModel image;
   final String title;
   final VoidCallback onRename;
   final VoidCallback onDelete;

@@ -14,7 +14,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$MapState {
 
- List<Poi> get pois; Poi? get selectedPoi; String? get selectedRoiId; String? get selectedDate; bool get isLoading;
+ List<PoiModel> get pois; PoiModel? get selectedPoi; String? get selectedRoiId; String? get selectedDate; bool get isLoading;
 /// Create a copy of MapState
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,12 +25,12 @@ $MapStateCopyWith<MapState> get copyWith => _$MapStateCopyWithImpl<MapState>(thi
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is MapState&&const DeepCollectionEquality().equals(other.pois, pois)&&const DeepCollectionEquality().equals(other.selectedPoi, selectedPoi)&&(identical(other.selectedRoiId, selectedRoiId) || other.selectedRoiId == selectedRoiId)&&(identical(other.selectedDate, selectedDate) || other.selectedDate == selectedDate)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MapState&&const DeepCollectionEquality().equals(other.pois, pois)&&(identical(other.selectedPoi, selectedPoi) || other.selectedPoi == selectedPoi)&&(identical(other.selectedRoiId, selectedRoiId) || other.selectedRoiId == selectedRoiId)&&(identical(other.selectedDate, selectedDate) || other.selectedDate == selectedDate)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(pois),const DeepCollectionEquality().hash(selectedPoi),selectedRoiId,selectedDate,isLoading);
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(pois),selectedPoi,selectedRoiId,selectedDate,isLoading);
 
 @override
 String toString() {
@@ -45,7 +45,7 @@ abstract mixin class $MapStateCopyWith<$Res>  {
   factory $MapStateCopyWith(MapState value, $Res Function(MapState) _then) = _$MapStateCopyWithImpl;
 @useResult
 $Res call({
- List<Poi> pois, Poi? selectedPoi, String? selectedRoiId, String? selectedDate, bool isLoading
+ List<PoiModel> pois, PoiModel? selectedPoi, String? selectedRoiId, String? selectedDate, bool isLoading
 });
 
 
@@ -65,8 +65,8 @@ class _$MapStateCopyWithImpl<$Res>
 @pragma('vm:prefer-inline') @override $Res call({Object? pois = null,Object? selectedPoi = freezed,Object? selectedRoiId = freezed,Object? selectedDate = freezed,Object? isLoading = null,}) {
   return _then(_self.copyWith(
 pois: null == pois ? _self.pois : pois // ignore: cast_nullable_to_non_nullable
-as List<Poi>,selectedPoi: freezed == selectedPoi ? _self.selectedPoi : selectedPoi // ignore: cast_nullable_to_non_nullable
-as Poi?,selectedRoiId: freezed == selectedRoiId ? _self.selectedRoiId : selectedRoiId // ignore: cast_nullable_to_non_nullable
+as List<PoiModel>,selectedPoi: freezed == selectedPoi ? _self.selectedPoi : selectedPoi // ignore: cast_nullable_to_non_nullable
+as PoiModel?,selectedRoiId: freezed == selectedRoiId ? _self.selectedRoiId : selectedRoiId // ignore: cast_nullable_to_non_nullable
 as String?,selectedDate: freezed == selectedDate ? _self.selectedDate : selectedDate // ignore: cast_nullable_to_non_nullable
 as String?,isLoading: null == isLoading ? _self.isLoading : isLoading // ignore: cast_nullable_to_non_nullable
 as bool,
@@ -154,7 +154,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<Poi> pois,  Poi? selectedPoi,  String? selectedRoiId,  String? selectedDate,  bool isLoading)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<PoiModel> pois,  PoiModel? selectedPoi,  String? selectedRoiId,  String? selectedDate,  bool isLoading)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _MapState() when $default != null:
 return $default(_that.pois,_that.selectedPoi,_that.selectedRoiId,_that.selectedDate,_that.isLoading);case _:
@@ -175,7 +175,7 @@ return $default(_that.pois,_that.selectedPoi,_that.selectedRoiId,_that.selectedD
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<Poi> pois,  Poi? selectedPoi,  String? selectedRoiId,  String? selectedDate,  bool isLoading)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<PoiModel> pois,  PoiModel? selectedPoi,  String? selectedRoiId,  String? selectedDate,  bool isLoading)  $default,) {final _that = this;
 switch (_that) {
 case _MapState():
 return $default(_that.pois,_that.selectedPoi,_that.selectedRoiId,_that.selectedDate,_that.isLoading);case _:
@@ -195,7 +195,7 @@ return $default(_that.pois,_that.selectedPoi,_that.selectedRoiId,_that.selectedD
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<Poi> pois,  Poi? selectedPoi,  String? selectedRoiId,  String? selectedDate,  bool isLoading)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<PoiModel> pois,  PoiModel? selectedPoi,  String? selectedRoiId,  String? selectedDate,  bool isLoading)?  $default,) {final _that = this;
 switch (_that) {
 case _MapState() when $default != null:
 return $default(_that.pois,_that.selectedPoi,_that.selectedRoiId,_that.selectedDate,_that.isLoading);case _:
@@ -210,17 +210,17 @@ return $default(_that.pois,_that.selectedPoi,_that.selectedRoiId,_that.selectedD
 
 
 class _MapState implements MapState {
-  const _MapState({final  List<Poi> pois = const [], this.selectedPoi, this.selectedRoiId, this.selectedDate, this.isLoading = false}): _pois = pois;
+  const _MapState({final  List<PoiModel> pois = const [], this.selectedPoi, this.selectedRoiId, this.selectedDate, this.isLoading = false}): _pois = pois;
   
 
- final  List<Poi> _pois;
-@override@JsonKey() List<Poi> get pois {
+ final  List<PoiModel> _pois;
+@override@JsonKey() List<PoiModel> get pois {
   if (_pois is EqualUnmodifiableListView) return _pois;
   // ignore: implicit_dynamic_type
   return EqualUnmodifiableListView(_pois);
 }
 
-@override final  Poi? selectedPoi;
+@override final  PoiModel? selectedPoi;
 @override final  String? selectedRoiId;
 @override final  String? selectedDate;
 @override@JsonKey() final  bool isLoading;
@@ -235,12 +235,12 @@ _$MapStateCopyWith<_MapState> get copyWith => __$MapStateCopyWithImpl<_MapState>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _MapState&&const DeepCollectionEquality().equals(other._pois, _pois)&&const DeepCollectionEquality().equals(other.selectedPoi, selectedPoi)&&(identical(other.selectedRoiId, selectedRoiId) || other.selectedRoiId == selectedRoiId)&&(identical(other.selectedDate, selectedDate) || other.selectedDate == selectedDate)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _MapState&&const DeepCollectionEquality().equals(other._pois, _pois)&&(identical(other.selectedPoi, selectedPoi) || other.selectedPoi == selectedPoi)&&(identical(other.selectedRoiId, selectedRoiId) || other.selectedRoiId == selectedRoiId)&&(identical(other.selectedDate, selectedDate) || other.selectedDate == selectedDate)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_pois),const DeepCollectionEquality().hash(selectedPoi),selectedRoiId,selectedDate,isLoading);
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_pois),selectedPoi,selectedRoiId,selectedDate,isLoading);
 
 @override
 String toString() {
@@ -255,7 +255,7 @@ abstract mixin class _$MapStateCopyWith<$Res> implements $MapStateCopyWith<$Res>
   factory _$MapStateCopyWith(_MapState value, $Res Function(_MapState) _then) = __$MapStateCopyWithImpl;
 @override @useResult
 $Res call({
- List<Poi> pois, Poi? selectedPoi, String? selectedRoiId, String? selectedDate, bool isLoading
+ List<PoiModel> pois, PoiModel? selectedPoi, String? selectedRoiId, String? selectedDate, bool isLoading
 });
 
 
@@ -275,8 +275,8 @@ class __$MapStateCopyWithImpl<$Res>
 @override @pragma('vm:prefer-inline') $Res call({Object? pois = null,Object? selectedPoi = freezed,Object? selectedRoiId = freezed,Object? selectedDate = freezed,Object? isLoading = null,}) {
   return _then(_MapState(
 pois: null == pois ? _self._pois : pois // ignore: cast_nullable_to_non_nullable
-as List<Poi>,selectedPoi: freezed == selectedPoi ? _self.selectedPoi : selectedPoi // ignore: cast_nullable_to_non_nullable
-as Poi?,selectedRoiId: freezed == selectedRoiId ? _self.selectedRoiId : selectedRoiId // ignore: cast_nullable_to_non_nullable
+as List<PoiModel>,selectedPoi: freezed == selectedPoi ? _self.selectedPoi : selectedPoi // ignore: cast_nullable_to_non_nullable
+as PoiModel?,selectedRoiId: freezed == selectedRoiId ? _self.selectedRoiId : selectedRoiId // ignore: cast_nullable_to_non_nullable
 as String?,selectedDate: freezed == selectedDate ? _self.selectedDate : selectedDate // ignore: cast_nullable_to_non_nullable
 as String?,isLoading: null == isLoading ? _self.isLoading : isLoading // ignore: cast_nullable_to_non_nullable
 as bool,

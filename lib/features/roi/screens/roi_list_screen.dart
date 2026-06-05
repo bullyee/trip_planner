@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:drift/drift.dart' show Value;
-import 'package:uuid/uuid.dart';
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
 import '../providers/roi_provider.dart';
+import '../controllers/roi_controller.dart';
 
 class RoiListScreen extends ConsumerWidget {
   const RoiListScreen({super.key});
@@ -40,9 +37,7 @@ class RoiListScreen extends ConsumerWidget {
                       ? Text(roi.description!, maxLines: 2)
                       : null,
                   leading: Icon(
-                    roi.isOfflineCached == 1
-                        ? Icons.cloud_done
-                        : Icons.cloud_outlined,
+                    roi.isOfflineCached ? Icons.cloud_done : Icons.cloud_outlined,
                     color: Theme.of(context).colorScheme.primary,
                   ),
                   trailing: const Icon(Icons.chevron_right),
@@ -90,20 +85,24 @@ class RoiListScreen extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
 
-              final db = ref.read(databaseProvider);
-              db.insertRoi(RoisCompanion.insert(
-                id: const Uuid().v4(),
+              final success = await ref.read(roiControllerProvider.notifier).addRoi(
                 name: name,
-                description: Value(descController.text.trim().isEmpty
-                    ? null
-                    : descController.text.trim()),
-                createdAt: DateTime.now().millisecondsSinceEpoch,
-              ));
-              Navigator.pop(context);
+                description: descController.text,
+              );
+              
+              if (!context.mounted) return;
+
+              if (success) {
+                Navigator.pop(context);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to create Region.')),
+                );
+              }
             },
             child: const Text('Create'),
           ),

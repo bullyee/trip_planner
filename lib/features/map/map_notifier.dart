@@ -1,27 +1,28 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/database/database.dart';
-import '../../core/providers/database_provider.dart';
+// Import the Repository and Model instead of the raw database
+import '../poi/repositories/poi_repository.dart';
+import '../poi/models/poi_model.dart';
 import 'map_state.dart';
 
 final mapNotifierProvider =
     StateNotifierProvider<MapNotifier, MapState>((ref) {
-  final db = ref.watch(databaseProvider);
-  return MapNotifier(db);
+  final poiRepo = ref.watch(poiRepositoryProvider);
+  return MapNotifier(poiRepo);
 });
 
 class MapNotifier extends StateNotifier<MapState> {
-  final AppDatabase _db;
+  final PoiRepository _poiRepo;
 
-  MapNotifier(this._db) : super(const MapState()) {
+  MapNotifier(this._poiRepo) : super(const MapState()) {
     loadPois();
   }
 
   Future<void> loadPois({String? roiId}) async {
     state = state.copyWith(isLoading: true);
     final pois = roiId != null
-        ? await _db.getPoisByRoi(roiId)
-        : await _db.getAllPois();
+        ? await _poiRepo.getPoisByRoi(roiId)
+        : await _poiRepo.getAllPois();
     state = state.copyWith(
       pois: pois,
       isLoading: false,
@@ -33,8 +34,8 @@ class MapNotifier extends StateNotifier<MapState> {
   Future<void> loadPoisByDate(String? date) async {
     state = state.copyWith(isLoading: true);
     final pois = date != null
-        ? await _db.getPoisByDate(date)
-        : await _db.getAllPois();
+        ? await _poiRepo.getPoisByDate(date)
+        : await _poiRepo.getAllPois();
     state = state.copyWith(
       pois: pois,
       isLoading: false,
@@ -43,7 +44,8 @@ class MapNotifier extends StateNotifier<MapState> {
     );
   }
 
-  void selectPoi(Poi? poi) => state = state.copyWith(selectedPoi: poi);
+  // Use PoiModel instead of Drift's Poi class
+  void selectPoi(PoiModel? poi) => state = state.copyWith(selectedPoi: poi);
 
   void clearSelection() => state = state.copyWith(selectedPoi: null);
 }

@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/database/database.dart';
+import '../../roi/models/roi_model.dart';
+import '../models/poi_model.dart';
 import '../providers/poi_provider.dart';
 import '../../../core/widgets/add_speed_dial.dart';
 import '../../roi/providers/roi_provider.dart';
@@ -119,7 +120,7 @@ class PoisByTagScreen extends ConsumerWidget {
 /// image. When neither exists (or the file is gone) renders the generic
 /// location icon.
 class _PoiThumbnail extends ConsumerWidget {
-  final Poi poi;
+  final PoiModel poi;
   const _PoiThumbnail({required this.poi});
 
   @override
@@ -158,7 +159,7 @@ class _PoiListView extends ConsumerWidget {
     final roisAsync = ref.watch(allRoisProvider);
     final roiMap = roisAsync.maybeWhen(
       data: (rois) => {for (final r in rois) r.id: r},
-      orElse: () => <String, Roi>{},
+      orElse: () => <String, RoiModel>{},
     );
 
     return poisAsync.when(

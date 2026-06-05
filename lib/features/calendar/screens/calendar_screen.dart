@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../poi/providers/poi_provider.dart';
 import '../../roi/providers/roi_provider.dart';
+import '../models/time_chunk_model.dart';
 import '../providers/last_selected_backlog_roi_provider.dart';
 import '../providers/calendar_provider.dart';
+import '../repositories/time_chunk_repository.dart';
 import '../widgets/week_strip.dart';
 import '../widgets/time_chunk_card.dart';
 import '../../../core/utils/schedule_utils.dart';
@@ -141,7 +140,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     );
                   }
                   // Sort by start time
-                  final sorted = List<TimeChunk>.from(chunks)
+                  final sorted = List<TimeChunkModel>.from(chunks)
                     ..sort((a, b) =>
                         (a.startTime ?? '').compareTo(b.startTime ?? ''));
                   return ListView.builder(
@@ -306,16 +305,20 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Future<void> _scheduleForDate(WidgetRef ref, TimeChunk chunk, String dateStr) async {
-    final db = ref.read(databaseProvider);
-    await db.updateTimeChunk(TimeChunksCompanion(
-      id: Value(chunk.id),
-      poiId: Value(chunk.poiId),
-      date: Value(dateStr),
-      startTime: Value(chunk.startTime ?? '10:00'),
-      endTime: Value(chunk.endTime ?? '12:00'),
-      status: const Value('scheduled'),
-    ));
+  Future<void> _scheduleForDate(WidgetRef ref, TimeChunkModel chunk, String dateStr) async {
+    final updatedChunk = TimeChunkModel(
+      id: chunk.id,
+      poiId: chunk.poiId,
+      date: dateStr,                                 
+      startTime: chunk.startTime ?? '10:00',
+      endTime: chunk.endTime ?? '12:00',
+      status: 'scheduled',                           
+      createdAt: chunk.createdAt,
+      isShared: chunk.isShared,
+    );
+
+    // 2. 交給 Repository 去處理底層更新
+    await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
   }
 
   Future<void> _showAddToBacklogDialog(BuildContext context, WidgetRef ref) async {
@@ -442,18 +445,20 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                         onTap: () async {
                                           // persist last selected ROI for backlog block
                                           dialogRef.read(lastSelectedBacklogRoiProvider.notifier).state = selectedRoiId;
-                                          // Create a new time chunk in backlog status
-                                          final db = dialogRef.read(databaseProvider);
-                                          await db.insertTimeChunk(
-                                            TimeChunksCompanion(
-                                              id: Value(const Uuid().v4()),
-                                              poiId: Value(poi.id),
-                                              date: const Value(null),
-                                              startTime: const Value('10:00'),
-                                              endTime: const Value('12:00'),
-                                              status: const Value('backlog'),
-                                            ),
+                                          
+                                          final newChunk = TimeChunkModel(
+                                            id: const Uuid().v4(),
+                                            poiId: poi.id,
+                                            date: null,
+                                            startTime: '10:00',
+                                            endTime: '12:00',
+                                            status: 'backlog',
+                                            createdAt: DateTime.now().millisecondsSinceEpoch,
+                                            isShared: false,
                                           );
+
+                                          await dialogRef.read(timeChunkRepositoryProvider).addTimeChunk(newChunk);
+                                          
                                           if (context.mounted) {
                                             Navigator.pop(context);
                                           }

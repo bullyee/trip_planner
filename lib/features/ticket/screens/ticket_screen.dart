@@ -1,16 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart' show OrderingTerm;
 
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
+import '../../poi/models/media_asset_model.dart';
+import '../../poi/repositories/media_repository.dart';
 
-final _ticketAssetsProvider = StreamProvider<List<MediaAsset>>((ref) {
-  final db = ref.watch(databaseProvider);
-  return (db.select(db.mediaAssets)
-        ..where((m) => m.type.equals('ticket_qr'))
-        ..orderBy([(m) => OrderingTerm.desc(m.id)]))
-      .watch();
+final _ticketAssetsProvider = StreamProvider<List<MediaAssetModel>>((ref) {
+  return ref.watch(mediaRepositoryProvider).watchMediaAssetsByType('ticket_qr');
 });
 
 class TicketScreen extends ConsumerWidget {
@@ -65,8 +60,7 @@ class TicketScreen extends ConsumerWidget {
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () {
-                      final db = ref.read(databaseProvider);
-                      db.deleteMediaAsset(ticket.id);
+                      ref.read(mediaRepositoryProvider).deleteMediaAsset(ticket.id);
                     },
                   ),
                 ),

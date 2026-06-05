@@ -1,13 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
 
-final allRoisProvider = StreamProvider<List<Roi>>((ref) {
-  final db = ref.watch(databaseProvider);
-  return db.watchAllRois();
+import '../repositories/roi_repository.dart';
+import '../models/roi_model.dart';
+
+final allRoisProvider = StreamProvider<List<RoiModel>>((ref) {
+  return ref.watch(roiRepositoryProvider).watchAllRois();
 });
 
-final roiByIdProvider = StreamProvider.family<Roi, String>((ref, id) {
-  final db = ref.watch(databaseProvider);
-  return db.watchRoiById(id);
+final roiByIdProvider = StreamProvider.family<RoiModel?, String>((ref, id) {
+  return ref.watch(roiRepositoryProvider).watchRoiById(id);
 });

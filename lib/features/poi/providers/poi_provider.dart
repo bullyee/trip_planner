@@ -1,45 +1,40 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/database/database.dart';
-import '../../../core/providers/database_provider.dart';
 
-final poisByRoiProvider =
-    StreamProvider.family<List<Poi>, String>((ref, roiId) {
-  final db = ref.watch(databaseProvider);
-  return db.watchPoisByRoi(roiId);
+// 引入乾淨的領域模型
+import '../models/poi_model.dart';
+import '../models/media_asset_model.dart';
+import '../models/reference_image_model.dart';
+import '../../calendar/models/time_chunk_model.dart';
+
+// 引入防腐層
+import '../repositories/poi_repository.dart';
+import '../repositories/media_repository.dart';
+import '../../calendar/repositories/time_chunk_repository.dart';
+
+final poisByRoiProvider = StreamProvider.family<List<PoiModel>, String>((ref, roiId) {
+  return ref.watch(poiRepositoryProvider).watchPoisByRoi(roiId);
 });
 
-final poisWithoutRoiProvider = StreamProvider<List<Poi>>((ref) {
-  final db = ref.watch(databaseProvider);
-  return db.watchPoisWithoutRoi();
+final poisWithoutRoiProvider = StreamProvider<List<PoiModel>>((ref) {
+  return ref.watch(poiRepositoryProvider).watchPoisWithoutRoi();
 });
 
-final poiByIdProvider = StreamProvider.family<Poi, String>((ref, id) {
-  final db = ref.watch(databaseProvider);
-  return db.watchPoiById(id);
+final poiByIdProvider = StreamProvider.family<PoiModel, String>((ref, id) {
+  return ref.watch(poiRepositoryProvider).watchPoiById(id);
 });
 
-final mediaAssetsByPoiProvider =
-    StreamProvider.family<List<MediaAsset>, String>((ref, poiId) {
-  final db = ref.watch(databaseProvider);
-  return db.watchMediaAssetsByPoi(poiId);
+final mediaAssetsByPoiProvider = StreamProvider.family<List<MediaAssetModel>, String>((ref, poiId) {
+  return ref.watch(mediaRepositoryProvider).watchMediaAssetsByPoi(poiId);
 });
 
-final referenceImagesByPoiProvider =
-    StreamProvider.family<List<ReferenceImage>, String>((ref, poiId) {
-  final db = ref.watch(databaseProvider);
-  return db.watchReferenceImagesByPoi(poiId);
+final referenceImagesByPoiProvider = StreamProvider.family<List<ReferenceImageModel>, String>((ref, poiId) {
+  return ref.watch(mediaRepositoryProvider).watchReferenceImagesByPoi(poiId);
 });
 
-final timeChunksByPoiProvider =
-    StreamProvider.family<List<TimeChunk>, String>((ref, poiId) {
-  final db = ref.watch(databaseProvider);
-  return (db.select(db.timeChunks)..where((t) => t.poiId.equals(poiId)))
-      .watch();
+final timeChunksByPoiProvider = StreamProvider.family<List<TimeChunkModel>, String>((ref, poiId) {
+  return ref.watch(timeChunkRepositoryProvider).watchTimeChunksByPoi(poiId);
 });
 
-final allPoisProvider = StreamProvider<Map<String, Poi>>((ref) {
-  final db = ref.watch(databaseProvider);
-  return db.watchAllPois().map(
-        (pois) => {for (final poi in pois) poi.id: poi},
-      );
+final allPoisProvider = StreamProvider<Map<String, PoiModel>>((ref) {
+  return ref.watch(poiRepositoryProvider).watchAllPois();
 });

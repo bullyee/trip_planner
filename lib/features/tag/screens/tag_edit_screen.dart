@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/providers/database_provider.dart';
 import '../controllers/tag_controller.dart';
+import '../repositories/tag_repository.dart';
 
 class TagEditScreen extends ConsumerStatefulWidget {
   /// Pass null or "new" for create.
@@ -34,8 +34,7 @@ class _TagEditScreenState extends ConsumerState<TagEditScreen> {
   Future<void> _load() async {
     setState(() => _isLoading = true);
     try {
-      final db = ref.read(databaseProvider);
-      final tag = await db.getTagById(widget.tagId!);
+      final tag = await ref.read(tagRepositoryProvider).getTagById(widget.tagId!);
       if (tag == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -146,7 +145,7 @@ class _TagEditScreenState extends ConsumerState<TagEditScreen> {
     );
     if (confirmed != true) return;
     if (!mounted) return;
-    await ref.read(databaseProvider).deleteTag(widget.tagId!);
+    await ref.read(tagRepositoryProvider).deleteTag(widget.tagId!);
     if (mounted) context.pop();
   }
 }

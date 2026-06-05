@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/database/database.dart';
+import '../models/time_chunk_model.dart';
 
 class TimeChunkCard extends StatelessWidget {
-  final TimeChunk chunk;
+  final TimeChunkModel chunk;
   final String poiName;
   final ValueChanged<String> onAction;
 
@@ -18,7 +18,7 @@ class TimeChunkCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = _statusColor(chunk.status);
+    final statusColor = _statusColor(chunk.status ?? 'backlog');
 
     return Card(
       child: InkWell(
@@ -74,7 +74,7 @@ class TimeChunkCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      chunk.status.toUpperCase(),
+                      (chunk.status ?? 'backlog').toUpperCase(),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: statusColor,
                         letterSpacing: 0.8,
