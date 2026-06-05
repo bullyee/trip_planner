@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 // Added the pure domain model and repository imports.
 import '../models/tag_model.dart';
 import '../repositories/tag_repository.dart';
+import '../../../core/utils/app_result.dart';
 
 part 'tag_controller.g.dart';
 
@@ -15,7 +16,7 @@ class TagController extends _$TagController {
 
   /// Handles business logic for saving a Tag.
   /// Delegates all database operations to the Repository layer.
-  Future<bool> saveTag({
+  Future<AppResult<void>> saveTag({
     required bool isNew,
     String? id,
     required String name,
@@ -49,10 +50,10 @@ class TagController extends _$TagController {
       }
 
       state = const AsyncValue.data(null);
-      return true;
+      return const Success(null);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
-      return false;
+      return Failure(e.toString(), st);
     }
   }
 }
