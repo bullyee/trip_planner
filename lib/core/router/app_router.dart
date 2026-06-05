@@ -6,6 +6,7 @@ import 'package:trip_planner/features/auth/providers/auth_provider.dart'; // Add
 import 'package:trip_planner/features/auth/screens/login_screen.dart'; // Add this
 
 import '../../features/home/screens/home_screen.dart';
+import '../../features/poi/screens/poi_map_screen.dart';
 import '../../features/roi/screens/roi_list_screen.dart';
 import '../../features/roi/screens/roi_detail_screen.dart';
 import '../../features/roi/screens/roi_edit_screen.dart';
@@ -21,7 +22,6 @@ import '../../features/calendar/screens/calendar_screen.dart';
 import '../../features/camera/screens/camera_screen.dart';
 import '../../features/poi/screens/ticket_screen.dart';
 import '../../features/home/screens/sync_screen.dart';
-import '../widgets/map_view/map_screen.dart';
 
 part 'app_router.g.dart';
 
@@ -189,7 +189,7 @@ GoRouter router(RouterRef ref) {
       ),
       GoRoute(
         path: '/map',
-        builder: (context, state) => const MapScreen(),
+        builder: (context, state) => const PoiMapScreen(),
       ),
       GoRoute(
         path: '/import/bangumi',
