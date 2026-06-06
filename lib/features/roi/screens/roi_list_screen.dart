@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/roi_provider.dart';
 import '../controllers/roi_controller.dart';
+import '../../../core/utils/app_result.dart';
 
 class RoiListScreen extends ConsumerWidget {
   const RoiListScreen({super.key});
@@ -89,19 +90,20 @@ class RoiListScreen extends ConsumerWidget {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
 
-              final success = await ref.read(roiControllerProvider.notifier).addRoi(
+              final result = await ref.read(roiControllerProvider.notifier).addRoi(
                 name: name,
                 description: descController.text,
               );
-              
+
               if (!context.mounted) return;
 
-              if (success) {
-                Navigator.pop(context);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to create Region.')),
-                );
+              switch (result) {
+                case Success():
+                  Navigator.pop(context);
+                case Failure(:final error):
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to create Region: $error')),
+                  );
               }
             },
             child: const Text('Create'),

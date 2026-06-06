@@ -1,10 +1,10 @@
-// lib/features/roi/repositories/roi_repository.dart
-
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart'; 
 import '../models/roi_model.dart';
 import '../../../core/database/database.dart'; 
 import '../../../core/providers/database_provider.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'roi_repository.g.dart';
 
 abstract class RoiRepository {
   Future<void> updateRoi(
@@ -19,45 +19,39 @@ abstract class RoiRepository {
   Stream<RoiModel?> watchRoiById(String id);
 }
 
-class DualTrackRoiRepository implements RoiRepository {
+class LocalRoiRepository implements RoiRepository {
   final AppDatabase localDb;
   
-  DualTrackRoiRepository(this.localDb);
+  LocalRoiRepository(this.localDb);
 
   @override
   Future<void> updateRoi(
     RoiModel roi, {
     int? existingIsOfflineCached,
   }) async {
-    if (roi.isShared) {
-      // TODO: Route to Firestore SDK when implemented
-    } else {
-      await localDb.updateRoi(
-        RoisCompanion(
-          id: Value(roi.id),
-          name: Value(roi.name),
-          description: Value(roi.description),
-          isOfflineCached: Value(existingIsOfflineCached ?? 0),
-          createdAt: Value(roi.createdAt), // Extract directly from model
-        ),
-      );
-    }
+    await localDb.updateRoi(
+      RoisCompanion(
+        id: Value(roi.id),
+        name: Value(roi.name),
+        description: Value(roi.description),
+        isOfflineCached: Value(existingIsOfflineCached ?? 0),
+        createdAt: Value(roi.createdAt), // Extract directly from model
+      ),
+    );
   }
+
   @override
   Future<void> addRoi(RoiModel roi) async {
-    if (roi.isShared) {
-      // TODO: Firestore logic
-    } else {
-      await localDb.insertRoi(
-        RoisCompanion.insert(
-          id: roi.id,
-          name: roi.name,
-          description: Value(roi.description),
-          createdAt: Value(roi.createdAt), // Extract directly from model
-        ),
-      );
-    }
+    await localDb.insertRoi(
+      RoisCompanion.insert(
+        id: roi.id,
+        name: roi.name,
+        description: Value(roi.description),
+        createdAt: Value(roi.createdAt), // Extract directly from model
+      ),
+    );
   }
+
   @override
   Future<RoiModel> getRoiById(String id) async {
     // 1. Fetch the raw Drift entity
@@ -73,9 +67,9 @@ class DualTrackRoiRepository implements RoiRepository {
       isShared: false, // Set default or map from Drift if you have a column for it
     );
   }
+  
   @override
   Future<void> deleteRoi(String id) async {
-    // TODO: Firestore logic (if shared)
     await localDb.deleteRoi(id);
   }
 
@@ -107,8 +101,8 @@ class DualTrackRoiRepository implements RoiRepository {
   }
 }
 
-final roiRepositoryProvider = Provider<RoiRepository>((ref) {
-  // Inject the actual Drift database instance
-  final db = ref.read(databaseProvider);
-  return DualTrackRoiRepository(db);
-});
+@riverpod
+RoiRepository roiRepository(RoiRepositoryRef ref) {
+  final db = ref.watch(databaseProvider);
+  return LocalRoiRepository(db);
+}

@@ -5,17 +5,18 @@ import 'package:uuid/uuid.dart';
 // Added the pure domain model and repository imports.
 import '../models/poi_model.dart';
 import '../repositories/poi_repository.dart';
+import '../../../core/utils/app_result.dart';
 
 part 'poi_controller.g.dart';
 
-@riverpod
+@Riverpod(keepAlive: true)
 class PoiController extends _$PoiController {
   @override
   FutureOr<void> build() {}
 
   /// Handles business logic for saving a POI.
   /// Delegates all database transactions and relational mappings to the Repository.
-  Future<String?> savePoi({
+  Future<AppResult<String>> savePoi({
     required String? id,
     required String? roiId,
     required String name,
@@ -68,10 +69,10 @@ class PoiController extends _$PoiController {
       );
 
       state = const AsyncValue.data(null);
-      return poiId;
+      return Success(poiId);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
-      return null;
+      return Failure(e.toString(), st);
     }
   }
 }

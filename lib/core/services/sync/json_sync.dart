@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
-import '../database/database.dart';
+import '../../database/database.dart';
 
 class JsonSync {
   final AppDatabase db;

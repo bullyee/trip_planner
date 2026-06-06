@@ -2,13 +2,16 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trip_planner/core/database/database.dart';
-import 'package:trip_planner/core/utils/json_sync.dart';
+import 'package:trip_planner/core/services/sync/json_sync.dart';
+import 'package:trip_planner/features/poi/repositories/poi_repository.dart';
 
 void main() {
   late AppDatabase db;
+  late PoiRepository poiRepository;
 
   setUp(() {
     db = AppDatabase.forTesting(NativeDatabase.memory());
+    poiRepository = LocalPoiRepository(db);
   });
 
   tearDown(() async {
@@ -194,6 +197,60 @@ void main() {
       final animes = await db.watchAnimesForPoi('poi-1').first;
       expect(animes.length, 1);
       expect(animes.first.name, 'K-On!');
+    });
+  });
+
+  group('Repository Integration Tests (Phase 0 Guardrails)', () {
+    // Assuming repositories take AppDatabase as an injected dependency.
+    // If your architecture uses Riverpod ProviderContainer for testing, 
+    // adjust the instantiation accordingly.
+    
+    setUp(() {
+    });
+
+    test('watchPoisByAnime properly joins and returns mapped POI models', () async {
+      // 1. Arrange: Seed the database with linked data
+      final animeId = await db.upsertAnimeByBangumiId(
+        bangumiId: '9999', 
+        name: 'Integration Test Anime'
+      );
+
+      await db.insertRoi(RoisCompanion.insert(
+        id: 'test-roi-1',
+        name: 'Test ROI',
+        createdAt: const Value(1),
+      ));
+
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'test-poi-1',
+        name: 'Target POI',
+        lat: 35.0,
+        lng: 135.0,
+      ));
+
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'test-poi-2',
+        name: 'Unlinked POI',
+        lat: 36.0,
+        lng: 136.0,
+      ));
+
+      // Link only the first POI to the Anime
+      await db.addAnimeToPoi('test-poi-1', animeId);
+
+      // 2. Act: Call the repository method that is slated for refactoring
+      // Note: Adjust the method name to match your actual AnimeRepository implementation
+      final poiStream = poiRepository.watchPoisByAnime(animeId);
+      final pois = await poiStream.first;
+
+      // 3. Assert: Verify the repository layer correctly queries and maps the data
+      expect(
+        pois.length, 
+        1, 
+        reason: 'The repository should filter out unlinked POIs and return exactly 1 match'
+      );
+      expect(pois.first.id, 'test-poi-1');
+      expect(pois.first.name, 'Target POI');
     });
   });
 }

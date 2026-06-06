@@ -1,19 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../poi/models/media_asset_model.dart';
-import '../../poi/repositories/media_repository.dart';
-
-final _ticketAssetsProvider = StreamProvider<List<MediaAssetModel>>((ref) {
-  return ref.watch(mediaRepositoryProvider).watchMediaAssetsByType('ticket_qr');
-});
+import '../repositories/media_repository.dart';
+import '../providers/media_provider.dart';
 
 class TicketScreen extends ConsumerWidget {
   const TicketScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ticketsAsync = ref.watch(_ticketAssetsProvider);
+    final ticketsAsync = ref.watch(ticketAssetsProvider);
 
     return Scaffold(
       appBar: AppBar(

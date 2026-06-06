@@ -1,40 +1,48 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-// 引入乾淨的領域模型
 import '../models/poi_model.dart';
-import '../models/media_asset_model.dart';
-import '../models/reference_image_model.dart';
-import '../../calendar/models/time_chunk_model.dart';
 
-// 引入防腐層
 import '../repositories/poi_repository.dart';
-import '../repositories/media_repository.dart';
-import '../../calendar/repositories/time_chunk_repository.dart';
 
-final poisByRoiProvider = StreamProvider.family<List<PoiModel>, String>((ref, roiId) {
+// Required for code generation
+part 'poi_provider.g.dart';
+
+@riverpod
+Stream<List<PoiModel>> poisByRoi(PoisByRoiRef ref, String roiId) {
   return ref.watch(poiRepositoryProvider).watchPoisByRoi(roiId);
-});
+}
 
-final poisWithoutRoiProvider = StreamProvider<List<PoiModel>>((ref) {
+@riverpod
+Stream<List<PoiModel>> poisWithoutRoi(PoisWithoutRoiRef ref) {
   return ref.watch(poiRepositoryProvider).watchPoisWithoutRoi();
-});
+}
 
-final poiByIdProvider = StreamProvider.family<PoiModel, String>((ref, id) {
+@riverpod
+Stream<PoiModel> poiById(PoiByIdRef ref, String id) {
   return ref.watch(poiRepositoryProvider).watchPoiById(id);
-});
+}
 
-final mediaAssetsByPoiProvider = StreamProvider.family<List<MediaAssetModel>, String>((ref, poiId) {
-  return ref.watch(mediaRepositoryProvider).watchMediaAssetsByPoi(poiId);
-});
-
-final referenceImagesByPoiProvider = StreamProvider.family<List<ReferenceImageModel>, String>((ref, poiId) {
-  return ref.watch(mediaRepositoryProvider).watchReferenceImagesByPoi(poiId);
-});
-
-final timeChunksByPoiProvider = StreamProvider.family<List<TimeChunkModel>, String>((ref, poiId) {
-  return ref.watch(timeChunkRepositoryProvider).watchTimeChunksByPoi(poiId);
-});
-
-final allPoisProvider = StreamProvider<Map<String, PoiModel>>((ref) {
+@riverpod
+Stream<Map<String, PoiModel>> allPois(AllPoisRef ref) {
   return ref.watch(poiRepositoryProvider).watchAllPois();
-});
+}
+
+@riverpod
+Stream<List<PoiModel>> poisByAnime(PoisByAnimeRef ref, String animeId) {
+  return ref.watch(poiRepositoryProvider).watchPoisByAnime(animeId);
+}
+
+@riverpod
+Stream<int> poiCountForAnime(PoiCountForAnimeRef ref, String animeId) {
+  return ref.watch(poiRepositoryProvider).watchPoiCountForAnime(animeId);
+}
+
+@riverpod
+Stream<List<PoiModel>> poisByTag(PoisByTagRef ref, String tagId) {
+  return ref.watch(poiRepositoryProvider).watchPoisByTag(tagId);
+}
+
+@riverpod
+Stream<int> poiCountForTag(PoiCountForTagRef ref, String tagId) {
+  return ref.watch(poiRepositoryProvider).watchPoiCountForTag(tagId);
+}

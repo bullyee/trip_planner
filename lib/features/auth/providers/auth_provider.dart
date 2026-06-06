@@ -1,23 +1,27 @@
 import 'dart:io' show Platform;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 // --- Desktop specific imports ---
 import 'package:googleapis_auth/auth_io.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 
+part 'auth_provider.g.dart';
+
 // --- [Providers] ---
 
-final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
+@Riverpod(keepAlive: true)
+FirebaseAuth firebaseAuth(FirebaseAuthRef ref) {
   return FirebaseAuth.instance;
-});
+}
 
-final authStateChangesProvider = StreamProvider<User?>((ref) {
+@Riverpod(keepAlive: true)
+Stream<User?> authStateChanges(AuthStateChangesRef ref) {
   return ref.watch(firebaseAuthProvider).authStateChanges();
-});
+}
 
 // --- [Controller] ---
 

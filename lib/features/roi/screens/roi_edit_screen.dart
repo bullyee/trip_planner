@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../controllers/roi_controller.dart';
+import '../../../core/utils/app_result.dart';
 import '../models/roi_model.dart';
 import '../repositories/roi_repository.dart';
 
@@ -102,22 +103,27 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
     // Check if the data was successfully loaded before saving
     if (_existing == null) return; 
 
-    final success = await ref.read(roiControllerProvider.notifier).updateRoi(
+    final result = await ref.read(roiControllerProvider.notifier).updateRoi(
       id: widget.roiId,
       name: _nameController.text,
       description: _descController.text,
       createdAt: _existing!.createdAt,                     // Extract from _existing
-      // NOTE: If your Drift 'Roi' class doesn't have an 'isShared' column yet, 
+      // Preserve the existing offline-cache flag; without this the repo defaults
+      // it to 0 and silently clears offline caching on every edit.
+      existingIsOfflineCached: _existing!.isOfflineCached ? 1 : 0,
+      // NOTE: If your Drift 'Roi' class doesn't have an 'isShared' column yet,
       // just pass 'false' here for now.
-      isShared: false,                                     
+      isShared: false,
     );
 
-    if (success && mounted) {
-      context.pop();
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to save ROI. Please try again.')),
-      );
+    if (!mounted) return;
+    switch (result) {
+      case Success():
+        context.pop();
+      case Failure(:final error):
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save ROI: $error')),
+        );
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart'; // Add this
+// Add this
 import 'package:go_router/go_router.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:trip_planner/features/auth/providers/auth_provider.dart'; // Add this
 import 'package:trip_planner/features/auth/screens/login_screen.dart'; // Add this
 
@@ -18,12 +19,15 @@ import '../../features/anime/screens/bangumi_search_screen.dart';
 import '../../features/tag/screens/tag_edit_screen.dart';
 import '../../features/calendar/screens/calendar_screen.dart';
 import '../../features/camera/screens/camera_screen.dart';
-import '../../features/map/map_screen.dart';
-import '../../features/ticket/screens/ticket_screen.dart';
+import '../../features/poi/screens/ticket_screen.dart';
 import '../../features/home/screens/sync_screen.dart';
+import '../widgets/map_view/map_screen.dart';
+
+part 'app_router.g.dart';
 
 /// Wrap the existing router in a Provider to react to Auth state changes.
-final routerProvider = Provider<GoRouter>((ref) {
+@Riverpod(keepAlive: true)
+GoRouter router(RouterRef ref) {
   // Watch the auth state from our previously created provider.
   ref.watch(authStateChangesProvider);
 
@@ -193,4 +197,4 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
-});
+}

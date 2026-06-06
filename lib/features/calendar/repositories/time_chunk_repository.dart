@@ -1,11 +1,12 @@
 // lib/features/calendar/repositories/time_chunk_repository.dart
-
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
 
 import '../models/time_chunk_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'time_chunk_repository.g.dart';
 
 abstract class TimeChunkRepository {
   Future<void> addTimeChunk(TimeChunkModel chunk);
@@ -16,26 +17,22 @@ abstract class TimeChunkRepository {
   Stream<List<TimeChunkModel>> watchBacklogChunks();
 }
 
-class DualTrackTimeChunkRepository implements TimeChunkRepository {
+class LocalTimeChunkRepository implements TimeChunkRepository {
   final AppDatabase localDb;
 
-  DualTrackTimeChunkRepository(this.localDb);
+  LocalTimeChunkRepository(this.localDb);
 
   @override
   Future<void> addTimeChunk(TimeChunkModel chunk) async {
-    if (chunk.isShared) {
-      // TODO: Route to Firestore SDK
-    } else {
-      await localDb.insertTimeChunk(
-        TimeChunksCompanion.insert(
-          id: chunk.id,
-          poiId: chunk.poiId,
-          date: Value(chunk.date),
-          startTime: Value(chunk.startTime),
-          endTime: Value(chunk.endTime),
-        ),
-      );
-    }
+    await localDb.insertTimeChunk(
+      TimeChunksCompanion.insert(
+        id: chunk.id,
+        poiId: chunk.poiId,
+        date: Value(chunk.date),
+        startTime: Value(chunk.startTime),
+        endTime: Value(chunk.endTime),
+      ),
+    );
   }
 
   @override
@@ -57,7 +54,6 @@ class DualTrackTimeChunkRepository implements TimeChunkRepository {
 
   @override
   Future<void> updateTimeChunk(TimeChunkModel chunk) async {
-    // TODO: Firestore logic
     await localDb.updateTimeChunk(TimeChunksCompanion(
       id: Value(chunk.id),
       poiId: Value(chunk.poiId),
@@ -70,7 +66,6 @@ class DualTrackTimeChunkRepository implements TimeChunkRepository {
 
   @override
   Future<void> deleteTimeChunk(String id) async {
-    // TODO: Firestore logic
     await localDb.deleteTimeChunk(id);
   }
 
@@ -107,7 +102,8 @@ class DualTrackTimeChunkRepository implements TimeChunkRepository {
   }
 }
 
-final timeChunkRepositoryProvider = Provider<TimeChunkRepository>((ref) {
-  final db = ref.read(databaseProvider);
-  return DualTrackTimeChunkRepository(db);
-});
+@riverpod
+TimeChunkRepository timeChunkRepository(TimeChunkRepositoryRef ref) {
+  final db = ref.watch(databaseProvider);
+  return LocalTimeChunkRepository(db);
+}

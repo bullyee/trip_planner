@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../controllers/tag_controller.dart';
+import '../../../core/utils/app_result.dart';
 import '../repositories/tag_repository.dart';
 
 class TagEditScreen extends ConsumerStatefulWidget {
@@ -108,19 +109,21 @@ class _TagEditScreenState extends ConsumerState<TagEditScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     
-    final success = await ref.read(tagControllerProvider.notifier).saveTag(
+    final result = await ref.read(tagControllerProvider.notifier).saveTag(
       isNew: widget.isNew,
       id: widget.tagId,
       name: _nameController.text,
       description: _descController.text,
     );
 
-    if (success && mounted) {
-      context.pop();
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to save tag. Please try again.')),
-      );
+    if (!mounted) return;
+    switch (result) {
+      case Success():
+        context.pop();
+      case Failure(:final error):
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save tag: $error')),
+        );
     }
   }
 

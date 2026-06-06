@@ -3,16 +3,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-// Provides the CloudSyncService globally
-final cloudSyncServiceProvider = Provider<CloudSyncService>((ref) {
+part 'cloud_sync_service.g.dart';
+
+@Riverpod(keepAlive: true)
+CloudSyncService cloudSyncService(CloudSyncServiceRef ref) {
   return CloudSyncService(
     db: FirebaseFirestore.instance,
     auth: FirebaseAuth.instance,
     storage: FirebaseStorage.instance,
   );
-});
+}
 
 class CloudSyncService {
   CloudSyncService({

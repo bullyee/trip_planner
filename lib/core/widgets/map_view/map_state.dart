@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../poi/models/poi_model.dart';
+import '../../../features/poi/models/poi_model.dart';
 
 part 'map_state.freezed.dart';
 
