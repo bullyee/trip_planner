@@ -108,7 +108,8 @@ class _TagEditScreenState extends ConsumerState<TagEditScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     
-    final result = await ref.read(tagControllerProvider.notifier).saveTag(
+    // Changed result handling to boolean to match TagController refactoring
+    final success = await ref.read(tagControllerProvider.notifier).saveTag(
       isNew: widget.isNew,
       id: widget.tagId,
       name: _nameController.text,
@@ -116,13 +117,13 @@ class _TagEditScreenState extends ConsumerState<TagEditScreen> {
     );
 
     if (!mounted) return;
-    switch (result) {
-      case Success():
-        context.pop();
-      case Failure(:final error):
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save tag: $error')),
-        );
+    
+    if (success) {
+      context.pop();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to save tag.')),
+      );
     }
   }
 

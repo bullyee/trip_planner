@@ -44,12 +44,8 @@ class Pois extends Table {
   RealColumn get lng => real()();
   TextColumn get businessHours => text().nullable()();
   TextColumn get contactInfo => text().nullable()();
-<<<<<<< HEAD
   TextColumn get localCoverImagePath => text().nullable()();
   TextColumn get remoteCoverImageUrl => text().nullable()();
-=======
-  TextColumn get coverImageUri => text().nullable()();
->>>>>>> origin/master
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override

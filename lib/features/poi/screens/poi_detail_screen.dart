@@ -808,7 +808,7 @@ class PoiDetailScreen extends ConsumerWidget {
         errorBuilder: (context, error, stackTrace) => const Center(
           child: Text(
             'Failed to load cloud image.',
-            style: const TextStyle(color: Colors.white70),
+            style: TextStyle(color: Colors.white70),
           ),
         ),
       );

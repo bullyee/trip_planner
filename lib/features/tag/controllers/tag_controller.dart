@@ -49,10 +49,10 @@ class TagController extends _$TagController {
       }
 
       state = const AsyncValue.data(null);
-      return const Success(null);
+      return true; // 修正：回傳 true 代表成功
     } catch (e, st) {
       state = AsyncValue.error(e, st);
-      return Failure(e.toString(), st);
+      return false; // 修正：回傳 false 代表失敗
     }
   }
 }
