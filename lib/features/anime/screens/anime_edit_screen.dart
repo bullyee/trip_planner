@@ -127,6 +127,7 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
       id: widget.animeId,
       name: _nameController.text,
       description: _descController.text,
+      existingCreatedAt: _existing?.createdAt, // Preserve original createdAt on edit
     );
 
     // Early exit if the widget is unmounted during the async operation

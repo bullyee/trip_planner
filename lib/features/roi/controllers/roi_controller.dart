@@ -6,7 +6,7 @@ import '../repositories/roi_repository.dart';
 
 part 'roi_controller.g.dart';
 
-@riverpod
+@Riverpod(keepAlive: true)
 class RoiController extends _$RoiController {
   @override
   FutureOr<void> build() {}
@@ -46,6 +46,7 @@ class RoiController extends _$RoiController {
       return false;
     }
   }
+
   Future<bool> addRoi({
     required String name,
     required String description,

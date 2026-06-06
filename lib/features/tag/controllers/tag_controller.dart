@@ -8,7 +8,7 @@ import '../repositories/tag_repository.dart';
 
 part 'tag_controller.g.dart';
 
-@riverpod
+@Riverpod(keepAlive: true)
 class TagController extends _$TagController {
   @override
   FutureOr<void> build() {}
@@ -49,10 +49,10 @@ class TagController extends _$TagController {
       }
 
       state = const AsyncValue.data(null);
-      return true;
+      return const Success(null);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
-      return false;
+      return Failure(e.toString(), st);
     }
   }
 }

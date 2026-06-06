@@ -106,15 +106,16 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
       id: widget.roiId,
       name: _nameController.text,
       description: _descController.text,
-      createdAt: _existing!.createdAt,                     // Extract from _existing
-      // NOTE: If your Drift 'Roi' class doesn't have an 'isShared' column yet, 
-      // just pass 'false' here for now.
-      isShared: false,                                     
+      createdAt: _existing!.createdAt,
+      existingIsOfflineCached: _existing!.isOfflineCached ? 1 : 0,
+      isShared: _existing!.isShared,                           
     );
 
-    if (success && mounted) {
+    if (!mounted) return;
+    
+    if (success) {
       context.pop();
-    } else if (mounted) {
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to save ROI. Please try again.')),
       );

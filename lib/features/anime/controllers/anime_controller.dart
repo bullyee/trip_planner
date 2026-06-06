@@ -7,7 +7,7 @@ import '../../../core/utils/app_result.dart'; // Added AppResult import
 
 part 'anime_controller.g.dart';
 
-@riverpod
+@Riverpod(keepAlive: true)
 class AnimeController extends _$AnimeController {
   @override
   FutureOr<void> build() {}

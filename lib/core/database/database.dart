@@ -23,7 +23,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -37,6 +37,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 4) {
             await _migrateToEntityTables(m);
+          }
+          if (from < 5) {
+            await _addCreatedAtColumns();
           }
         },
         beforeOpen: (details) async {
@@ -106,6 +109,23 @@ class AppDatabase extends _$AppDatabase {
     // Step 3: drop legacy columns and relax roi_id to nullable.
     // ignore: experimental_member_use
     await m.alterTable(TableMigration(pois));
+  }
+
+  /// v4 -> v5: add the non-nullable `created_at` column to pois,
+  /// reference_images and media_assets.
+  ///
+  /// These columns are declared with a Dart-side `clientDefault` only, so the
+  /// generated DDL carries no SQL default. A plain `addColumn` would emit
+  /// `ADD COLUMN created_at INTEGER NOT NULL`, which SQLite rejects on tables
+  /// that already contain rows. We add each column with an explicit SQL default
+  /// equal to the migration timestamp so existing rows are backfilled.
+  Future<void> _addCreatedAtColumns() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final table in const ['pois', 'reference_images', 'media_assets']) {
+      await customStatement(
+        'ALTER TABLE $table ADD COLUMN created_at INTEGER NOT NULL DEFAULT $now',
+      );
+    }
   }
 
   // --- ROI Queries ---

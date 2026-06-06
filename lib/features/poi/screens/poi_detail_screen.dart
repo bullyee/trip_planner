@@ -297,7 +297,7 @@ class PoiDetailScreen extends ConsumerWidget {
                                             value: 'skipped', child: Text('Skip')));
                                       }
                                       menuItems.add(const PopupMenuItem(
-                                        value: 'backlog', child: Text('To Backlog')));
+                                          value: 'backlog', child: Text('To Backlog')));
                                       menuItems.add(const PopupMenuDivider());
                                     }
                                     menuItems.add(const PopupMenuItem(value: 'edit', child: Text('Edit')));
@@ -760,7 +760,13 @@ class PoiDetailScreen extends ConsumerWidget {
   }
 
   void _showImagePreview(BuildContext context, MediaAssetModel asset) {
-    _showFullscreenImage(context, localPath: asset.localPath, title: asset.type ?? 'unknown');
+    // INFERENCE FIX: Added remoteUrl to ensure cloud-only assets can be previewed
+    _showFullscreenImage(
+      context, 
+      localPath: asset.localPath, 
+      remoteUrl: asset.remoteUrl,
+      title: asset.type ?? 'unknown'
+    );
   }
 
   void _showFullscreenImage(
@@ -802,7 +808,7 @@ class PoiDetailScreen extends ConsumerWidget {
         errorBuilder: (context, error, stackTrace) => const Center(
           child: Text(
             'Failed to load cloud image.',
-            style: TextStyle(color: Colors.white70),
+            style: const TextStyle(color: Colors.white70),
           ),
         ),
       );

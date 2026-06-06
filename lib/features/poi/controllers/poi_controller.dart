@@ -8,7 +8,7 @@ import '../repositories/poi_repository.dart';
 
 part 'poi_controller.g.dart';
 
-@riverpod
+@Riverpod(keepAlive: true)
 class PoiController extends _$PoiController {
   @override
   FutureOr<void> build() {}
@@ -61,9 +61,7 @@ class PoiController extends _$PoiController {
         isShared: isShared,
       );
 
-      // 2. Delegate to the Repository Layer
-      // The repository will handle the transaction, updating the POI, 
-      // and setting the relational anime/tag connections.
+      // 2. Delegate to the Repository Layer (Clean Architecture)
       await ref.read(poiRepositoryProvider).savePoiWithRelations(
         poi: poiModel,
         animeIds: animeIds,
