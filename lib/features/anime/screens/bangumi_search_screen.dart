@@ -107,14 +107,12 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
     final AnitabiImportResult? result;
 
     try {
-      // 2. Call the Application Service directly
       result = await AnitabiApiService.importBangumiSubject(
         db,
         subject.id,
         fallbackName: subject.name,
       );
     } on AnitabiUnavailableException {
-      // Network/timeout — not the same as "this anime has no POIs".
       if (!mounted) return;
       setState(() => _importing = null);
       messenger.showSnackBar(
@@ -122,6 +120,23 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
           content: Text(
             "Couldn't reach Anitabi for \"${subject.nameCn ?? subject.name}\". "
             'Check your connection and tap Import again.',
+          ),
+        ),
+      );
+      return;
+    } catch (e, st) {
+      // ADDED: Catch all other unexpected exceptions (e.g., database constraints, parsing errors)
+      // to ensure the loading spinner is stopped.
+      if (!mounted) return;
+      setState(() => _importing = null);
+      
+      // Log the error to the console for debugging
+      debugPrint('[Import Error] Unexpected failure: $e\n$st');
+      
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Import failed due to an internal error. Check logs.',
           ),
         ),
       );

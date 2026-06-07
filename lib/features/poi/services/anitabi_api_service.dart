@@ -120,6 +120,9 @@ class AnitabiApiService {
       final pendingDownloads = <_PendingCover>[];
 
       await db.transaction(() async {
+        // Mocked author ID for the current isolated test phase
+        const currentUserId = 'local_test_user';
+
         for (final raw in jsonList) {
           if (raw is! Map<String, dynamic>) {
             skipped++;
@@ -128,10 +131,13 @@ class AnitabiApiService {
 
           PoisCompanion? companion;
           try {
-            companion = _parsePoi(raw);
-          } catch (e) {
+            // Pass the required authorId to the parser
+            companion = _parsePoi(raw, currentUserId);
+          } catch (e, st) {
+            debugPrint('[AnitabiApiService] Parse Error: $e\n$st');
             companion = null;
           }
+          
           if (companion == null) {
             skipped++;
             continue;
@@ -147,14 +153,10 @@ class AnitabiApiService {
                   companion,
                   mode: InsertMode.insertOrIgnore,
                 );
-            // Anime link is idempotent (insertOrIgnore), so it's safe to
-            // re-run; this keeps a shared location linked if it shows up
-            // under another subject.
+                
             await db.addAnimeToPoi(poiId, animeId);
 
             if (alreadyImported != null) {
-              // Seen in a previous import: don't re-queue the cover (which
-              // would add another reference_images row) or double-count it.
               skipped++;
               continue;
             }
@@ -162,15 +164,16 @@ class AnitabiApiService {
 
             final rawImage = (raw['image'] ?? '').toString();
             if (rawImage.isNotEmpty) {
-              final url =
-                  rawImage.replaceAll('?plan=h160', '?plan=h360');
+              final url = rawImage.replaceAll('?plan=h160', '?plan=h360');
               pendingDownloads.add(_PendingCover(
                 poiId: poiId,
                 url: url,
                 metadata: _referenceMetadata(raw),
               ));
             }
-          } catch (_) {
+          } catch (e, st) {
+            // CRITICAL FIX: Log the database exception instead of swallowing it silently
+            debugPrint('[AnitabiApiService] Database Insert Error for POI ${companion.id.value}: $e\n$st');
             skipped++;
           }
         }
@@ -335,7 +338,7 @@ class AnitabiApiService {
     return fallback;
   }
 
-  static PoisCompanion? _parsePoi(Map<String, dynamic> json) {
+ static PoisCompanion? _parsePoi(Map<String, dynamic> json, String authorId) {
     final rawId = json['id'];
     if (rawId == null) return null;
     final id = rawId.toString();
@@ -364,23 +367,21 @@ class AnitabiApiService {
         'Ep $ep - $timeString\nSource: $origin\n$originUrl'.trim();
 
     return PoisCompanion(
-      // Deterministic id derived from the Anitabi point id so re-importing
-      // the same subject hits insertOrIgnore instead of creating a fresh
-      // UUID (and a duplicate POI) every run.
       id: Value('anitabi:$id'),
       name: Value(name),
       lat: Value(lat),
       lng: Value(lng),
-      // Anitabi's `image` is the anime scene reference shot, not a place
-      // photo. It goes to the reference_images table; the POI cover stays
-      // null until the user takes their own photo or the camera flow sets
-      // it.
       localCoverImagePath: const Value(null),
       description: Value(description),
       address: const Value(null),
       businessHours: const Value(null),
       contactInfo: const Value(null),
       roiId: const Value(null),
+      
+      // ADDED: Required fields for the new synchronization schema
+      authorId: Value(authorId),
+      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      isShared: const Value(false), 
     );
   }
 
@@ -390,8 +391,9 @@ class AnitabiApiService {
   static String _referenceMetadata(Map<String, dynamic> json) {
     return jsonEncode({
       'source': 'anitabi',
-      'ep': ?json['ep'],
-      's': ?json['s'],
+      // FIXED: Removed invalid syntax '?' before map access
+      'ep': json['ep'],
+      's': json['s'],
     });
   }
 }

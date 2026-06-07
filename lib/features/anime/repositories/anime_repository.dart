@@ -32,6 +32,7 @@ class LocalAnimeRepository implements AnimeRepository {
         description: Value(anime.description),
         bangumiId: Value(anime.bangumiId), // FIXED: Added missing bangumiId
         createdAt: Value(anime.createdAt), // FIXED: Wrapped in Value()
+        authorId: 'local_test_user',
       ),
     );
     

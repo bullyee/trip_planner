@@ -30,6 +30,7 @@ class LocalTagRepository implements TagRepository {
         name: tag.name,
         description: Value(tag.description),
         createdAt: Value(tag.createdAt),
+        authorId: 'local_test_user', // ADDED: Required by updated schema
       ),
     );
   }

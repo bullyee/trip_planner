@@ -146,6 +146,8 @@ class AppDatabase extends _$AppDatabase {
           id: roi.id.value,
           name: roi.name.value,
           description: roi.description.value,
+          authorId: roi.authorId.value,
+          isShared: roi.isShared.value,
           isOfflineCached: roi.isOfflineCached.value,
           createdAt: roi.createdAt.value,
         ),
@@ -224,6 +226,9 @@ class AppDatabase extends _$AppDatabase {
             : current.bangumiId,
         createdAt:
             anime.createdAt.present ? anime.createdAt.value : current.createdAt,
+        // ADDED: Preserve existing authorId and isShared during update if not provided
+        authorId: anime.authorId.present ? anime.authorId.value : current.authorId,
+        isShared: anime.isShared.present ? anime.isShared.value : current.isShared,
       ),
     );
   }
@@ -247,6 +252,8 @@ class AppDatabase extends _$AppDatabase {
       description: Value(description),
       bangumiId: Value(bangumiId),
       createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      // ADDED: Required by the updated schema for new insertions
+      authorId: 'local_test_user',
     ));
     return id;
   }
@@ -277,6 +284,9 @@ class AppDatabase extends _$AppDatabase {
             : current.description,
         createdAt:
             tag.createdAt.present ? tag.createdAt.value : current.createdAt,
+        // ADDED: Preserve existing authorId and isShared during update if not provided
+        authorId: tag.authorId.present ? tag.authorId.value : current.authorId,
+        isShared: tag.isShared.present ? tag.isShared.value : current.isShared,
       ),
     );
   }
@@ -416,6 +426,9 @@ class AppDatabase extends _$AppDatabase {
           startTime: chunk.startTime.value,
           endTime: chunk.endTime.value,
           status: chunk.status.value,
+          authorId: chunk.authorId.value,
+          isShared: chunk.isShared.value,
+          createdAt: chunk.createdAt.value,
         ),
       );
 

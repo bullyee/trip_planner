@@ -63,10 +63,11 @@ void main() {
       );
 
       await db.insertRoi(RoisCompanion.insert(
-        id: 'test-roi-1',
-        name: 'Test ROI',
-        createdAt: const Value(1),
-      ));
+      id: 'test-roi-1',
+      name: 'Test ROI',
+      createdAt: const Value(1),
+      authorId: 'test_user', // ADDED: Mock user for testing
+    ));
 
       // Fixed: Added the required 'authorId' field to comply with new schema
       await db.insertPoi(PoisCompanion.insert(

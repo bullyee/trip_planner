@@ -31,6 +31,7 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
         date: Value(chunk.date),
         startTime: Value(chunk.startTime),
         endTime: Value(chunk.endTime),
+        authorId: 'local_test_user', // ADDED: Required by updated schema
       ),
     );
   }

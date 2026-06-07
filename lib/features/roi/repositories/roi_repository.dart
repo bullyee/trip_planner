@@ -48,6 +48,7 @@ class LocalRoiRepository implements RoiRepository {
         name: roi.name,
         description: Value(roi.description),
         createdAt: Value(roi.createdAt), // Extract directly from model
+        authorId: 'local_test_user', // ADDED: Required by updated schema
       ),
     );
   }

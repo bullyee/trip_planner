@@ -1,3 +1,4 @@
+import 'dart:ui'; // Added for PlatformDispatcher
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -5,13 +6,47 @@ import 'firebase_options.dart';
 
 import 'core/router/app_router.dart';
 import 'shared/theme/app_theme.dart';
+// Added for custom error monitoring
+import 'core/utils/app_logger.dart';
+import 'core/providers/app_provider_observer.dart';
 
 void main() async {
+  // Ensure bindings are initialized before calling native code (e.g., Firebase)
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 1. Catch Flutter framework errors (e.g., UI rendering or widget lifecycle errors)
+  FlutterError.onError = (FlutterErrorDetails details) {
+    AppLogger.error(
+      'Flutter Framework Error Captured',
+      error: details.exception,
+      stackTrace: details.stack,
+      name: 'FlutterError',
+    );
+  };
+
+  // 2. Catch unhandled asynchronous Dart errors (e.g., unawaited Futures)
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    AppLogger.error(
+      'Unhandled Async Error Captured',
+      error: error,
+      stackTrace: stack,
+      name: 'PlatformDispatcher',
+    );
+    // Return true to indicate the error was handled, preventing an app crash
+    return true; 
+  };
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const ProviderScope(child: TripPlannerApp()));
+
+  // 3. Inject AppProviderObserver into ProviderScope to monitor Riverpod state
+  runApp(
+    ProviderScope(
+      observers: [AppProviderObserver()],
+      child: const TripPlannerApp(),
+    ),
+  );
 }
 
 class TripPlannerApp extends ConsumerWidget {

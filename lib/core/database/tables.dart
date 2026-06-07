@@ -4,6 +4,11 @@ class Rois extends Table {
   TextColumn get id => text()();
   TextColumn get name => text()();
   TextColumn get description => text().nullable()();
+  
+  // ADDED: Required fields for dual-track sync
+  TextColumn get authorId => text()();
+  BoolColumn get isShared => boolean().withDefault(const Constant(false))();
+  
   IntColumn get isOfflineCached => integer().withDefault(const Constant(0))();
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
@@ -16,6 +21,11 @@ class Animes extends Table {
   TextColumn get name => text()();
   TextColumn get description => text().nullable()();
   TextColumn get bangumiId => text().nullable().unique()();
+  
+  // ADDED: Required fields for dual-track sync
+  TextColumn get authorId => text()();
+  BoolColumn get isShared => boolean().withDefault(const Constant(false))();
+  
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override
@@ -26,6 +36,11 @@ class Tags extends Table {
   TextColumn get id => text()();
   TextColumn get name => text()();
   TextColumn get description => text().nullable()();
+  
+  // ADDED: Required fields for dual-track sync
+  TextColumn get authorId => text()();
+  BoolColumn get isShared => boolean().withDefault(const Constant(false))();
+  
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override
@@ -47,6 +62,7 @@ class Pois extends Table {
   TextColumn get localCoverImagePath => text().nullable()();
   TextColumn get remoteCoverImageUrl => text().nullable()();
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
+  BoolColumn get isShared => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -79,6 +95,11 @@ class TimeChunks extends Table {
   TextColumn get startTime => text().nullable()();
   TextColumn get endTime => text().nullable()();
   TextColumn get status => text().withDefault(const Constant('backlog'))();
+  
+  // ADDED: Required fields for dual-track sync
+  TextColumn get authorId => text()();
+  BoolColumn get isShared => boolean().withDefault(const Constant(false))();
+  IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
   @override
   Set<Column> get primaryKey => {id};
