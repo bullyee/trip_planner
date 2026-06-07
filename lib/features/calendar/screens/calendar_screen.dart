@@ -442,6 +442,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                       return ListTile(
                                         title: Text(poi.name),
                                         subtitle: Text(poi.address ?? 'No address'),
+                                        trailing: Tooltip(
+                                          message: poi.isShared ? 'cloud_done' : 'cloud_off',
+                                          child: Icon(
+                                            poi.isShared ? Icons.cloud_done : Icons.cloud_off_outlined,
+                                            color: poi.isShared ? Colors.green : Colors.grey,
+                                            size: 20,
+                                          ),
+                                        ),
                                         onTap: () async {
                                           // persist last selected ROI for backlog block
                                           ref.read(lastSelectedBacklogRoiProvider.notifier).updateRoi(selectedRoiId);

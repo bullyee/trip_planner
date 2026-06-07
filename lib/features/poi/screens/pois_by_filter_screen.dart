@@ -181,7 +181,21 @@ class _PoiListView extends ConsumerWidget {
                 leading: _PoiThumbnail(poi: poi),
                 title: Text(poi.name),
                 subtitle: roiName != null ? Text(roiName) : null,
-                trailing: const Icon(Icons.chevron_right),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min, // CRITICAL: Prevent layout overflow in ListTile
+                  children: [
+                    Tooltip(
+                      message: poi.isShared ? 'cloud_done' : 'cloud_off',
+                      child: Icon(
+                        poi.isShared ? Icons.cloud_done : Icons.cloud_off_outlined,
+                        color: poi.isShared ? Colors.green : Colors.grey,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.chevron_right),
+                  ],
+                ),
                 onTap: () => context.push('/pois/${poi.id}'),
               ),
             );

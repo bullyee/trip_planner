@@ -126,7 +126,7 @@ class LocalPoiRepository implements PoiRepository {
       localCoverImagePath: driftPoi.localCoverImagePath,
       remoteCoverImageUrl: driftPoi.remoteCoverImageUrl,
       createdAt: driftPoi.createdAt, // FIXED: driftRow -> driftPoi
-      isShared: false, 
+      isShared: driftPoi.isShared,
     );
   }
 
@@ -145,7 +145,7 @@ class LocalPoiRepository implements PoiRepository {
       localCoverImagePath: driftPoi.localCoverImagePath,
       remoteCoverImageUrl: driftPoi.remoteCoverImageUrl,
       createdAt: driftPoi.createdAt,
-      isShared: false,
+      isShared: driftPoi.isShared,
     );
   }
 

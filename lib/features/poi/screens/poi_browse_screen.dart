@@ -244,34 +244,50 @@ class _AllPoisTab extends ConsumerWidget {
           return const Center(child: Text('No POIs yet.'));
         }
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: pois.length,
-          itemBuilder: (context, index) {
-            final poi = pois[index];
-            return Card(
-              child: ListTile(
-                leading: const Icon(Icons.location_on),
-                title: Text(poi.name),
-                subtitle: Consumer(
-                  builder: (context, ref, _) {
-                    final animesAsync = ref.watch(animesForPoiProvider(poi.id));
-                    final firstAnime = animesAsync.maybeWhen(
-                      data: (animes) =>
-                          animes.isNotEmpty ? animes.first.name : null,
-                      orElse: () => null,
-                    );
-                    final subtitle = firstAnime ?? poi.address;
-                    return subtitle != null
-                        ? Text(subtitle)
-                        : const SizedBox.shrink();
-                  },
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push('/pois/${poi.id}'),
-              ),
+  padding: const EdgeInsets.all(16),
+  itemCount: pois.length,
+  itemBuilder: (context, index) {
+    final poi = pois[index];
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.location_on),
+        title: Text(poi.name),
+        subtitle: Consumer(
+          builder: (context, ref, _) {
+            final animesAsync = ref.watch(animesForPoiProvider(poi.id));
+            final firstAnime = animesAsync.maybeWhen(
+              data: (animes) =>
+                  animes.isNotEmpty ? animes.first.name : null,
+              orElse: () => null,
             );
+            final subtitle = firstAnime ?? poi.address;
+            return subtitle != null
+                ? Text(subtitle)
+                : const SizedBox.shrink();
           },
-        );
+        ),
+        
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Tooltip(
+              message: poi.isShared ? 'cloud_done' : 'cloud_off',
+              child: Icon(
+                poi.isShared ? Icons.cloud_done : Icons.cloud_off_outlined,
+                color: poi.isShared ? Colors.green : Colors.grey,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
+        
+        onTap: () => context.push('/pois/${poi.id}'),
+      ),
+    );
+  },
+);
       },
     );
   }

@@ -43,7 +43,27 @@ class PoiDetailScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: poiAsync.when(
-          data: (poi) => Text(poi.name),
+          data: (poi) => Row(
+            mainAxisSize: MainAxisSize.min, // Prevent the Row from expanding infinitely
+            children: [
+              Flexible(
+                // Flexible ensures the text truncates instead of overflowing the AppBar
+                child: Text(
+                  poi.name,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: poi.isShared ? 'cloud_done' : 'cloud_off',
+                child: Icon(
+                  poi.isShared ? Icons.cloud_done : Icons.cloud_off_outlined,
+                  color: poi.isShared ? Colors.green : Colors.grey,
+                  size: 20,
+                ),
+              ),
+            ],
+          ),
           loading: () => const Text('Loading...'),
           error: (_, _) => const Text('Error'),
         ),

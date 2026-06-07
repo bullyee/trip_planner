@@ -107,7 +107,21 @@ class RoiDetailScreen extends ConsumerWidget {
                     },
                   ),
                   leading: const Icon(Icons.location_on),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min, // CRITICAL: Prevent layout overflow in ListTile trailing
+                    children: [
+                      Tooltip(
+                        message: poi.isShared ? 'cloud_done' : 'cloud_off',
+                        child: Icon(
+                          poi.isShared ? Icons.cloud_done : Icons.cloud_off_outlined,
+                          color: poi.isShared ? Colors.green : Colors.grey,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.chevron_right),
+                    ],
+                  ),
                   onTap: () => context.push('/pois/${poi.id}'),
                 ),
               );
