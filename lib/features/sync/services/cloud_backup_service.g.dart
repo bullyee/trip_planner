@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'cloud_sync_service.dart';
+part of 'cloud_backup_service.dart';
 
 // **************************************************************************
 // RiverpodGenerator

@@ -476,4 +476,18 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> deleteReferenceImage(String id) =>
       (delete(referenceImages)..where((r) => r.id.equals(id))).go();
+
+  /// Watches all POIs that have not been synced to the cloud yet
+  Stream<List<Poi>> watchUnsyncedPois() {
+    return (select(pois)..where((tbl) => tbl.isShared.equals(false))).watch();
+  }
+
+  /// Marks a specific POI as successfully synced to the cloud
+  Future<void> markPoiAsShared(String id) async {
+    await (update(pois)..where((tbl) => tbl.id.equals(id))).write(
+      const PoisCompanion(
+        isShared: Value(true),
+      ),
+    );
+  }
 }

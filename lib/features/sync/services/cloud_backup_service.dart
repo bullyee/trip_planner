@@ -5,7 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-part 'cloud_sync_service.g.dart';
+part 'cloud_backup_service.g.dart';
 
 @Riverpod(keepAlive: true)
 CloudSyncService cloudSyncService(CloudSyncServiceRef ref) {

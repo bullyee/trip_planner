@@ -6,7 +6,7 @@ part of 'poi_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$poiControllerHash() => r'41adb0d799b4b357acf316801b049dbbd9b2d8bb';
+String _$poiControllerHash() => r'a1d4945261266cc890ddce5d41d22a52cfd88a28';
 
 /// See also [PoiController].
 @ProviderFor(PoiController)
