@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 // IMPORTANT: Removed drift and direct database imports.
 // Added the pure domain model and repository imports.
+import '../../auth/providers/auth_provider.dart';
 import '../models/poi_model.dart';
 import '../repositories/poi_repository.dart';
 
@@ -40,7 +41,7 @@ class PoiController extends _$PoiController {
       // Business logic: clean up empty strings
       String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
 
-      final currentUserId = 'local_test_user';
+      final currentUserId = ref.read(currentUserIdProvider);
 
       // 1. Construct the pure Domain Model
       final poiModel = PoiModel(

@@ -10,7 +10,8 @@ void main() {
 
   setUp(() {
     db = AppDatabase.forTesting(NativeDatabase.memory());
-    poiRepository = LocalPoiRepository(db);
+    const mockUserId = 'test_mock_user_id';
+    poiRepository = LocalPoiRepository(db, mockUserId);
   });
 
   tearDown(() async {
@@ -21,11 +22,11 @@ void main() {
     test('second upsert with same bangumi_id returns same anime row', () async {
       final id1 = await db.upsertAnimeByBangumiId(
         bangumiId: '1424',
-        name: 'K-On!',
+        name: 'K-On!', authorId: 'test_mock_user_id',
       );
       final id2 = await db.upsertAnimeByBangumiId(
         bangumiId: '1424',
-        name: 'けいおん！',
+        name: 'けいおん！', authorId: 'test_mock_user_id',
       );
 
       expect(id1, equals(id2));
@@ -38,8 +39,8 @@ void main() {
     });
 
     test('different bangumi_ids create independent rows', () async {
-      await db.upsertAnimeByBangumiId(bangumiId: '1424', name: 'K-On!');
-      await db.upsertAnimeByBangumiId(bangumiId: '17288', name: 'Hibike!');
+      await db.upsertAnimeByBangumiId(bangumiId: '1424', name: 'K-On!', authorId: 'test_mock_user_id');
+      await db.upsertAnimeByBangumiId(bangumiId: '17288', name: 'Hibike!', authorId: 'test_mock_user_id');
 
       final all = await db.getAllAnimes();
       expect(all.length, 2);
@@ -59,7 +60,7 @@ void main() {
       // 1. Arrange: Seed the database with linked data
       final animeId = await db.upsertAnimeByBangumiId(
         bangumiId: '9999', 
-        name: 'Integration Test Anime'
+        name: 'Integration Test Anime', authorId: 'test_mock_user_id'
       );
 
       await db.insertRoi(RoisCompanion.insert(

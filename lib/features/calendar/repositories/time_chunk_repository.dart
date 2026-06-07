@@ -1,6 +1,7 @@
 // lib/features/calendar/repositories/time_chunk_repository.dart
 import 'package:drift/drift.dart';
 
+import '../../auth/providers/auth_provider.dart';
 import '../models/time_chunk_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
@@ -19,8 +20,9 @@ abstract class TimeChunkRepository {
 
 class LocalTimeChunkRepository implements TimeChunkRepository {
   final AppDatabase localDb;
+  final String currentUserId;
 
-  LocalTimeChunkRepository(this.localDb);
+  LocalTimeChunkRepository(this.localDb, this.currentUserId);
 
   @override
   Future<void> addTimeChunk(TimeChunkModel chunk) async {
@@ -31,7 +33,7 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
         date: Value(chunk.date),
         startTime: Value(chunk.startTime),
         endTime: Value(chunk.endTime),
-        authorId: 'local_test_user', // ADDED: Required by updated schema
+        authorId: currentUserId, // ADDED: Required by updated schema
       ),
     );
   }
@@ -106,5 +108,6 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
 @riverpod
 TimeChunkRepository timeChunkRepository(TimeChunkRepositoryRef ref) {
   final db = ref.watch(databaseProvider);
-  return LocalTimeChunkRepository(db);
+  final currentUserId = ref.watch(currentUserIdProvider);
+  return LocalTimeChunkRepository(db, currentUserId);
 }

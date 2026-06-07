@@ -241,6 +241,7 @@ class AppDatabase extends _$AppDatabase {
   Future<String> upsertAnimeByBangumiId({
     required String bangumiId,
     required String name,
+    required String authorId,
     String? description,
   }) async {
     final existing = await getAnimeByBangumiId(bangumiId);
@@ -253,7 +254,7 @@ class AppDatabase extends _$AppDatabase {
       bangumiId: Value(bangumiId),
       createdAt: Value(DateTime.now().millisecondsSinceEpoch),
       // ADDED: Required by the updated schema for new insertions
-      authorId: 'local_test_user',
+      authorId: authorId,
     ));
     return id;
   }

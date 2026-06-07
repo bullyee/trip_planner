@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import 'package:trip_planner/core/database/database.dart';
 import 'package:trip_planner/core/utils/image_storage.dart';
 
+
 class AnitabiImportResult {
   final String animeId;
   final String animeName;
@@ -78,6 +79,7 @@ class AnitabiApiService {
   static Future<AnitabiImportResult?> importBangumiSubject(
     AppDatabase db,
     String subjectId, {
+    required String authorId,
     String? fallbackName,
     http.Client? client,
   }) async {
@@ -113,6 +115,7 @@ class AnitabiApiService {
       final animeId = await db.upsertAnimeByBangumiId(
         bangumiId: subjectId,
         name: animeName,
+        authorId: authorId,
       );
 
       int imported = 0;
@@ -121,7 +124,6 @@ class AnitabiApiService {
 
       await db.transaction(() async {
         // Mocked author ID for the current isolated test phase
-        const currentUserId = 'local_test_user';
 
         for (final raw in jsonList) {
           if (raw is! Map<String, dynamic>) {
@@ -132,7 +134,7 @@ class AnitabiApiService {
           PoisCompanion? companion;
           try {
             // Pass the required authorId to the parser
-            companion = _parsePoi(raw, currentUserId);
+            companion = _parsePoi(raw, authorId);
           } catch (e, st) {
             debugPrint('[AnitabiApiService] Parse Error: $e\n$st');
             companion = null;
@@ -186,6 +188,7 @@ class AnitabiApiService {
         pending: pendingDownloads,
         httpClient: httpClient,
         closeClientWhenDone: ownsClient,
+        authorId: animeId,
       );
       handedOff = true;
 
@@ -212,6 +215,7 @@ class AnitabiApiService {
     required List<_PendingCover> pending,
     required http.Client httpClient,
     required bool closeClientWhenDone,
+    required String authorId,
   }) async {
     
 
@@ -231,13 +235,12 @@ class AnitabiApiService {
       
       if (localPath != null) {
         // Fetch or assign the required user ID
-        final currentUserId = 'local_test_user'; 
 
         await db.insertReferenceImage(
           ReferenceImagesCompanion.insert(
             id: const Uuid().v4(),
             poiId: next.poiId,
-            authorId: currentUserId, // CRITICAL: Required for the new model
+            authorId: authorId, // CRITICAL: Required for the new model
             localPath: Value(localPath), // CRITICAL: Wrap in Value for nullable column
             remoteUrl: Value(next.url),
             metadata: Value(next.metadata),

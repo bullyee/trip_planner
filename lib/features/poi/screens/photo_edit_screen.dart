@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
+import '../../auth/providers/auth_provider.dart';
 import '../../camera/services/reinhard_match_service.dart';
 import '../models/reference_image_model.dart';
 import '../providers/media_provider.dart';
@@ -769,12 +770,14 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       if (bytesToWrite != null) {
         await _sourceFile.writeAsBytes(bytesToWrite, flush: true);
       }
+      final currentUserId = ref.read(currentUserIdProvider);
       final ok = await persistMediaAsset(
         mediaRepo: mediaRepo,
         source: _sourceFile,
         poiId: widget.poiId,
         type: widget.wasUpload ? 'uploaded_image' : 'user_photo',
         referenceImageId: _referenceImageId,
+        authorId: currentUserId,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

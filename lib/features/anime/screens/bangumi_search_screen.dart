@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../auth/providers/auth_provider.dart';
 import '../../poi/services/anitabi_api_service.dart';
 import '../models/bangumi_subject.dart';
 import '../services/bangumi_search_service.dart';
@@ -104,12 +105,14 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
 
     // 1. Read the database provider instead of the anime repository
     final db = ref.read(databaseProvider);
+    final authorId = ref.read(currentUserIdProvider);
     final AnitabiImportResult? result;
 
     try {
       result = await AnitabiApiService.importBangumiSubject(
         db,
         subject.id,
+        authorId: authorId,
         fallbackName: subject.name,
       );
     } on AnitabiUnavailableException {

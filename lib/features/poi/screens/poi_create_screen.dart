@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../../anime/models/anime_model.dart';
 import '../../anime/providers/anime_provider.dart';
 import '../../anime/repositories/anime_repository.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../tag/models/tag_model.dart';
 import '../../tag/providers/tag_provider.dart';
 import '../../roi/providers/roi_provider.dart';
@@ -280,11 +281,13 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
     if (widget.editPoiId == null && widget.capturedPhotoPath != null) {
       final photoFile = File(widget.capturedPhotoPath!);
       if (await photoFile.exists()) {
+        final currentUserId = ref.read(currentUserIdProvider);
         await persistMediaAsset(
           mediaRepo: ref.read(mediaRepositoryProvider),
           source: photoFile,
           poiId: poiId,
           type: 'user_photo',
+          authorId: currentUserId,
         );
       }
     }

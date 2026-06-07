@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../auth/providers/auth_provider.dart';
 import '../../calendar/models/time_chunk_model.dart';
 import '../../calendar/providers/calendar_provider.dart';
 import '../../calendar/repositories/time_chunk_repository.dart';
@@ -985,11 +986,11 @@ class PoiDetailScreen extends ConsumerWidget {
       final newPath = await _copyReferenceImageToStorage(File(picked.path));
       final newImage = ReferenceImageModel(
         id: const Uuid().v4(),
-        authorId: 'local_test_user',
+        authorId: ref.read(currentUserIdProvider),
         poiId: poiId,
         localPath: newPath,
-        createdAt: DateTime.now().millisecondsSinceEpoch, // 補上建立時間
-        isShared: false, // 預設為尚未同步
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        isShared: false,
       );
 
       await ref.read(mediaRepositoryProvider).addReferenceImage(newImage);

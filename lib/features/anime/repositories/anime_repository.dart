@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../auth/providers/auth_provider.dart';
 import '../models/anime_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
@@ -20,8 +21,9 @@ abstract class AnimeRepository {
 
 class LocalAnimeRepository implements AnimeRepository {
   final AppDatabase localDb;
+  final String currentUserId;
 
-  LocalAnimeRepository(this.localDb);
+  LocalAnimeRepository(this.localDb, this.currentUserId);
 
   @override
   Future<void> addAnime(AnimeModel anime) async {
@@ -32,7 +34,7 @@ class LocalAnimeRepository implements AnimeRepository {
         description: Value(anime.description),
         bangumiId: Value(anime.bangumiId), // FIXED: Added missing bangumiId
         createdAt: Value(anime.createdAt), // FIXED: Wrapped in Value()
-        authorId: 'local_test_user',
+        authorId: currentUserId,
       ),
     );
     
@@ -115,5 +117,6 @@ class LocalAnimeRepository implements AnimeRepository {
 AnimeRepository animeRepository(AnimeRepositoryRef ref) {
   // Use watch instead of read for best practices in providers
   final db = ref.watch(databaseProvider); 
-  return LocalAnimeRepository(db);
+  final currentUserId = ref.watch(currentUserIdProvider);
+  return LocalAnimeRepository(db, currentUserId);
 }

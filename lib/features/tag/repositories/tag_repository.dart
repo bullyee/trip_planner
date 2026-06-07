@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../models/tag_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
@@ -19,8 +20,9 @@ abstract class TagRepository {
 
 class LocalTagRepository implements TagRepository {
   final AppDatabase localDb;
+  final String currentUserId;
 
-  LocalTagRepository(this.localDb);
+  LocalTagRepository(this.localDb, this.currentUserId);
 
   @override
   Future<void> addTag(TagModel tag) async {
@@ -30,7 +32,7 @@ class LocalTagRepository implements TagRepository {
         name: tag.name,
         description: Value(tag.description),
         createdAt: Value(tag.createdAt),
-        authorId: 'local_test_user', // ADDED: Required by updated schema
+        authorId: currentUserId,
       ),
     );
   }
@@ -105,5 +107,6 @@ class LocalTagRepository implements TagRepository {
 @riverpod
 TagRepository tagRepository(TagRepositoryRef ref) {
   final db = ref.watch(databaseProvider);
-  return LocalTagRepository(db);
+  final currentUserId = ref.watch(currentUserIdProvider);
+  return LocalTagRepository(db, currentUserId);
 }

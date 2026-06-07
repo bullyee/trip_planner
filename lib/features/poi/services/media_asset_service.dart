@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart'; // ADDED: for debugPrint
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -24,6 +25,7 @@ Future<bool> persistMediaAsset({
   required File source,
   required String poiId,
   required String type,
+  required String authorId, // CRITICAL FIX: Mandate authorId from the caller
   String? referenceImageId,
 }) async {
   try {
@@ -44,14 +46,17 @@ Future<bool> persistMediaAsset({
       id: const Uuid().v4(),
       poiId: poiId,
       type: type,
-      authorId: 'local_test_user',
+      authorId: authorId, // CRITICAL FIX: Use the injected ID
       localPath: savedPath,
       referenceImageId: referenceImageId,
       createdAt: DateTime.now().millisecondsSinceEpoch,
     );
+    
     await mediaRepo.addMediaAsset(newAsset);
     return true;
-  } catch (_) {
+  } catch (e, st) {
+    // CRITICAL FIX: Stop silent failures. Log the exact I/O or DB error.
+    debugPrint('[MediaAssetService] Failed to persist media asset: $e\n$st');
     return false;
   }
 }

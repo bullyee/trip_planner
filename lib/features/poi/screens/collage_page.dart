@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../anime/screens/cutout_editor_screen.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../repositories/media_repository.dart';
 import '../services/media_asset_service.dart';
 
@@ -281,12 +282,13 @@ class _CollagePageState extends ConsumerState<CollagePage> {
         '${_compare ? 'compare' : 'collage'}_${_layers.length}.jpg',
       ));
       await tmp.writeAsBytes(jpg, flush: true);
-
+      final currentUserId = ref.read(currentUserIdProvider);
       final ok = await persistMediaAsset(
         mediaRepo: ref.read(mediaRepositoryProvider),
         source: tmp,
         poiId: widget.poiId,
         type: _compare ? 'comparison_image' : 'user_photo',
+        authorId: currentUserId,
       );
       if (await tmp.exists()) await tmp.delete();
       if (!mounted) return;

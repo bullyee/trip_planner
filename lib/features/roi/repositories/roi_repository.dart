@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart'; 
+import '../../auth/providers/auth_provider.dart';
 import '../models/roi_model.dart';
 import '../../../core/database/database.dart'; 
 import '../../../core/providers/database_provider.dart';
@@ -21,8 +22,9 @@ abstract class RoiRepository {
 
 class LocalRoiRepository implements RoiRepository {
   final AppDatabase localDb;
+  final String currentUserId;
   
-  LocalRoiRepository(this.localDb);
+  LocalRoiRepository(this.localDb, this.currentUserId);
 
   @override
   Future<void> updateRoi(
@@ -35,7 +37,12 @@ class LocalRoiRepository implements RoiRepository {
         name: Value(roi.name),
         description: Value(roi.description),
         isOfflineCached: Value(existingIsOfflineCached ?? 0),
-        createdAt: Value(roi.createdAt), // Extract directly from model
+        createdAt: Value(roi.createdAt),
+        
+        // REMOVED: authorId and isShared
+        // By omitting them, they default to Value.absent(). 
+        // Drift will ignore these columns during the UPDATE, 
+        // perfectly preserving the original ownership and sync status.
       ),
     );
   }
@@ -48,7 +55,7 @@ class LocalRoiRepository implements RoiRepository {
         name: roi.name,
         description: Value(roi.description),
         createdAt: Value(roi.createdAt), // Extract directly from model
-        authorId: 'local_test_user', // ADDED: Required by updated schema
+        authorId: currentUserId,
       ),
     );
   }
@@ -105,5 +112,6 @@ class LocalRoiRepository implements RoiRepository {
 @riverpod
 RoiRepository roiRepository(RoiRepositoryRef ref) {
   final db = ref.watch(databaseProvider);
-  return LocalRoiRepository(db);
+  final currentUserId = ref.watch(currentUserIdProvider);
+  return LocalRoiRepository(db, currentUserId);
 }
