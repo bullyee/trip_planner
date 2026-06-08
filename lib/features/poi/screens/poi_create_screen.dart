@@ -17,6 +17,7 @@ import '../repositories/media_repository.dart';
 import '../repositories/poi_repository.dart';
 import '../services/media_asset_service.dart';
 import '../controllers/poi_controller.dart';
+import '../../../core/utils/app_result.dart';
 
 class PoiCreateScreen extends ConsumerStatefulWidget {
   final String? roiId;
@@ -247,7 +248,7 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
     // The UI only collects strings and passes them to the Controller.
     // The controller persists the POI (plus anime/tag links) in one
     // transaction and returns its id, or null on failure.
-    final poiId = await ref.read(poiControllerProvider.notifier).savePoi(
+    final result = await ref.read(poiControllerProvider.notifier).savePoi(
       id: widget.editPoiId,
       roiId: _roiId,
       name: _nameController.text,
@@ -264,14 +265,19 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
       existingCreatedAt: _existingCreatedAt,
     );
 
-    // Unwrap the result: if null, it failed. Otherwise, poiId is the new/edited ID.
-    if (poiId == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to save location. Please try again.')),
-        );
-      }
-      return;
+    // Unwrap the result: keep the new POI id on success; surface the exact
+    // error and stay on the form on failure.
+    final String poiId;
+    switch (result) {
+      case Success(:final value):
+        poiId = value;
+      case Failure(:final error):
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to save: $error')),
+          );
+        }
+        return;
     }
 
     // Camera capture-then-create-POI flow: archive the temp capture

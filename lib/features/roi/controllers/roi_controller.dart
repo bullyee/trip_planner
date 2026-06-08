@@ -1,8 +1,8 @@
-import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/utils/app_result.dart';
 import '../models/roi_model.dart';
 import '../repositories/roi_repository.dart';
 
@@ -13,7 +13,7 @@ class RoiController extends _$RoiController {
   @override
   FutureOr<void> build() {}
 
-  Future<bool> updateRoi({
+  Future<AppResult<void>> updateRoi({
     required String id,
     required String name,
     required String description,
@@ -44,17 +44,14 @@ class RoiController extends _$RoiController {
       );
 
       state = const AsyncValue.data(null);
-      return true;
-    } catch (e, stackTrace) {
-      debugPrint('=== 🚨 ROI Update Crash Trace Start ===');
-      debugPrint('Error: $e');
-      debugPrint('$stackTrace');
-      debugPrint('=== 🚨 ROI Update Crash Trace End ===');
-      return false;
+      return const Success(null);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      return Failure(e.toString(), st);
     }
   }
 
-  Future<bool> addRoi({
+  Future<AppResult<void>> addRoi({
     required String name,
     required String description,
   }) async {
@@ -77,10 +74,10 @@ class RoiController extends _$RoiController {
       await ref.read(roiRepositoryProvider).addRoi(newRoi);
 
       state = const AsyncValue.data(null);
-      return true;
+      return const Success(null);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
-      return false;
+      return Failure(e.toString(), st);
     }
   }
 }

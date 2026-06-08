@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../controllers/roi_controller.dart';
+import '../../../core/utils/app_result.dart';
 import '../models/roi_model.dart';
 import '../repositories/roi_repository.dart';
 
@@ -102,24 +103,25 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
     // Check if the data was successfully loaded before saving
     if (_existing == null) return; 
 
-    final success = await ref.read(roiControllerProvider.notifier).updateRoi(
+    final result = await ref.read(roiControllerProvider.notifier).updateRoi(
       id: widget.roiId,
       name: _nameController.text,
       description: _descController.text,
       createdAt: _existing!.createdAt,
       existingIsOfflineCached: _existing!.isOfflineCached ? 1 : 0,
-      isShared: _existing!.isShared, 
-      authorId: _existing!.authorId, 
+      isShared: _existing!.isShared,
+      authorId: _existing!.authorId,
     );
 
     if (!mounted) return;
-    
-    if (success) {
-      context.pop();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to save ROI. Please try again.')),
-      );
+
+    switch (result) {
+      case Success():
+        context.pop();
+      case Failure(:final error):
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save ROI: $error')),
+        );
     }
   }
 }

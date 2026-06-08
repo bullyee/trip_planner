@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 // IMPORTANT: Removed drift and direct database imports.
 // Added the pure domain model and repository imports.
+import '../../../core/utils/app_result.dart';
 import '../models/tag_model.dart';
 import '../repositories/tag_repository.dart';
 
@@ -15,7 +16,7 @@ class TagController extends _$TagController {
 
   /// Handles business logic for saving a Tag.
   /// Delegates all database operations to the Repository layer.
-  Future<bool> saveTag({
+  Future<AppResult<void>> saveTag({
     required bool isNew,
     String? id,
     required String name,
@@ -49,10 +50,10 @@ class TagController extends _$TagController {
       }
 
       state = const AsyncValue.data(null);
-      return true; // 修正：回傳 true 代表成功
+      return const Success(null);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
-      return false; // 修正：回傳 false 代表失敗
+      return Failure(e.toString(), st);
     }
   }
 }
