@@ -3,6 +3,7 @@
 class TimeChunkModel {
   final String id;
   final String poiId;
+  final String authorId;
   final String? date;
   final String? startTime;
   final String? endTime;
@@ -14,6 +15,7 @@ class TimeChunkModel {
   TimeChunkModel({
     required this.id,
     required this.poiId,
+    required this.authorId,
     this.date,
     this.startTime,
     this.endTime,

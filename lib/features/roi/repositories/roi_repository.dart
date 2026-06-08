@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart'; 
+import '../../auth/providers/auth_provider.dart';
 import '../models/roi_model.dart';
 import '../../../core/database/database.dart'; 
 import '../../../core/providers/database_provider.dart';
@@ -21,8 +22,9 @@ abstract class RoiRepository {
 
 class LocalRoiRepository implements RoiRepository {
   final AppDatabase localDb;
+  final String currentUserId;
   
-  LocalRoiRepository(this.localDb);
+  LocalRoiRepository(this.localDb, this.currentUserId);
 
   @override
   Future<void> updateRoi(
@@ -35,7 +37,9 @@ class LocalRoiRepository implements RoiRepository {
         name: Value(roi.name),
         description: Value(roi.description),
         isOfflineCached: Value(existingIsOfflineCached ?? 0),
-        createdAt: Value(roi.createdAt), // Extract directly from model
+        createdAt: Value(roi.createdAt),
+        authorId: Value(roi.authorId), 
+        isShared: Value(roi.isShared),
       ),
     );
   }
@@ -48,6 +52,7 @@ class LocalRoiRepository implements RoiRepository {
         name: roi.name,
         description: Value(roi.description),
         createdAt: Value(roi.createdAt), // Extract directly from model
+        authorId: currentUserId,
       ),
     );
   }
@@ -65,6 +70,7 @@ class LocalRoiRepository implements RoiRepository {
       createdAt: driftRoi.createdAt, // Assumes Drift has this column
       isOfflineCached: driftRoi.isOfflineCached == 1,
       isShared: false, // Set default or map from Drift if you have a column for it
+      authorId: driftRoi.authorId,
     );
   }
   
@@ -82,6 +88,8 @@ class LocalRoiRepository implements RoiRepository {
         description: row.description,
         createdAt: row.createdAt, 
         isOfflineCached: row.isOfflineCached == 1,
+        authorId: row.authorId,
+        isShared: false,
       )).toList();
     });
   }
@@ -96,6 +104,8 @@ class LocalRoiRepository implements RoiRepository {
         description: row.description,
         createdAt: row.createdAt,
         isOfflineCached: row.isOfflineCached == 1,
+        authorId: row.authorId,
+        isShared: false,
       );
     });
   }
@@ -104,5 +114,6 @@ class LocalRoiRepository implements RoiRepository {
 @riverpod
 RoiRepository roiRepository(RoiRepositoryRef ref) {
   final db = ref.watch(databaseProvider);
-  return LocalRoiRepository(db);
+  final currentUserId = ref.watch(currentUserIdProvider);
+  return LocalRoiRepository(db, currentUserId);
 }

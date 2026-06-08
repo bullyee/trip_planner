@@ -16,8 +16,9 @@ abstract class MediaRepository {
   Future<void> addReferenceImage(ReferenceImageModel image);
   Future<void> deleteReferenceImage(String id);
   
-  Future<void> updateMediaAssetLocalUri(String id, String newUri);
-  Future<void> updateReferenceImageLocalUri(String id, String newUri);
+  // Renamed to reflect localPath and allow nullable values
+  Future<void> updateMediaAssetLocalPath(String id, String? newPath);
+  Future<void> updateReferenceImageLocalPath(String id, String? newPath);
   
   Stream<List<MediaAssetModel>> watchMediaAssetsByPoi(String poiId);
   Stream<List<ReferenceImageModel>> watchReferenceImagesByPoi(String poiId);
@@ -34,7 +35,8 @@ class LocalMediaRepository implements MediaRepository {
       MediaAssetsCompanion.insert(
         id: asset.id,
         poiId: asset.poiId,
-        localUri: asset.localUri,
+        authorId: asset.authorId, // Must be added to Drift table
+        localPath: Value(asset.localPath), // Changed from localUri, wrapped in Value for nullable
         type: asset.type ?? 'unknown', 
         remoteUrl: Value(asset.remoteUrl), 
         metadata: Value(asset.metadata),   
@@ -55,7 +57,8 @@ class LocalMediaRepository implements MediaRepository {
       ReferenceImagesCompanion.insert(
         id: image.id,
         poiId: image.poiId,
-        localUri: image.localUri, 
+        authorId: image.authorId, // Assumed addition to ReferenceImageModel
+        localPath: Value(image.localPath), // Changed from localUri
         remoteUrl: Value(image.remoteUrl), 
         metadata: Value(image.metadata),   
         createdAt: Value(image.createdAt),
@@ -74,7 +77,8 @@ class LocalMediaRepository implements MediaRepository {
       return list.map((asset) => MediaAssetModel(
         id: asset.id,
         poiId: asset.poiId,
-        localUri: asset.localUri,
+        authorId: asset.authorId, // Mapped from Drift
+        localPath: asset.localPath, // Mapped from Drift
         type: asset.type, 
         remoteUrl: asset.remoteUrl, 
         metadata: asset.metadata,   
@@ -91,7 +95,8 @@ class LocalMediaRepository implements MediaRepository {
       return list.map((img) => ReferenceImageModel(
         id: img.id,
         poiId: img.poiId,
-        localUri: img.localUri,
+        authorId: img.authorId, // Assumed mapped from Drift
+        localPath: img.localPath, // Mapped from Drift
         remoteUrl: img.remoteUrl, 
         metadata: img.metadata,   
         createdAt: img.createdAt,
@@ -101,13 +106,15 @@ class LocalMediaRepository implements MediaRepository {
   }
 
   @override
-  Future<void> updateMediaAssetLocalUri(String id, String newUri) async {
-    await localDb.updateMediaAssetLocalUri(id, newUri);
+  Future<void> updateMediaAssetLocalPath(String id, String? newPath) async {
+    // Requires implementation update in localDb
+    await localDb.updateMediaAssetLocalPath(id, newPath);
   }
 
   @override
-  Future<void> updateReferenceImageLocalUri(String id, String newUri) async {
-    await localDb.updateReferenceImageLocalUri(id, newUri);
+  Future<void> updateReferenceImageLocalPath(String id, String? newPath) async {
+    // Requires implementation update in localDb
+    await localDb.updateReferenceImageLocalPath(id, newPath);
   }
 
   @override
@@ -120,8 +127,9 @@ class LocalMediaRepository implements MediaRepository {
           return rows.map((row) => MediaAssetModel(
             id: row.id,
             poiId: row.poiId,
+            authorId: row.authorId, // Mapped from Drift
             type: row.type,
-            localUri: row.localUri,
+            localPath: row.localPath, // Mapped from Drift
             remoteUrl: row.remoteUrl,
             referenceImageId: row.referenceImageId,
             metadata: row.metadata,

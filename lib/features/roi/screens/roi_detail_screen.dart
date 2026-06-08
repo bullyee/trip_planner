@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/widgets/add_speed_dial.dart';
-import '../../poi/screens/poi_browse_screen.dart';
+import '../../poi/models/poi_model.dart';
+import '../../poi/repositories/poi_repository.dart';
 import '../providers/roi_provider.dart';
 import '../../poi/providers/poi_provider.dart';
 import '../../anime/providers/anime_provider.dart';
@@ -107,7 +107,6 @@ class RoiDetailScreen extends ConsumerWidget {
                     },
                   ),
                   leading: const Icon(Icons.location_on),
-                  trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/pois/${poi.id}'),
                 ),
               );
@@ -115,12 +114,185 @@ class RoiDetailScreen extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: AddSpeedDial(
-        actions: buildDefaultAddActions(
-          context,
-          newPoiAction: () => context.push('/rois/$roiId/pois/new'),
-        ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            useSafeArea: true,
+            builder: (ctx) => _BatchAddBottomSheet(roiId: roiId),
+          );
+        },
+        icon: const Icon(Icons.playlist_add),
+        label: const Text('Add Places'),
       ),
     );
+  }
+}
+
+class _BatchAddBottomSheet extends ConsumerStatefulWidget {
+  final String roiId;
+  const _BatchAddBottomSheet({required this.roiId});
+
+  @override
+  ConsumerState<_BatchAddBottomSheet> createState() => _BatchAddBottomSheetState();
+}
+
+class _BatchAddBottomSheetState extends ConsumerState<_BatchAddBottomSheet> {
+  final Set<String> _selectedIds = {};
+  bool _isSaving = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final poisMapAsync = ref.watch(allPoisProvider);
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Import Locations', style: Theme.of(context).textTheme.titleLarge),
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  context.push('/rois/${widget.roiId}/pois/new');
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Create New'),
+              ),
+            ],
+          ),
+          const Divider(),
+          
+          Expanded(
+            child: poisMapAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Error: $e')),
+              data: (poisMap) {
+                final draftPois = poisMap.values.where((p) => p.roiId == null).toList();
+
+                if (draftPois.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No unassigned drafts found.\nImport from Bangumi or create a new one!',
+                      textAlign: TextAlign.center,
+                    )
+                  );
+                }
+
+                final bool isAllSelected = _selectedIds.length == draftPois.length;
+
+                return Column(
+                  children: [
+                    // Sticky Select All Checkbox
+                    CheckboxListTile(
+                      title: const Text('Select All', style: TextStyle(fontWeight: FontWeight.bold)),
+                      value: isAllSelected,
+                      activeColor: Theme.of(context).colorScheme.primary,
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            // Add all draft IDs to the set
+                            _selectedIds.addAll(draftPois.map((p) => p.id));
+                          } else {
+                            // Clear all selections
+                            _selectedIds.clear();
+                          }
+                        });
+                      },
+                    ),
+                    const Divider(height: 1),
+                    // 景點列表 (List of POIs)
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: draftPois.length,
+                        itemBuilder: (ctx, index) {
+                          final poi = draftPois[index];
+                          final isSelected = _selectedIds.contains(poi.id);
+                          return CheckboxListTile(
+                            title: Text(poi.name),
+                            subtitle: Text(poi.address ?? 'No address'),
+                            value: isSelected,
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == true) {
+                                  _selectedIds.add(poi.id);
+                                } else {
+                                  _selectedIds.remove(poi.id);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+
+          // 底部確認按鈕 (Keep as is)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: FilledButton.icon(
+              onPressed: (_selectedIds.isEmpty || _isSaving) ? null : _saveSelected,
+              icon: _isSaving 
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+                  : const Icon(Icons.check),
+              label: Text('Import ${_selectedIds.length} locations'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveSelected() async {
+    setState(() => _isSaving = true);
+    try {
+      final poisMap = ref.read(allPoisProvider).value ?? {};
+      
+      for (final id in _selectedIds) {
+        final poi = poisMap[id];
+        if (poi != null) {
+          final updatedPoi = PoiModel(
+            id: poi.id,
+            name: poi.name,
+            roiId: widget.roiId,
+            authorId: poi.authorId,
+            description: poi.description,
+            address: poi.address,
+            lat: poi.lat,
+            lng: poi.lng,
+            businessHours: poi.businessHours,
+            contactInfo: poi.contactInfo,
+            createdAt: poi.createdAt,
+            isShared: poi.isShared,
+          );
+          await ref.read(poiRepositoryProvider).updatePoi(updatedPoi);
+        }
+      }
+      
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Successfully added ${_selectedIds.length} locations!')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Batch import error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to import: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 }

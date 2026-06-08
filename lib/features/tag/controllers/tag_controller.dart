@@ -3,9 +3,9 @@ import 'package:uuid/uuid.dart';
 
 // IMPORTANT: Removed drift and direct database imports.
 // Added the pure domain model and repository imports.
+import '../../../core/utils/app_result.dart';
 import '../models/tag_model.dart';
 import '../repositories/tag_repository.dart';
-import '../../../core/utils/app_result.dart';
 
 part 'tag_controller.g.dart';
 

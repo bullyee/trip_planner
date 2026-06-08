@@ -6,6 +6,7 @@ import 'package:trip_planner/features/roi/repositories/roi_repository.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/widgets/add_speed_dial.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../roi/providers/roi_provider.dart';
 import '../../anime/providers/anime_provider.dart';
 import '../../tag/providers/tag_provider.dart';
@@ -121,10 +122,6 @@ class _ByRegionTab extends ConsumerWidget {
             final roi = rois[index];
             return Card(
               child: ListTile(
-                leading: Icon(
-                  roi.isOfflineCached ? Icons.cloud_done : Icons.cloud_outlined,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
                 title: Text(roi.name),
                 subtitle: roi.description != null
                     ? Text(roi.description!, maxLines: 2)
@@ -244,34 +241,33 @@ class _AllPoisTab extends ConsumerWidget {
           return const Center(child: Text('No POIs yet.'));
         }
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: pois.length,
-          itemBuilder: (context, index) {
-            final poi = pois[index];
-            return Card(
-              child: ListTile(
-                leading: const Icon(Icons.location_on),
-                title: Text(poi.name),
-                subtitle: Consumer(
-                  builder: (context, ref, _) {
-                    final animesAsync = ref.watch(animesForPoiProvider(poi.id));
-                    final firstAnime = animesAsync.maybeWhen(
-                      data: (animes) =>
-                          animes.isNotEmpty ? animes.first.name : null,
-                      orElse: () => null,
-                    );
-                    final subtitle = firstAnime ?? poi.address;
-                    return subtitle != null
-                        ? Text(subtitle)
-                        : const SizedBox.shrink();
-                  },
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push('/pois/${poi.id}'),
-              ),
+  padding: const EdgeInsets.all(16),
+  itemCount: pois.length,
+  itemBuilder: (context, index) {
+    final poi = pois[index];
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.location_on),
+        title: Text(poi.name),
+        subtitle: Consumer(
+          builder: (context, ref, _) {
+            final animesAsync = ref.watch(animesForPoiProvider(poi.id));
+            final firstAnime = animesAsync.maybeWhen(
+              data: (animes) =>
+                  animes.isNotEmpty ? animes.first.name : null,
+              orElse: () => null,
             );
+            final subtitle = firstAnime ?? poi.address;
+            return subtitle != null
+                ? Text(subtitle)
+                : const SizedBox.shrink();
           },
-        );
+        ),        
+        onTap: () => context.push('/pois/${poi.id}'),
+      ),
+    );
+  },
+);
       },
     );
   }
@@ -312,10 +308,9 @@ void showCreateRoiDialog(BuildContext context) {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
 
-              // 1. Resolve the repository from Riverpod
               final roiRepository = ref.read(roiRepositoryProvider);
-
-              // 2. Construct the pure domain model (No RoisCompanion or Value wrappers)
+              final currentUserId = ref.read(currentUserIdProvider); 
+              
               final newRoi = RoiModel(
                 id: const Uuid().v4(),
                 name: name,
@@ -323,6 +318,8 @@ void showCreateRoiDialog(BuildContext context) {
                     ? null
                     : descController.text.trim(),
                 createdAt: DateTime.now().millisecondsSinceEpoch,
+                authorId: currentUserId, // 🎯 補上這行
+                isShared: false,         // 如果有缺少這個也順便補上
               );
 
               // 3. Delegate the database operation to the repository

@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../auth/providers/auth_provider.dart';
 import '../../calendar/models/time_chunk_model.dart';
 import '../../calendar/providers/calendar_provider.dart';
 import '../../calendar/repositories/time_chunk_repository.dart';
@@ -42,7 +43,19 @@ class PoiDetailScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: poiAsync.when(
-          data: (poi) => Text(poi.name),
+          data: (poi) => Row(
+            mainAxisSize: MainAxisSize.min, // Prevent the Row from expanding infinitely
+            children: [
+              Flexible(
+                // Flexible ensures the text truncates instead of overflowing the AppBar
+                child: Text(
+                  poi.name,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
           loading: () => const Text('Loading...'),
           error: (_, _) => const Text('Error'),
         ),
@@ -297,7 +310,7 @@ class PoiDetailScreen extends ConsumerWidget {
                                             value: 'skipped', child: Text('Skip')));
                                       }
                                       menuItems.add(const PopupMenuItem(
-                                        value: 'backlog', child: Text('To Backlog')));
+                                          value: 'backlog', child: Text('To Backlog')));
                                       menuItems.add(const PopupMenuDivider());
                                     }
                                     menuItems.add(const PopupMenuItem(value: 'edit', child: Text('Edit')));
@@ -347,7 +360,8 @@ class PoiDetailScreen extends ConsumerWidget {
                                   _deleteReferenceImage(context, ref, image),
                               onPreview: () => _showFullscreenImage(
                                 context,
-                                uri: image.localUri,
+                                localPath: image.localPath,
+                                remoteUrl: image.remoteUrl,
                                 title: 'Reference Image',
                               ),
                             ))
@@ -529,21 +543,34 @@ class PoiDetailScreen extends ConsumerWidget {
                 child: const Text('Cancel')),
             FilledButton(
               onPressed: () async {
-                final newChunk = TimeChunkModel(
-                  id: const Uuid().v4(),
-                  poiId: poiId,
-                  date: selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : null,
-                  startTime: status == 'scheduled' ? startController.text.trim() : null,
-                  endTime: status == 'scheduled' ? endController.text.trim() : null,
-                  status: status,
-                  createdAt: DateTime.now().millisecondsSinceEpoch,
-                  isShared: false,
-                );
+                try {
+                  final newChunk = TimeChunkModel(
+                    id: const Uuid().v4(),
+                    poiId: poiId,
+                    authorId: ref.read(currentUserIdProvider),
+                    date: selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : null,
+                    startTime: status == 'scheduled' ? startController.text.trim() : null,
+                    endTime: status == 'scheduled' ? endController.text.trim() : null,
+                    status: status,
+                    createdAt: DateTime.now().millisecondsSinceEpoch,
+                    isShared: false,
+                  );
 
-                await ref.read(timeChunkRepositoryProvider).addTimeChunk(newChunk);
-                
-                if (ctx.mounted) {
-                  Navigator.pop(ctx);
+                  await ref.read(timeChunkRepositoryProvider).addTimeChunk(newChunk);
+                  
+                  if (ctx.mounted) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Schedule added successfully!')),
+                    );
+                  }
+                } catch (e) {
+                  debugPrint('Schedule Add Error: $e');
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(content: Text('Failed to add schedule: $e')),
+                    );
+                  }
                 }
               },
               child: const Text('Add'),
@@ -576,8 +603,10 @@ class PoiDetailScreen extends ConsumerWidget {
   }
 
   String _mediaAssetTitle(MediaAssetModel asset) {
-    final fileName = p.basenameWithoutExtension(asset.localUri);
-    return fileName.isEmpty ? (asset.type ?? 'unknown') : fileName;
+    final title = asset.localPath != null 
+    ? p.basenameWithoutExtension(asset.localPath!) 
+    : (asset.metadata ?? 'Cloud Asset');
+    return title.isEmpty ? (asset.type ?? 'unknown') : title;
   }
 
   Future<void> _renameMediaAsset(
@@ -585,8 +614,8 @@ class PoiDetailScreen extends ConsumerWidget {
     WidgetRef ref,
     MediaAssetModel asset,
   ) async {
-    final oldFile = File(asset.localUri);
-    final currentName = p.basenameWithoutExtension(asset.localUri);
+    final oldFile = File(asset.localPath!);
+    final currentName = p.basenameWithoutExtension(asset.localPath!);
 
     final newName = await showDialog<String>(
       context: context,
@@ -610,25 +639,38 @@ class PoiDetailScreen extends ConsumerWidget {
     if (!await oldFile.exists()) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Image file not found: ${asset.localUri}')),
+        SnackBar(content: Text('Image file not found: ${asset.localPath}')),
       );
       return;
     }
 
-    final extension = p.extension(asset.localUri).isEmpty
+    // 1. Guard clause: Prevent physical file operations on cloud-only assets
+    if (asset.localPath == null || asset.localPath!.isEmpty) {
+      // If you only want to rename the metadata title in the database, you can do it here.
+      // But physical file renaming is impossible. Abort the operation.
+      debugPrint('Rename failed: Target is a cloud-only asset without a local file.');
+      return; 
+    }
+
+    // 2. Safe assignment: Store the guaranteed non-null path
+    final currentLocalPath = asset.localPath!;
+
+    // 3. Perform path operations safely
+    final extension = p.extension(currentLocalPath).isEmpty
         ? '.jpg'
-        : p.extension(asset.localUri);
+        : p.extension(currentLocalPath);
+        
     final newPath = await _nextAvailableMediaPath(
-      p.dirname(asset.localUri),
+      p.dirname(currentLocalPath),
       sanitizedName,
       extension,
-      asset.localUri,
+      currentLocalPath, // Use the non-null variable here
     );
 
     try {
       await oldFile.rename(newPath);
 
-      await ref.read(mediaRepositoryProvider).updateMediaAssetLocalUri(
+      await ref.read(mediaRepositoryProvider).updateMediaAssetLocalPath(
             asset.id,
             newPath,
           );
@@ -671,11 +713,17 @@ class PoiDetailScreen extends ConsumerWidget {
     if (shouldDelete != true) return;
 
     try {
-      final file = File(asset.localUri);
-      if (await file.exists()) {
+      final file = (asset.localPath != null && asset.localPath!.isNotEmpty) 
+          ? File(asset.localPath!) 
+          : null;
+          
+      // CRITICAL FIX: Add a null check before calling exists() and delete()
+      if (file != null && await file.exists()) {
         await file.delete();
       }
 
+      // Proceed to delete the record from the database regardless of whether
+      // a local physical file existed or not.
       await ref.read(mediaRepositoryProvider).deleteMediaAsset(asset.id);
 
       if (!context.mounted) return;
@@ -712,33 +760,92 @@ class PoiDetailScreen extends ConsumerWidget {
   }
 
   bool _isPreviewableImage(MediaAssetModel asset) {
-    final uri = asset.localUri.toLowerCase();
+    // 1. Check known asset types first (this is the safest fallback)
     final isKnownImageType = asset.type == 'user_photo' ||
         asset.type == 'uploaded_image' ||
         asset.type == 'comparison_image' ||
         asset.type == 'reference_frame' ||
         asset.type == 'ticket_qr';
-    final hasImageExtension = uri.endsWith('.jpg') ||
-        uri.endsWith('.jpeg') ||
-        uri.endsWith('.png') ||
-        uri.endsWith('.webp') ||
-        uri.endsWith('.gif') ||
-        uri.endsWith('.heic');
 
-    return isKnownImageType || hasImageExtension;
+    // 2. Helper function to check extensions safely
+    bool hasImageExtension(String? path) {
+      if (path == null || path.isEmpty) return false;
+      final uri = path.toLowerCase();
+      return uri.endsWith('.jpg') ||
+          uri.endsWith('.jpeg') ||
+          uri.endsWith('.png') ||
+          uri.endsWith('.webp') ||
+          uri.endsWith('.gif') ||
+          uri.endsWith('.heic');
+    }
+
+    // 3. It's previewable if the type matches OR if either the local or remote path has an image extension
+    return isKnownImageType || 
+           hasImageExtension(asset.localPath) || 
+           hasImageExtension(asset.remoteUrl);
   }
 
   void _showImagePreview(BuildContext context, MediaAssetModel asset) {
-    _showFullscreenImage(context, uri: asset.localUri, title: asset.type ?? 'unknown');
+    // INFERENCE FIX: Added remoteUrl to ensure cloud-only assets can be previewed
+    _showFullscreenImage(
+      context, 
+      localPath: asset.localPath, 
+      remoteUrl: asset.remoteUrl,
+      title: asset.type ?? 'unknown'
+    );
   }
 
   void _showFullscreenImage(
     BuildContext context, {
-    required String uri,
+    String? localPath,
+    String? remoteUrl,
     required String title,
   }) {
-    final imageFile = File(uri);
+    // 1. Determine which image widget to build based on availability
+    Widget imageWidget;
 
+    if (localPath != null && localPath.isNotEmpty) {
+      // Scenario A: Local file exists
+      imageWidget = Image.file(
+        File(localPath),
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Local image file corrupted or missing:\n$localPath',
+              style: const TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    } else if (remoteUrl != null && remoteUrl.isNotEmpty) {
+      // Scenario B: Cloud-only file
+      imageWidget = Image.network(
+        remoteUrl,
+        fit: BoxFit.contain,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) => const Center(
+          child: Text(
+            'Failed to load cloud image.',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ),
+      );
+    } else {
+      // Scenario C: Total failure / No data
+      imageWidget = const Center(
+        child: Icon(Icons.cloud_off, size: 64, color: Colors.white54),
+      );
+    }
+
+    // 2. Render the fullscreen dialog using your existing UI structure
     showDialog(
       context: context,
       builder: (ctx) => Dialog.fullscreen(
@@ -746,38 +853,10 @@ class PoiDetailScreen extends ConsumerWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            FutureBuilder<bool>(
-              future: imageFile.exists(),
-              builder: (context, snapshot) {
-                final exists = snapshot.data ?? false;
-
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  );
-                }
-
-                if (!exists) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Image file not found:\n$uri',
-                        style: const TextStyle(color: Colors.white70),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
-                }
-
-                return InteractiveViewer(
-                  minScale: 0.75,
-                  maxScale: 4,
-                  child: Center(
-                    child: Image.file(imageFile, fit: BoxFit.contain),
-                  ),
-                );
-              },
+            InteractiveViewer(
+              minScale: 0.75,
+              maxScale: 4.0,
+              child: Center(child: imageWidget), // Inject the dynamically chosen widget
             ),
             Positioned(
               top: 0,
@@ -804,8 +883,10 @@ class PoiDetailScreen extends ConsumerWidget {
   }
 
   String _referenceImageTitle(ReferenceImageModel image) {
-    final fileName = p.basenameWithoutExtension(image.localUri);
-    return fileName.isEmpty ? 'Reference' : fileName;
+    final title = image.localPath != null 
+    ? p.basenameWithoutExtension(image.localPath!) 
+    : (image.metadata ?? 'Cloud Asset');
+    return title.isEmpty ? 'Reference' : title;
   }
 
   /// Pick an image from the gallery and drop the user into the photo
@@ -858,7 +939,24 @@ class PoiDetailScreen extends ConsumerWidget {
     MediaAssetModel asset,
     ReferenceImageModel? linkedRef,
   ) async {
-    final src = File(asset.localUri);
+    // 1. CRITICAL GUARD: Stop immediately if the asset has no local file.
+    if (asset.localPath == null || asset.localPath!.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cannot edit cloud-only asset. Please download it first.')),
+        );
+      }
+      return; 
+    }
+
+    // 2. SAFE EXTRACTION: Guaranteed to be non-null for all subsequent path operations
+    final currentPath = asset.localPath!;
+    final src = File(currentPath);
+
+    final ext = p.extension(currentPath).isEmpty
+        ? '.jpg'
+        : p.extension(currentPath);
+        
     if (!await src.exists()) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -867,22 +965,28 @@ class PoiDetailScreen extends ConsumerWidget {
       }
       return;
     }
+    
     try {
       final tempDir = await getTemporaryDirectory();
-      final ext = p.extension(asset.localUri).isEmpty
-          ? '.jpg'
-          : p.extension(asset.localUri);
+      
+      // FIXED: Removed redundant local declaration of 'ext' and updated to use 'currentPath'
       final tempPath = p.join(
         tempDir.path,
         'edit_${DateTime.now().millisecondsSinceEpoch}$ext',
       );
+      
       await src.copy(tempPath);
       if (!context.mounted) return;
+      
       final qs = <String, String>{'path': Uri.encodeComponent(tempPath)};
+      
       if (linkedRef != null) {
-        qs['ref'] = Uri.encodeComponent(linkedRef.localUri);
+        // Fallback to remoteUrl if localPath is missing for the linked reference
+        final pathOrUrl = linkedRef.localPath ?? linkedRef.remoteUrl ?? '';
+        qs['ref'] = Uri.encodeComponent(pathOrUrl);
         qs['refId'] = asset.referenceImageId!;
       }
+      
       final query = qs.entries.map((e) => '${e.key}=${e.value}').join('&');
       context.push('/pois/${asset.poiId}/photo-edit?$query');
     } catch (e) {
@@ -907,10 +1011,11 @@ class PoiDetailScreen extends ConsumerWidget {
       final newPath = await _copyReferenceImageToStorage(File(picked.path));
       final newImage = ReferenceImageModel(
         id: const Uuid().v4(),
+        authorId: ref.read(currentUserIdProvider),
         poiId: poiId,
-        localUri: newPath,
-        createdAt: DateTime.now().millisecondsSinceEpoch, // 補上建立時間
-        isShared: false, // 預設為尚未同步
+        localPath: newPath,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        isShared: false,
       );
 
       await ref.read(mediaRepositoryProvider).addReferenceImage(newImage);
@@ -932,8 +1037,21 @@ class PoiDetailScreen extends ConsumerWidget {
     WidgetRef ref,
     ReferenceImageModel image,
   ) async {
-    final oldFile = File(image.localUri);
-    final currentName = p.basenameWithoutExtension(image.localUri);
+    // 1. CRITICAL FIX: Guard clause. Abort immediately if it's a cloud-only image.
+    // You cannot physically rename a file that doesn't exist on the device.
+    if (image.localPath == null || image.localPath!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot rename a cloud-only image. Please download it first.')),
+      );
+      return;
+    }
+
+    // 2. Safe extraction: We are now 100% sure the path is not null.
+    final currentPath = image.localPath!;
+    
+    // Replace all subsequent uses of 'image.localPath' with 'currentPath'
+    final oldFile = File(currentPath);
+    final currentName = p.basenameWithoutExtension(currentPath);
 
     final newName = await showDialog<String>(
       context: context,
@@ -957,25 +1075,27 @@ class PoiDetailScreen extends ConsumerWidget {
     if (!await oldFile.exists()) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Image file not found: ${image.localUri}')),
+        SnackBar(content: Text('Image file not found: $currentPath')),
       );
       return;
     }
 
-    final extension = p.extension(image.localUri).isEmpty
+    final extension = p.extension(currentPath).isEmpty
         ? '.jpg'
-        : p.extension(image.localUri);
+        : p.extension(currentPath);
+        
     final newPath = await _nextAvailableMediaPath(
-      p.dirname(image.localUri),
+      p.dirname(currentPath),
       sanitizedName,
       extension,
-      image.localUri,
+      currentPath,
     );
 
     try {
       await oldFile.rename(newPath);
 
-      await ref.read(mediaRepositoryProvider).updateReferenceImageLocalUri(
+      // This will now correctly pass the newPath as String to the repository
+      await ref.read(mediaRepositoryProvider).updateReferenceImageLocalPath(
             image.id,
             newPath,
           );
@@ -1019,8 +1139,11 @@ class PoiDetailScreen extends ConsumerWidget {
     if (!context.mounted) return;
 
     try {
-      final file = File(image.localUri);
-      if (await file.exists()) {
+      final file = (image.localPath != null && image.localPath!.isNotEmpty)
+          ? File(image.localPath!)
+          : null;
+          
+      if (file != null && await file.exists()) {
         await file.delete();
       }
 
@@ -1078,7 +1201,7 @@ class _MediaAssetTile extends StatelessWidget {
       leading: icon,
       title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        asset.localUri,
+        asset.localPath ?? asset.remoteUrl ?? 'Cloud Asset',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -1092,7 +1215,18 @@ class _MediaAssetTile extends StatelessWidget {
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(context);
               try {
-                await Gal.putImage(asset.localUri);
+                // CRITICAL FIX: Prevent Gallery package from crashing on cloud assets
+    if (asset.localPath == null || asset.localPath!.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cannot save cloud image to gallery. Download it first.')),
+        );
+      }
+      return;
+    }
+    
+    // Use the bang operator since we've guaranteed it's not null
+    await Gal.putImage(asset.localPath!);
                 messenger.showSnackBar(
                   const SnackBar(content: Text('Saved to gallery.')),
                 );
@@ -1198,6 +1332,33 @@ class _ReferenceImageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 1. Dual-track image rendering strategy (Local -> Remote -> Placeholder)
+    Widget imageWidget;
+    if (image.localPath != null && image.localPath!.isNotEmpty) {
+      imageWidget = Image.file(
+        File(image.localPath!), // Safe to use ! here
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const ColoredBox(
+          color: Colors.black12,
+          child: Icon(Icons.broken_image),
+        ),
+      );
+    } else if (image.remoteUrl != null && image.remoteUrl!.isNotEmpty) {
+      imageWidget = Image.network(
+        image.remoteUrl!, // Safe to use ! here
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const ColoredBox(
+          color: Colors.black12,
+          child: Icon(Icons.broken_image),
+        ),
+      );
+    } else {
+      imageWidget = const ColoredBox(
+        color: Colors.black12,
+        child: Icon(Icons.cloud_off, color: Colors.grey),
+      );
+    }
+
     return Card(
       child: ListTile(
         leading: ClipRRect(
@@ -1205,22 +1366,23 @@ class _ReferenceImageTile extends StatelessWidget {
           child: SizedBox(
             width: 48,
             height: 48,
-            child: Image.file(
-              File(image.localUri),
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const ColoredBox(
-                color: Colors.black12,
-                child: Icon(Icons.broken_image),
-              ),
-            ),
+            child: imageWidget, // Inject the dynamically resolved widget
           ),
         ),
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        
+        // 2. Safe subtitle rendering using the null-coalescing operator (??)
+        // If localPath is null, try remoteUrl. If both are null, show default text.
         subtitle: Text(
-          image.localUri,
+          image.localPath ?? image.remoteUrl ?? 'Cloud Image (Not Downloaded)',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            // Optional: Dim the text if it's not a local file
+            color: image.localPath == null ? Colors.grey : null,
+          ),
         ),
+        
         onTap: onPreview,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,

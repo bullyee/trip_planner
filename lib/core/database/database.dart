@@ -23,7 +23,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6; // Updated from 5
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -40,6 +40,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 5) {
             await _addCreatedAtColumns();
+          }
+          if (from < 6) {
+            await _migrateToSyncSchema(m);
           }
         },
         beforeOpen: (details) async {
@@ -128,6 +131,108 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// v5 -> v6: introduce the dual-track sync schema.
+  ///
+  /// This adds the per-row ownership / sync columns and splits the local-file
+  /// columns into local/remote pairs:
+  ///   * `author_id` (non-nullable) on rois, animes, tags, pois, time_chunks,
+  ///     media_assets and reference_images;
+  ///   * `is_shared` on rois, animes, tags, pois and time_chunks;
+  ///   * `created_at` on time_chunks;
+  ///   * `sort_order` and `remote_cover_image_url` on pois, with
+  ///     `cover_image_uri` renamed to `local_cover_image_path`;
+  ///   * `local_uri` renamed to `local_path` on media_assets and
+  ///     reference_images.
+  ///
+  /// Each affected table is rebuilt with [TableMigration] so existing rows are
+  /// preserved. New non-nullable columns are backfilled — `author_id` to the
+  /// offline guest id (the same placeholder the running app uses before sign-in,
+  /// see `currentUserIdProvider`), `created_at` to the migration timestamp — and
+  /// the renamed file columns are relaxed to nullable to match the new schema.
+  Future<void> _migrateToSyncSchema(Migrator m) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const guestAuthorId = 'guest_local_user';
+
+    // pois: + author_id, is_shared, sort_order, remote_cover_image_url;
+    //       cover_image_uri -> local_cover_image_path (kept nullable).
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      pois,
+      newColumns: [
+        pois.authorId,
+        pois.isShared,
+        pois.sortOrder,
+        pois.remoteCoverImageUrl,
+      ],
+      columnTransformer: {
+        pois.authorId: const Constant(guestAuthorId),
+        pois.localCoverImagePath:
+            const CustomExpression<String>('cover_image_uri'),
+      },
+    ));
+
+    // rois: + author_id, is_shared.
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      rois,
+      newColumns: [rois.authorId, rois.isShared],
+      columnTransformer: {rois.authorId: const Constant(guestAuthorId)},
+    ));
+
+    // animes: + author_id, is_shared.
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      animes,
+      newColumns: [animes.authorId, animes.isShared],
+      columnTransformer: {animes.authorId: const Constant(guestAuthorId)},
+    ));
+
+    // tags: + author_id, is_shared.
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      tags,
+      newColumns: [tags.authorId, tags.isShared],
+      columnTransformer: {tags.authorId: const Constant(guestAuthorId)},
+    ));
+
+    // time_chunks: + author_id, is_shared, created_at.
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      timeChunks,
+      newColumns: [
+        timeChunks.authorId,
+        timeChunks.isShared,
+        timeChunks.createdAt,
+      ],
+      columnTransformer: {
+        timeChunks.authorId: const Constant(guestAuthorId),
+        timeChunks.createdAt: Constant(now),
+      },
+    ));
+
+    // media_assets: + author_id; local_uri -> local_path (kept nullable).
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      mediaAssets,
+      newColumns: [mediaAssets.authorId],
+      columnTransformer: {
+        mediaAssets.authorId: const Constant(guestAuthorId),
+        mediaAssets.localPath: const CustomExpression('local_uri'),
+      },
+    ));
+
+    // reference_images: + author_id; local_uri -> local_path (kept nullable).
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      referenceImages,
+      newColumns: [referenceImages.authorId],
+      columnTransformer: {
+        referenceImages.authorId: const Constant(guestAuthorId),
+        referenceImages.localPath: const CustomExpression('local_uri'),
+      },
+    ));
+  }
+
   // --- ROI Queries ---
   Future<List<Roi>> getAllRois() => select(rois).get();
 
@@ -141,20 +246,37 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> insertRoi(RoisCompanion roi) => into(rois).insert(roi);
 
-  Future<bool> updateRoi(RoisCompanion roi) => update(rois).replace(
-        Roi(
-          id: roi.id.value,
-          name: roi.name.value,
-          description: roi.description.value,
-          isOfflineCached: roi.isOfflineCached.value,
-          createdAt: roi.createdAt.value,
-        ),
-      );
+  Future<bool> updateRoi(RoisCompanion roi) => update(rois).replace(roi);
 
   Future<int> deleteRoi(String id) =>
       (delete(rois)..where((r) => r.id.equals(id))).go();
 
   // --- POI Queries ---
+  /// Fetches the highest sortOrder currently assigned to a POI within a specific ROI.
+  /// Returns 0 if the ROI is empty.
+  Future<int> _getMaxSortOrderForRoi(String roiId) async {
+    final query = select(pois)
+      ..where((t) => t.roiId.equals(roiId))
+      ..orderBy([
+        (t) => OrderingTerm(expression: t.sortOrder, mode: OrderingMode.desc)
+      ])
+      ..limit(1);
+
+    final lastPoi = await query.getSingleOrNull();
+    return lastPoi?.sortOrder ?? 0;
+  }
+
+  /// Inserts a new POI and automatically assigns a spaced sortOrder (default spacing 2048).
+  /// Use this method instead of insertPoi when adding a POI to an ROI.
+  Future<int> insertPoiWithSpacedOrder(PoisCompanion poi, String roiId) async {
+    final currentMaxOrder = await _getMaxSortOrderForRoi(roiId);
+    final nextOrder = currentMaxOrder + 2048;
+
+    final updatedPoi = poi.copyWith(sortOrder: Value(nextOrder));
+    
+    return into(pois).insert(updatedPoi);
+  }
+  
   Future<List<Poi>> getPoisByRoi(String roiId) =>
       (select(pois)..where((p) => p.roiId.equals(roiId))).get();
 
@@ -224,6 +346,9 @@ class AppDatabase extends _$AppDatabase {
             : current.bangumiId,
         createdAt:
             anime.createdAt.present ? anime.createdAt.value : current.createdAt,
+        // ADDED: Preserve existing authorId and isShared during update if not provided
+        authorId: anime.authorId.present ? anime.authorId.value : current.authorId,
+        isShared: anime.isShared.present ? anime.isShared.value : current.isShared,
       ),
     );
   }
@@ -236,6 +361,7 @@ class AppDatabase extends _$AppDatabase {
   Future<String> upsertAnimeByBangumiId({
     required String bangumiId,
     required String name,
+    required String authorId,
     String? description,
   }) async {
     final existing = await getAnimeByBangumiId(bangumiId);
@@ -247,6 +373,8 @@ class AppDatabase extends _$AppDatabase {
       description: Value(description),
       bangumiId: Value(bangumiId),
       createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      // ADDED: Required by the updated schema for new insertions
+      authorId: authorId,
     ));
     return id;
   }
@@ -277,6 +405,9 @@ class AppDatabase extends _$AppDatabase {
             : current.description,
         createdAt:
             tag.createdAt.present ? tag.createdAt.value : current.createdAt,
+        // ADDED: Preserve existing authorId and isShared during update if not provided
+        authorId: tag.authorId.present ? tag.authorId.value : current.authorId,
+        isShared: tag.isShared.present ? tag.isShared.value : current.isShared,
       ),
     );
   }
@@ -408,16 +539,9 @@ class AppDatabase extends _$AppDatabase {
       into(timeChunks).insert(chunk);
 
   Future<bool> updateTimeChunk(TimeChunksCompanion chunk) =>
-      update(timeChunks).replace(
-        TimeChunk(
-          id: chunk.id.value,
-          poiId: chunk.poiId.value,
-          date: chunk.date.value,
-          startTime: chunk.startTime.value,
-          endTime: chunk.endTime.value,
-          status: chunk.status.value,
-        ),
-      );
+      // CRITICAL FIX: Pass the companion directly to Drift.
+      // Never manually unpack .value properties. Drift handles absent values automatically.
+      update(timeChunks).replace(chunk);
 
   Stream<List<TimeChunk>> watchAllScheduledChunks() => (select(timeChunks)
         ..where((t) => t.status.equals('scheduled'))
@@ -437,9 +561,9 @@ class AppDatabase extends _$AppDatabase {
   Future<int> insertMediaAsset(MediaAssetsCompanion asset) =>
       into(mediaAssets).insert(asset);
 
-  Future<int> updateMediaAssetLocalUri(String id, String localUri) =>
+  Future<int> updateMediaAssetLocalPath(String id, String? localPath) =>
       (update(mediaAssets)..where((m) => m.id.equals(id))).write(
-        MediaAssetsCompanion(localUri: Value(localUri)),
+        MediaAssetsCompanion(localPath: Value(localPath)),
       );
 
   Future<int> deleteMediaAsset(String id) =>
@@ -455,11 +579,25 @@ class AppDatabase extends _$AppDatabase {
   Future<int> insertReferenceImage(ReferenceImagesCompanion image) =>
       into(referenceImages).insert(image);
 
-  Future<int> updateReferenceImageLocalUri(String id, String localUri) =>
+  Future<int> updateReferenceImageLocalPath(String id, String? localPath) =>
       (update(referenceImages)..where((r) => r.id.equals(id))).write(
-        ReferenceImagesCompanion(localUri: Value(localUri)),
+        ReferenceImagesCompanion(localPath: Value(localPath)),
       );
 
   Future<int> deleteReferenceImage(String id) =>
       (delete(referenceImages)..where((r) => r.id.equals(id))).go();
+
+  /// Watches all POIs that have not been synced to the cloud yet
+  Stream<List<Poi>> watchUnsyncedPois() {
+    return (select(pois)..where((tbl) => tbl.isShared.equals(false))).watch();
+  }
+
+  /// Marks a specific POI as successfully synced to the cloud
+  Future<void> markPoiAsShared(String id) async {
+    await (update(pois)..where((tbl) => tbl.id.equals(id))).write(
+      const PoisCompanion(
+        isShared: Value(true),
+      ),
+    );
+  }
 }

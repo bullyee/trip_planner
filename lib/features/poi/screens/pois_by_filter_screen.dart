@@ -127,9 +127,9 @@ class _PoiThumbnail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final refsAsync = ref.watch(referenceImagesByPoiProvider(poi.id));
-    String? uri = poi.coverImageUri;
+    String? uri = poi.localCoverImagePath;
     uri ??= refsAsync.maybeWhen(
-      data: (refs) => refs.isEmpty ? null : refs.first.localUri,
+      data: (refs) => refs.isEmpty ? null : refs.first.localPath,
       orElse: () => null,
     );
     if (uri == null) return const Icon(Icons.location_on);
@@ -181,7 +181,6 @@ class _PoiListView extends ConsumerWidget {
                 leading: _PoiThumbnail(poi: poi),
                 title: Text(poi.name),
                 subtitle: roiName != null ? Text(roiName) : null,
-                trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.push('/pois/${poi.id}'),
               ),
             );

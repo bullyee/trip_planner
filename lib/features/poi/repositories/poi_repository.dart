@@ -4,6 +4,7 @@ import '../models/poi_model.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../auth/providers/auth_provider.dart';
 
 part 'poi_repository.g.dart';
 
@@ -15,6 +16,7 @@ abstract class PoiRepository {
     required bool isUpdate,
   });
   Future<void> deletePoi(String id);
+  Future<void> updatePoi(PoiModel poi);
 
   Future<PoiModel> getPoiById(String id);
   Future<List<PoiModel>> getAllPois();
@@ -33,8 +35,29 @@ abstract class PoiRepository {
 
 class LocalPoiRepository implements PoiRepository {
   final AppDatabase localDb;
+  final String currentUserId;
 
-  LocalPoiRepository(this.localDb);
+  LocalPoiRepository(this.localDb, this.currentUserId);
+
+  @override
+  Future<void> updatePoi(PoiModel poi) async {
+    final companion = PoisCompanion(
+      id: Value(poi.id),
+      name: Value(poi.name),
+      roiId: Value(poi.roiId),
+      authorId: Value(poi.authorId),
+      description: Value(poi.description),
+      address: Value(poi.address),
+      lat: Value(poi.lat),
+      lng: Value(poi.lng),
+      businessHours: Value(poi.businessHours),
+      contactInfo: Value(poi.contactInfo),
+      createdAt: Value(poi.createdAt),
+      isShared: Value(poi.isShared),
+    );
+    
+    await localDb.updatePoi(companion); 
+  }
 
   @override
   Future<void> savePoiWithRelations({
@@ -44,26 +67,58 @@ class LocalPoiRepository implements PoiRepository {
     required bool isUpdate,
   }) async {
     await localDb.transaction(() async {
-      final companion = PoisCompanion(
-        id: Value(poi.id),
-        roiId: Value(poi.roiId),
-        name: Value(poi.name),
-        description: Value(poi.description),
-        address: Value(poi.address),
-        lat: Value(poi.lat),
-        lng: Value(poi.lng),
-        businessHours: Value(poi.businessHours),
-        contactInfo: Value(poi.contactInfo),
-        coverImageUri: Value(poi.coverImageUri),
-        createdAt: Value(poi.createdAt),
-      );
-
       if (isUpdate) {
-        await localDb.updatePoi(companion);
-      } else {
-        await localDb.insertPoi(companion);
-      }
+        // --- [UPDATE FLOW] ---
+        // Fetch the existing POI to preserve its sync state and original author
+        final currentPoi = await localDb.getPoiById(poi.id);
+        final updateCompanion = PoisCompanion(
+          id: Value(poi.id),
+          roiId: Value(poi.roiId),
+          name: Value(poi.name),
+          description: Value(poi.description),
+          address: Value(poi.address),
+          lat: Value(poi.lat),
+          lng: Value(poi.lng),
+          businessHours: Value(poi.businessHours),
+          contactInfo: Value(poi.contactInfo),
+          localCoverImagePath: Value(poi.localCoverImagePath),
+          remoteCoverImageUrl: Value(poi.remoteCoverImageUrl),
+          createdAt: Value(poi.createdAt),
+          
+          // CRITICAL: Preserve original ownership and sync status during an update
+          authorId: Value(currentPoi.authorId),
+          isShared: Value(currentPoi.isShared),
+        );
         
+        await localDb.updatePoi(updateCompanion);
+        
+      } else {
+        // --- [INSERT FLOW] ---
+        // Use .insert() for strict schema enforcement on new records
+        final insertCompanion = PoisCompanion.insert(
+          id: poi.id,
+          roiId: Value(poi.roiId),
+          name: poi.name,
+          description: Value(poi.description),
+          address: Value(poi.address),
+          lat: poi.lat,
+          lng: poi.lng,
+          businessHours: Value(poi.businessHours),
+          contactInfo: Value(poi.contactInfo),
+          localCoverImagePath: Value(poi.localCoverImagePath),
+          remoteCoverImageUrl: Value(poi.remoteCoverImageUrl),
+          createdAt: Value(poi.createdAt),
+          
+          // CRITICAL: Force the injected user ID as the owner of this new POI
+          authorId: currentUserId, 
+          // Default to false since it's a local draft until synced
+          isShared: const Value(false), 
+        );
+        
+        await localDb.insertPoi(insertCompanion);
+      }
+
+      // Update relationships regardless of insert or update
       await localDb.setAnimesForPoi(poi.id, animeIds);
       await localDb.setTagsForPoi(poi.id, tagIds);
     });
@@ -81,6 +136,7 @@ class LocalPoiRepository implements PoiRepository {
     return PoiModel(
       id: driftPoi.id,
       roiId: driftPoi.roiId,
+      authorId: driftPoi.authorId,
       name: driftPoi.name,
       description: driftPoi.description,
       address: driftPoi.address,
@@ -88,9 +144,10 @@ class LocalPoiRepository implements PoiRepository {
       lng: driftPoi.lng,
       businessHours: driftPoi.businessHours,
       contactInfo: driftPoi.contactInfo,
-      coverImageUri: driftPoi.coverImageUri,
+      localCoverImagePath: driftPoi.localCoverImagePath,
+      remoteCoverImageUrl: driftPoi.remoteCoverImageUrl,
       createdAt: driftPoi.createdAt, // FIXED: driftRow -> driftPoi
-      isShared: false, 
+      isShared: driftPoi.isShared,
     );
   }
 
@@ -98,6 +155,7 @@ class LocalPoiRepository implements PoiRepository {
     return PoiModel(
       id: driftPoi.id,
       roiId: driftPoi.roiId,
+      authorId: driftPoi.authorId,
       name: driftPoi.name,
       description: driftPoi.description,
       address: driftPoi.address,
@@ -105,9 +163,10 @@ class LocalPoiRepository implements PoiRepository {
       lng: driftPoi.lng,
       businessHours: driftPoi.businessHours,
       contactInfo: driftPoi.contactInfo,
-      coverImageUri: driftPoi.coverImageUri,
+      localCoverImagePath: driftPoi.localCoverImagePath,
+      remoteCoverImageUrl: driftPoi.remoteCoverImageUrl,
       createdAt: driftPoi.createdAt,
-      isShared: false,
+      isShared: driftPoi.isShared,
     );
   }
 
@@ -157,6 +216,7 @@ class LocalPoiRepository implements PoiRepository {
       return rows.map((row) => PoiModel(
         id: row.id,
         roiId: row.roiId,
+        authorId: row.authorId,
         name: row.name,
         description: row.description,
         address: row.address,
@@ -164,7 +224,8 @@ class LocalPoiRepository implements PoiRepository {
         lng: row.lng,
         businessHours: row.businessHours,
         contactInfo: row.contactInfo,
-        coverImageUri: row.coverImageUri,
+        localCoverImagePath: row.localCoverImagePath,
+        remoteCoverImageUrl: row.remoteCoverImageUrl,
         createdAt: row.createdAt, 
         isShared: false, 
       )).toList();
@@ -182,6 +243,7 @@ class LocalPoiRepository implements PoiRepository {
       return rows.map((row) => PoiModel(
         id: row.id,
         roiId: row.roiId,
+        authorId: row.authorId,
         name: row.name,
         description: row.description,
         address: row.address,
@@ -189,7 +251,8 @@ class LocalPoiRepository implements PoiRepository {
         lng: row.lng,
         businessHours: row.businessHours,
         contactInfo: row.contactInfo,
-        coverImageUri: row.coverImageUri,
+        localCoverImagePath: row.localCoverImagePath,
+        remoteCoverImageUrl: row.remoteCoverImageUrl,
         createdAt: row.createdAt,
         isShared: false,
       )).toList();
@@ -205,5 +268,6 @@ class LocalPoiRepository implements PoiRepository {
 @riverpod
 PoiRepository poiRepository(PoiRepositoryRef ref) {
   final db = ref.watch(databaseProvider);
-  return LocalPoiRepository(db);
+  final currentUserId = ref.watch(currentUserIdProvider);
+  return LocalPoiRepository(db, currentUserId);
 }

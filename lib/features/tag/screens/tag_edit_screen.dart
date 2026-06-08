@@ -117,6 +117,7 @@ class _TagEditScreenState extends ConsumerState<TagEditScreen> {
     );
 
     if (!mounted) return;
+
     switch (result) {
       case Success():
         context.pop();

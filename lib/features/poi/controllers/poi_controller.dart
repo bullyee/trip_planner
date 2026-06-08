@@ -3,9 +3,10 @@ import 'package:uuid/uuid.dart';
 
 // IMPORTANT: Removed drift and direct database imports.
 // Added the pure domain model and repository imports.
+import '../../auth/providers/auth_provider.dart';
+import '../../../core/utils/app_result.dart';
 import '../models/poi_model.dart';
 import '../repositories/poi_repository.dart';
-import '../../../core/utils/app_result.dart';
 
 part 'poi_controller.g.dart';
 
@@ -28,8 +29,8 @@ class PoiController extends _$PoiController {
     required String contactInfo,
     required List<String> animeIds,
     required List<String> tagIds,
-    String? coverImageUri,
-    // Added for Dual-Track Sync architecture
+    String? localCoverImagePath,
+    String? remoteCoverImageUrl,
     int? existingCreatedAt, 
     bool isShared = false,  
   }) async {
@@ -41,10 +42,13 @@ class PoiController extends _$PoiController {
       // Business logic: clean up empty strings
       String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
 
+      final currentUserId = ref.read(currentUserIdProvider);
+
       // 1. Construct the pure Domain Model
       final poiModel = PoiModel(
         id: poiId,
         roiId: roiId,
+        authorId: currentUserId,
         name: name.trim(),
         description: nullIfEmpty(description),
         address: nullIfEmpty(address),
@@ -52,15 +56,14 @@ class PoiController extends _$PoiController {
         lng: double.parse(lngStr.trim()),
         businessHours: nullIfEmpty(businessHours),
         contactInfo: nullIfEmpty(contactInfo),
-        coverImageUri: coverImageUri,
+        localCoverImagePath: localCoverImagePath,
+        remoteCoverImageUrl: remoteCoverImageUrl,
         // Preserve timestamp on edit, generate new one on creation
         createdAt: existingCreatedAt ?? DateTime.now().millisecondsSinceEpoch,
         isShared: isShared,
       );
 
-      // 2. Delegate to the Repository Layer
-      // The repository will handle the transaction, updating the POI, 
-      // and setting the relational anime/tag connections.
+      // 2. Delegate to the Repository Layer (Clean Architecture)
       await ref.read(poiRepositoryProvider).savePoiWithRelations(
         poi: poiModel,
         animeIds: animeIds,

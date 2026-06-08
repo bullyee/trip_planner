@@ -37,6 +37,32 @@ class $RoisTable extends Rois with TableInfo<$RoisTable, Roi> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _authorIdMeta = const VerificationMeta(
+    'authorId',
+  );
+  @override
+  late final GeneratedColumn<String> authorId = GeneratedColumn<String>(
+    'author_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isSharedMeta = const VerificationMeta(
+    'isShared',
+  );
+  @override
+  late final GeneratedColumn<bool> isShared = GeneratedColumn<bool>(
+    'is_shared',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_shared" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _isOfflineCachedMeta = const VerificationMeta(
     'isOfflineCached',
   );
@@ -66,6 +92,8 @@ class $RoisTable extends Rois with TableInfo<$RoisTable, Roi> {
     id,
     name,
     description,
+    authorId,
+    isShared,
     isOfflineCached,
     createdAt,
   ];
@@ -101,6 +129,20 @@ class $RoisTable extends Rois with TableInfo<$RoisTable, Roi> {
           data['description']!,
           _descriptionMeta,
         ),
+      );
+    }
+    if (data.containsKey('author_id')) {
+      context.handle(
+        _authorIdMeta,
+        authorId.isAcceptableOrUnknown(data['author_id']!, _authorIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_authorIdMeta);
+    }
+    if (data.containsKey('is_shared')) {
+      context.handle(
+        _isSharedMeta,
+        isShared.isAcceptableOrUnknown(data['is_shared']!, _isSharedMeta),
       );
     }
     if (data.containsKey('is_offline_cached')) {
@@ -139,6 +181,14 @@ class $RoisTable extends Rois with TableInfo<$RoisTable, Roi> {
         DriftSqlType.string,
         data['${effectivePrefix}description'],
       ),
+      authorId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_id'],
+      )!,
+      isShared: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_shared'],
+      )!,
       isOfflineCached: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}is_offline_cached'],
@@ -160,12 +210,16 @@ class Roi extends DataClass implements Insertable<Roi> {
   final String id;
   final String name;
   final String? description;
+  final String authorId;
+  final bool isShared;
   final int isOfflineCached;
   final int createdAt;
   const Roi({
     required this.id,
     required this.name,
     this.description,
+    required this.authorId,
+    required this.isShared,
     required this.isOfflineCached,
     required this.createdAt,
   });
@@ -177,6 +231,8 @@ class Roi extends DataClass implements Insertable<Roi> {
     if (!nullToAbsent || description != null) {
       map['description'] = Variable<String>(description);
     }
+    map['author_id'] = Variable<String>(authorId);
+    map['is_shared'] = Variable<bool>(isShared);
     map['is_offline_cached'] = Variable<int>(isOfflineCached);
     map['created_at'] = Variable<int>(createdAt);
     return map;
@@ -189,6 +245,8 @@ class Roi extends DataClass implements Insertable<Roi> {
       description: description == null && nullToAbsent
           ? const Value.absent()
           : Value(description),
+      authorId: Value(authorId),
+      isShared: Value(isShared),
       isOfflineCached: Value(isOfflineCached),
       createdAt: Value(createdAt),
     );
@@ -203,6 +261,8 @@ class Roi extends DataClass implements Insertable<Roi> {
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       description: serializer.fromJson<String?>(json['description']),
+      authorId: serializer.fromJson<String>(json['authorId']),
+      isShared: serializer.fromJson<bool>(json['isShared']),
       isOfflineCached: serializer.fromJson<int>(json['isOfflineCached']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
@@ -214,6 +274,8 @@ class Roi extends DataClass implements Insertable<Roi> {
       'id': serializer.toJson<String>(id),
       'name': serializer.toJson<String>(name),
       'description': serializer.toJson<String?>(description),
+      'authorId': serializer.toJson<String>(authorId),
+      'isShared': serializer.toJson<bool>(isShared),
       'isOfflineCached': serializer.toJson<int>(isOfflineCached),
       'createdAt': serializer.toJson<int>(createdAt),
     };
@@ -223,12 +285,16 @@ class Roi extends DataClass implements Insertable<Roi> {
     String? id,
     String? name,
     Value<String?> description = const Value.absent(),
+    String? authorId,
+    bool? isShared,
     int? isOfflineCached,
     int? createdAt,
   }) => Roi(
     id: id ?? this.id,
     name: name ?? this.name,
     description: description.present ? description.value : this.description,
+    authorId: authorId ?? this.authorId,
+    isShared: isShared ?? this.isShared,
     isOfflineCached: isOfflineCached ?? this.isOfflineCached,
     createdAt: createdAt ?? this.createdAt,
   );
@@ -239,6 +305,8 @@ class Roi extends DataClass implements Insertable<Roi> {
       description: data.description.present
           ? data.description.value
           : this.description,
+      authorId: data.authorId.present ? data.authorId.value : this.authorId,
+      isShared: data.isShared.present ? data.isShared.value : this.isShared,
       isOfflineCached: data.isOfflineCached.present
           ? data.isOfflineCached.value
           : this.isOfflineCached,
@@ -252,6 +320,8 @@ class Roi extends DataClass implements Insertable<Roi> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('description: $description, ')
+          ..write('authorId: $authorId, ')
+          ..write('isShared: $isShared, ')
           ..write('isOfflineCached: $isOfflineCached, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -259,8 +329,15 @@ class Roi extends DataClass implements Insertable<Roi> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, description, isOfflineCached, createdAt);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    description,
+    authorId,
+    isShared,
+    isOfflineCached,
+    createdAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -268,6 +345,8 @@ class Roi extends DataClass implements Insertable<Roi> {
           other.id == this.id &&
           other.name == this.name &&
           other.description == this.description &&
+          other.authorId == this.authorId &&
+          other.isShared == this.isShared &&
           other.isOfflineCached == this.isOfflineCached &&
           other.createdAt == this.createdAt);
 }
@@ -276,6 +355,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
   final Value<String> id;
   final Value<String> name;
   final Value<String?> description;
+  final Value<String> authorId;
+  final Value<bool> isShared;
   final Value<int> isOfflineCached;
   final Value<int> createdAt;
   final Value<int> rowid;
@@ -283,6 +364,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.description = const Value.absent(),
+    this.authorId = const Value.absent(),
+    this.isShared = const Value.absent(),
     this.isOfflineCached = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -291,15 +374,20 @@ class RoisCompanion extends UpdateCompanion<Roi> {
     required String id,
     required String name,
     this.description = const Value.absent(),
+    required String authorId,
+    this.isShared = const Value.absent(),
     this.isOfflineCached = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
-       name = Value(name);
+       name = Value(name),
+       authorId = Value(authorId);
   static Insertable<Roi> custom({
     Expression<String>? id,
     Expression<String>? name,
     Expression<String>? description,
+    Expression<String>? authorId,
+    Expression<bool>? isShared,
     Expression<int>? isOfflineCached,
     Expression<int>? createdAt,
     Expression<int>? rowid,
@@ -308,6 +396,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (description != null) 'description': description,
+      if (authorId != null) 'author_id': authorId,
+      if (isShared != null) 'is_shared': isShared,
       if (isOfflineCached != null) 'is_offline_cached': isOfflineCached,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
@@ -318,6 +408,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
     Value<String>? id,
     Value<String>? name,
     Value<String?>? description,
+    Value<String>? authorId,
+    Value<bool>? isShared,
     Value<int>? isOfflineCached,
     Value<int>? createdAt,
     Value<int>? rowid,
@@ -326,6 +418,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
       id: id ?? this.id,
       name: name ?? this.name,
       description: description ?? this.description,
+      authorId: authorId ?? this.authorId,
+      isShared: isShared ?? this.isShared,
       isOfflineCached: isOfflineCached ?? this.isOfflineCached,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
@@ -343,6 +437,12 @@ class RoisCompanion extends UpdateCompanion<Roi> {
     }
     if (description.present) {
       map['description'] = Variable<String>(description.value);
+    }
+    if (authorId.present) {
+      map['author_id'] = Variable<String>(authorId.value);
+    }
+    if (isShared.present) {
+      map['is_shared'] = Variable<bool>(isShared.value);
     }
     if (isOfflineCached.present) {
       map['is_offline_cached'] = Variable<int>(isOfflineCached.value);
@@ -362,6 +462,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('description: $description, ')
+          ..write('authorId: $authorId, ')
+          ..write('isShared: $isShared, ')
           ..write('isOfflineCached: $isOfflineCached, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
@@ -395,6 +497,17 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
     defaultConstraints: GeneratedColumn.constraintIsAlways(
       'REFERENCES rois (id) ON DELETE SET NULL',
     ),
+  );
+  static const VerificationMeta _authorIdMeta = const VerificationMeta(
+    'authorId',
+  );
+  @override
+  late final GeneratedColumn<String> authorId = GeneratedColumn<String>(
+    'author_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
   );
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
@@ -467,17 +580,28 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
-  static const VerificationMeta _coverImageUriMeta = const VerificationMeta(
-    'coverImageUri',
-  );
+  static const VerificationMeta _localCoverImagePathMeta =
+      const VerificationMeta('localCoverImagePath');
   @override
-  late final GeneratedColumn<String> coverImageUri = GeneratedColumn<String>(
-    'cover_image_uri',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
+  late final GeneratedColumn<String> localCoverImagePath =
+      GeneratedColumn<String>(
+        'local_cover_image_path',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _remoteCoverImageUrlMeta =
+      const VerificationMeta('remoteCoverImageUrl');
+  @override
+  late final GeneratedColumn<String> remoteCoverImageUrl =
+      GeneratedColumn<String>(
+        'remote_cover_image_url',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -490,10 +614,38 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
     requiredDuringInsert: false,
     clientDefault: () => DateTime.now().millisecondsSinceEpoch,
   );
+  static const VerificationMeta _isSharedMeta = const VerificationMeta(
+    'isShared',
+  );
+  @override
+  late final GeneratedColumn<bool> isShared = GeneratedColumn<bool>(
+    'is_shared',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_shared" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
     roiId,
+    authorId,
     name,
     description,
     address,
@@ -501,8 +653,11 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
     lng,
     businessHours,
     contactInfo,
-    coverImageUri,
+    localCoverImagePath,
+    remoteCoverImageUrl,
     createdAt,
+    isShared,
+    sortOrder,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -526,6 +681,14 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
         _roiIdMeta,
         roiId.isAcceptableOrUnknown(data['roi_id']!, _roiIdMeta),
       );
+    }
+    if (data.containsKey('author_id')) {
+      context.handle(
+        _authorIdMeta,
+        authorId.isAcceptableOrUnknown(data['author_id']!, _authorIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_authorIdMeta);
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -584,12 +747,21 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
         ),
       );
     }
-    if (data.containsKey('cover_image_uri')) {
+    if (data.containsKey('local_cover_image_path')) {
       context.handle(
-        _coverImageUriMeta,
-        coverImageUri.isAcceptableOrUnknown(
-          data['cover_image_uri']!,
-          _coverImageUriMeta,
+        _localCoverImagePathMeta,
+        localCoverImagePath.isAcceptableOrUnknown(
+          data['local_cover_image_path']!,
+          _localCoverImagePathMeta,
+        ),
+      );
+    }
+    if (data.containsKey('remote_cover_image_url')) {
+      context.handle(
+        _remoteCoverImageUrlMeta,
+        remoteCoverImageUrl.isAcceptableOrUnknown(
+          data['remote_cover_image_url']!,
+          _remoteCoverImageUrlMeta,
         ),
       );
     }
@@ -597,6 +769,18 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
       context.handle(
         _createdAtMeta,
         createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('is_shared')) {
+      context.handle(
+        _isSharedMeta,
+        isShared.isAcceptableOrUnknown(data['is_shared']!, _isSharedMeta),
+      );
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
     return context;
@@ -616,6 +800,10 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
         DriftSqlType.string,
         data['${effectivePrefix}roi_id'],
       ),
+      authorId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_id'],
+      )!,
       name: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}name'],
@@ -644,13 +832,25 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
         DriftSqlType.string,
         data['${effectivePrefix}contact_info'],
       ),
-      coverImageUri: attachedDatabase.typeMapping.read(
+      localCoverImagePath: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}cover_image_uri'],
+        data['${effectivePrefix}local_cover_image_path'],
+      ),
+      remoteCoverImageUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_cover_image_url'],
       ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
+      )!,
+      isShared: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_shared'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
       )!,
     );
   }
@@ -664,6 +864,7 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
 class Poi extends DataClass implements Insertable<Poi> {
   final String id;
   final String? roiId;
+  final String authorId;
   final String name;
   final String? description;
   final String? address;
@@ -671,11 +872,15 @@ class Poi extends DataClass implements Insertable<Poi> {
   final double lng;
   final String? businessHours;
   final String? contactInfo;
-  final String? coverImageUri;
+  final String? localCoverImagePath;
+  final String? remoteCoverImageUrl;
   final int createdAt;
+  final bool isShared;
+  final int sortOrder;
   const Poi({
     required this.id,
     this.roiId,
+    required this.authorId,
     required this.name,
     this.description,
     this.address,
@@ -683,8 +888,11 @@ class Poi extends DataClass implements Insertable<Poi> {
     required this.lng,
     this.businessHours,
     this.contactInfo,
-    this.coverImageUri,
+    this.localCoverImagePath,
+    this.remoteCoverImageUrl,
     required this.createdAt,
+    required this.isShared,
+    required this.sortOrder,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -693,6 +901,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     if (!nullToAbsent || roiId != null) {
       map['roi_id'] = Variable<String>(roiId);
     }
+    map['author_id'] = Variable<String>(authorId);
     map['name'] = Variable<String>(name);
     if (!nullToAbsent || description != null) {
       map['description'] = Variable<String>(description);
@@ -708,10 +917,15 @@ class Poi extends DataClass implements Insertable<Poi> {
     if (!nullToAbsent || contactInfo != null) {
       map['contact_info'] = Variable<String>(contactInfo);
     }
-    if (!nullToAbsent || coverImageUri != null) {
-      map['cover_image_uri'] = Variable<String>(coverImageUri);
+    if (!nullToAbsent || localCoverImagePath != null) {
+      map['local_cover_image_path'] = Variable<String>(localCoverImagePath);
+    }
+    if (!nullToAbsent || remoteCoverImageUrl != null) {
+      map['remote_cover_image_url'] = Variable<String>(remoteCoverImageUrl);
     }
     map['created_at'] = Variable<int>(createdAt);
+    map['is_shared'] = Variable<bool>(isShared);
+    map['sort_order'] = Variable<int>(sortOrder);
     return map;
   }
 
@@ -721,6 +935,7 @@ class Poi extends DataClass implements Insertable<Poi> {
       roiId: roiId == null && nullToAbsent
           ? const Value.absent()
           : Value(roiId),
+      authorId: Value(authorId),
       name: Value(name),
       description: description == null && nullToAbsent
           ? const Value.absent()
@@ -736,10 +951,15 @@ class Poi extends DataClass implements Insertable<Poi> {
       contactInfo: contactInfo == null && nullToAbsent
           ? const Value.absent()
           : Value(contactInfo),
-      coverImageUri: coverImageUri == null && nullToAbsent
+      localCoverImagePath: localCoverImagePath == null && nullToAbsent
           ? const Value.absent()
-          : Value(coverImageUri),
+          : Value(localCoverImagePath),
+      remoteCoverImageUrl: remoteCoverImageUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(remoteCoverImageUrl),
       createdAt: Value(createdAt),
+      isShared: Value(isShared),
+      sortOrder: Value(sortOrder),
     );
   }
 
@@ -751,6 +971,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     return Poi(
       id: serializer.fromJson<String>(json['id']),
       roiId: serializer.fromJson<String?>(json['roiId']),
+      authorId: serializer.fromJson<String>(json['authorId']),
       name: serializer.fromJson<String>(json['name']),
       description: serializer.fromJson<String?>(json['description']),
       address: serializer.fromJson<String?>(json['address']),
@@ -758,8 +979,15 @@ class Poi extends DataClass implements Insertable<Poi> {
       lng: serializer.fromJson<double>(json['lng']),
       businessHours: serializer.fromJson<String?>(json['businessHours']),
       contactInfo: serializer.fromJson<String?>(json['contactInfo']),
-      coverImageUri: serializer.fromJson<String?>(json['coverImageUri']),
+      localCoverImagePath: serializer.fromJson<String?>(
+        json['localCoverImagePath'],
+      ),
+      remoteCoverImageUrl: serializer.fromJson<String?>(
+        json['remoteCoverImageUrl'],
+      ),
       createdAt: serializer.fromJson<int>(json['createdAt']),
+      isShared: serializer.fromJson<bool>(json['isShared']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
     );
   }
   @override
@@ -768,6 +996,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'roiId': serializer.toJson<String?>(roiId),
+      'authorId': serializer.toJson<String>(authorId),
       'name': serializer.toJson<String>(name),
       'description': serializer.toJson<String?>(description),
       'address': serializer.toJson<String?>(address),
@@ -775,14 +1004,18 @@ class Poi extends DataClass implements Insertable<Poi> {
       'lng': serializer.toJson<double>(lng),
       'businessHours': serializer.toJson<String?>(businessHours),
       'contactInfo': serializer.toJson<String?>(contactInfo),
-      'coverImageUri': serializer.toJson<String?>(coverImageUri),
+      'localCoverImagePath': serializer.toJson<String?>(localCoverImagePath),
+      'remoteCoverImageUrl': serializer.toJson<String?>(remoteCoverImageUrl),
       'createdAt': serializer.toJson<int>(createdAt),
+      'isShared': serializer.toJson<bool>(isShared),
+      'sortOrder': serializer.toJson<int>(sortOrder),
     };
   }
 
   Poi copyWith({
     String? id,
     Value<String?> roiId = const Value.absent(),
+    String? authorId,
     String? name,
     Value<String?> description = const Value.absent(),
     Value<String?> address = const Value.absent(),
@@ -790,11 +1023,15 @@ class Poi extends DataClass implements Insertable<Poi> {
     double? lng,
     Value<String?> businessHours = const Value.absent(),
     Value<String?> contactInfo = const Value.absent(),
-    Value<String?> coverImageUri = const Value.absent(),
+    Value<String?> localCoverImagePath = const Value.absent(),
+    Value<String?> remoteCoverImageUrl = const Value.absent(),
     int? createdAt,
+    bool? isShared,
+    int? sortOrder,
   }) => Poi(
     id: id ?? this.id,
     roiId: roiId.present ? roiId.value : this.roiId,
+    authorId: authorId ?? this.authorId,
     name: name ?? this.name,
     description: description.present ? description.value : this.description,
     address: address.present ? address.value : this.address,
@@ -804,15 +1041,21 @@ class Poi extends DataClass implements Insertable<Poi> {
         ? businessHours.value
         : this.businessHours,
     contactInfo: contactInfo.present ? contactInfo.value : this.contactInfo,
-    coverImageUri: coverImageUri.present
-        ? coverImageUri.value
-        : this.coverImageUri,
+    localCoverImagePath: localCoverImagePath.present
+        ? localCoverImagePath.value
+        : this.localCoverImagePath,
+    remoteCoverImageUrl: remoteCoverImageUrl.present
+        ? remoteCoverImageUrl.value
+        : this.remoteCoverImageUrl,
     createdAt: createdAt ?? this.createdAt,
+    isShared: isShared ?? this.isShared,
+    sortOrder: sortOrder ?? this.sortOrder,
   );
   Poi copyWithCompanion(PoisCompanion data) {
     return Poi(
       id: data.id.present ? data.id.value : this.id,
       roiId: data.roiId.present ? data.roiId.value : this.roiId,
+      authorId: data.authorId.present ? data.authorId.value : this.authorId,
       name: data.name.present ? data.name.value : this.name,
       description: data.description.present
           ? data.description.value
@@ -826,10 +1069,15 @@ class Poi extends DataClass implements Insertable<Poi> {
       contactInfo: data.contactInfo.present
           ? data.contactInfo.value
           : this.contactInfo,
-      coverImageUri: data.coverImageUri.present
-          ? data.coverImageUri.value
-          : this.coverImageUri,
+      localCoverImagePath: data.localCoverImagePath.present
+          ? data.localCoverImagePath.value
+          : this.localCoverImagePath,
+      remoteCoverImageUrl: data.remoteCoverImageUrl.present
+          ? data.remoteCoverImageUrl.value
+          : this.remoteCoverImageUrl,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      isShared: data.isShared.present ? data.isShared.value : this.isShared,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
     );
   }
 
@@ -838,6 +1086,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     return (StringBuffer('Poi(')
           ..write('id: $id, ')
           ..write('roiId: $roiId, ')
+          ..write('authorId: $authorId, ')
           ..write('name: $name, ')
           ..write('description: $description, ')
           ..write('address: $address, ')
@@ -845,8 +1094,11 @@ class Poi extends DataClass implements Insertable<Poi> {
           ..write('lng: $lng, ')
           ..write('businessHours: $businessHours, ')
           ..write('contactInfo: $contactInfo, ')
-          ..write('coverImageUri: $coverImageUri, ')
-          ..write('createdAt: $createdAt')
+          ..write('localCoverImagePath: $localCoverImagePath, ')
+          ..write('remoteCoverImageUrl: $remoteCoverImageUrl, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('isShared: $isShared, ')
+          ..write('sortOrder: $sortOrder')
           ..write(')'))
         .toString();
   }
@@ -855,6 +1107,7 @@ class Poi extends DataClass implements Insertable<Poi> {
   int get hashCode => Object.hash(
     id,
     roiId,
+    authorId,
     name,
     description,
     address,
@@ -862,8 +1115,11 @@ class Poi extends DataClass implements Insertable<Poi> {
     lng,
     businessHours,
     contactInfo,
-    coverImageUri,
+    localCoverImagePath,
+    remoteCoverImageUrl,
     createdAt,
+    isShared,
+    sortOrder,
   );
   @override
   bool operator ==(Object other) =>
@@ -871,6 +1127,7 @@ class Poi extends DataClass implements Insertable<Poi> {
       (other is Poi &&
           other.id == this.id &&
           other.roiId == this.roiId &&
+          other.authorId == this.authorId &&
           other.name == this.name &&
           other.description == this.description &&
           other.address == this.address &&
@@ -878,13 +1135,17 @@ class Poi extends DataClass implements Insertable<Poi> {
           other.lng == this.lng &&
           other.businessHours == this.businessHours &&
           other.contactInfo == this.contactInfo &&
-          other.coverImageUri == this.coverImageUri &&
-          other.createdAt == this.createdAt);
+          other.localCoverImagePath == this.localCoverImagePath &&
+          other.remoteCoverImageUrl == this.remoteCoverImageUrl &&
+          other.createdAt == this.createdAt &&
+          other.isShared == this.isShared &&
+          other.sortOrder == this.sortOrder);
 }
 
 class PoisCompanion extends UpdateCompanion<Poi> {
   final Value<String> id;
   final Value<String?> roiId;
+  final Value<String> authorId;
   final Value<String> name;
   final Value<String?> description;
   final Value<String?> address;
@@ -892,12 +1153,16 @@ class PoisCompanion extends UpdateCompanion<Poi> {
   final Value<double> lng;
   final Value<String?> businessHours;
   final Value<String?> contactInfo;
-  final Value<String?> coverImageUri;
+  final Value<String?> localCoverImagePath;
+  final Value<String?> remoteCoverImageUrl;
   final Value<int> createdAt;
+  final Value<bool> isShared;
+  final Value<int> sortOrder;
   final Value<int> rowid;
   const PoisCompanion({
     this.id = const Value.absent(),
     this.roiId = const Value.absent(),
+    this.authorId = const Value.absent(),
     this.name = const Value.absent(),
     this.description = const Value.absent(),
     this.address = const Value.absent(),
@@ -905,13 +1170,17 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     this.lng = const Value.absent(),
     this.businessHours = const Value.absent(),
     this.contactInfo = const Value.absent(),
-    this.coverImageUri = const Value.absent(),
+    this.localCoverImagePath = const Value.absent(),
+    this.remoteCoverImageUrl = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.isShared = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PoisCompanion.insert({
     required String id,
     this.roiId = const Value.absent(),
+    required String authorId,
     required String name,
     this.description = const Value.absent(),
     this.address = const Value.absent(),
@@ -919,16 +1188,21 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     required double lng,
     this.businessHours = const Value.absent(),
     this.contactInfo = const Value.absent(),
-    this.coverImageUri = const Value.absent(),
+    this.localCoverImagePath = const Value.absent(),
+    this.remoteCoverImageUrl = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.isShared = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
+       authorId = Value(authorId),
        name = Value(name),
        lat = Value(lat),
        lng = Value(lng);
   static Insertable<Poi> custom({
     Expression<String>? id,
     Expression<String>? roiId,
+    Expression<String>? authorId,
     Expression<String>? name,
     Expression<String>? description,
     Expression<String>? address,
@@ -936,13 +1210,17 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     Expression<double>? lng,
     Expression<String>? businessHours,
     Expression<String>? contactInfo,
-    Expression<String>? coverImageUri,
+    Expression<String>? localCoverImagePath,
+    Expression<String>? remoteCoverImageUrl,
     Expression<int>? createdAt,
+    Expression<bool>? isShared,
+    Expression<int>? sortOrder,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (roiId != null) 'roi_id': roiId,
+      if (authorId != null) 'author_id': authorId,
       if (name != null) 'name': name,
       if (description != null) 'description': description,
       if (address != null) 'address': address,
@@ -950,8 +1228,13 @@ class PoisCompanion extends UpdateCompanion<Poi> {
       if (lng != null) 'lng': lng,
       if (businessHours != null) 'business_hours': businessHours,
       if (contactInfo != null) 'contact_info': contactInfo,
-      if (coverImageUri != null) 'cover_image_uri': coverImageUri,
+      if (localCoverImagePath != null)
+        'local_cover_image_path': localCoverImagePath,
+      if (remoteCoverImageUrl != null)
+        'remote_cover_image_url': remoteCoverImageUrl,
       if (createdAt != null) 'created_at': createdAt,
+      if (isShared != null) 'is_shared': isShared,
+      if (sortOrder != null) 'sort_order': sortOrder,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -959,6 +1242,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
   PoisCompanion copyWith({
     Value<String>? id,
     Value<String?>? roiId,
+    Value<String>? authorId,
     Value<String>? name,
     Value<String?>? description,
     Value<String?>? address,
@@ -966,13 +1250,17 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     Value<double>? lng,
     Value<String?>? businessHours,
     Value<String?>? contactInfo,
-    Value<String?>? coverImageUri,
+    Value<String?>? localCoverImagePath,
+    Value<String?>? remoteCoverImageUrl,
     Value<int>? createdAt,
+    Value<bool>? isShared,
+    Value<int>? sortOrder,
     Value<int>? rowid,
   }) {
     return PoisCompanion(
       id: id ?? this.id,
       roiId: roiId ?? this.roiId,
+      authorId: authorId ?? this.authorId,
       name: name ?? this.name,
       description: description ?? this.description,
       address: address ?? this.address,
@@ -980,8 +1268,11 @@ class PoisCompanion extends UpdateCompanion<Poi> {
       lng: lng ?? this.lng,
       businessHours: businessHours ?? this.businessHours,
       contactInfo: contactInfo ?? this.contactInfo,
-      coverImageUri: coverImageUri ?? this.coverImageUri,
+      localCoverImagePath: localCoverImagePath ?? this.localCoverImagePath,
+      remoteCoverImageUrl: remoteCoverImageUrl ?? this.remoteCoverImageUrl,
       createdAt: createdAt ?? this.createdAt,
+      isShared: isShared ?? this.isShared,
+      sortOrder: sortOrder ?? this.sortOrder,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -994,6 +1285,9 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     }
     if (roiId.present) {
       map['roi_id'] = Variable<String>(roiId.value);
+    }
+    if (authorId.present) {
+      map['author_id'] = Variable<String>(authorId.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -1016,11 +1310,24 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     if (contactInfo.present) {
       map['contact_info'] = Variable<String>(contactInfo.value);
     }
-    if (coverImageUri.present) {
-      map['cover_image_uri'] = Variable<String>(coverImageUri.value);
+    if (localCoverImagePath.present) {
+      map['local_cover_image_path'] = Variable<String>(
+        localCoverImagePath.value,
+      );
+    }
+    if (remoteCoverImageUrl.present) {
+      map['remote_cover_image_url'] = Variable<String>(
+        remoteCoverImageUrl.value,
+      );
     }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (isShared.present) {
+      map['is_shared'] = Variable<bool>(isShared.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -1033,6 +1340,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     return (StringBuffer('PoisCompanion(')
           ..write('id: $id, ')
           ..write('roiId: $roiId, ')
+          ..write('authorId: $authorId, ')
           ..write('name: $name, ')
           ..write('description: $description, ')
           ..write('address: $address, ')
@@ -1040,8 +1348,11 @@ class PoisCompanion extends UpdateCompanion<Poi> {
           ..write('lng: $lng, ')
           ..write('businessHours: $businessHours, ')
           ..write('contactInfo: $contactInfo, ')
-          ..write('coverImageUri: $coverImageUri, ')
+          ..write('localCoverImagePath: $localCoverImagePath, ')
+          ..write('remoteCoverImageUrl: $remoteCoverImageUrl, ')
           ..write('createdAt: $createdAt, ')
+          ..write('isShared: $isShared, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1094,6 +1405,32 @@ class $AnimesTable extends Animes with TableInfo<$AnimesTable, Anime> {
     requiredDuringInsert: false,
     defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
   );
+  static const VerificationMeta _authorIdMeta = const VerificationMeta(
+    'authorId',
+  );
+  @override
+  late final GeneratedColumn<String> authorId = GeneratedColumn<String>(
+    'author_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isSharedMeta = const VerificationMeta(
+    'isShared',
+  );
+  @override
+  late final GeneratedColumn<bool> isShared = GeneratedColumn<bool>(
+    'is_shared',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_shared" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1112,6 +1449,8 @@ class $AnimesTable extends Animes with TableInfo<$AnimesTable, Anime> {
     name,
     description,
     bangumiId,
+    authorId,
+    isShared,
     createdAt,
   ];
   @override
@@ -1154,6 +1493,20 @@ class $AnimesTable extends Animes with TableInfo<$AnimesTable, Anime> {
         bangumiId.isAcceptableOrUnknown(data['bangumi_id']!, _bangumiIdMeta),
       );
     }
+    if (data.containsKey('author_id')) {
+      context.handle(
+        _authorIdMeta,
+        authorId.isAcceptableOrUnknown(data['author_id']!, _authorIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_authorIdMeta);
+    }
+    if (data.containsKey('is_shared')) {
+      context.handle(
+        _isSharedMeta,
+        isShared.isAcceptableOrUnknown(data['is_shared']!, _isSharedMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1185,6 +1538,14 @@ class $AnimesTable extends Animes with TableInfo<$AnimesTable, Anime> {
         DriftSqlType.string,
         data['${effectivePrefix}bangumi_id'],
       ),
+      authorId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_id'],
+      )!,
+      isShared: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_shared'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -1203,12 +1564,16 @@ class Anime extends DataClass implements Insertable<Anime> {
   final String name;
   final String? description;
   final String? bangumiId;
+  final String authorId;
+  final bool isShared;
   final int createdAt;
   const Anime({
     required this.id,
     required this.name,
     this.description,
     this.bangumiId,
+    required this.authorId,
+    required this.isShared,
     required this.createdAt,
   });
   @override
@@ -1222,6 +1587,8 @@ class Anime extends DataClass implements Insertable<Anime> {
     if (!nullToAbsent || bangumiId != null) {
       map['bangumi_id'] = Variable<String>(bangumiId);
     }
+    map['author_id'] = Variable<String>(authorId);
+    map['is_shared'] = Variable<bool>(isShared);
     map['created_at'] = Variable<int>(createdAt);
     return map;
   }
@@ -1236,6 +1603,8 @@ class Anime extends DataClass implements Insertable<Anime> {
       bangumiId: bangumiId == null && nullToAbsent
           ? const Value.absent()
           : Value(bangumiId),
+      authorId: Value(authorId),
+      isShared: Value(isShared),
       createdAt: Value(createdAt),
     );
   }
@@ -1250,6 +1619,8 @@ class Anime extends DataClass implements Insertable<Anime> {
       name: serializer.fromJson<String>(json['name']),
       description: serializer.fromJson<String?>(json['description']),
       bangumiId: serializer.fromJson<String?>(json['bangumiId']),
+      authorId: serializer.fromJson<String>(json['authorId']),
+      isShared: serializer.fromJson<bool>(json['isShared']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
@@ -1261,6 +1632,8 @@ class Anime extends DataClass implements Insertable<Anime> {
       'name': serializer.toJson<String>(name),
       'description': serializer.toJson<String?>(description),
       'bangumiId': serializer.toJson<String?>(bangumiId),
+      'authorId': serializer.toJson<String>(authorId),
+      'isShared': serializer.toJson<bool>(isShared),
       'createdAt': serializer.toJson<int>(createdAt),
     };
   }
@@ -1270,12 +1643,16 @@ class Anime extends DataClass implements Insertable<Anime> {
     String? name,
     Value<String?> description = const Value.absent(),
     Value<String?> bangumiId = const Value.absent(),
+    String? authorId,
+    bool? isShared,
     int? createdAt,
   }) => Anime(
     id: id ?? this.id,
     name: name ?? this.name,
     description: description.present ? description.value : this.description,
     bangumiId: bangumiId.present ? bangumiId.value : this.bangumiId,
+    authorId: authorId ?? this.authorId,
+    isShared: isShared ?? this.isShared,
     createdAt: createdAt ?? this.createdAt,
   );
   Anime copyWithCompanion(AnimesCompanion data) {
@@ -1286,6 +1663,8 @@ class Anime extends DataClass implements Insertable<Anime> {
           ? data.description.value
           : this.description,
       bangumiId: data.bangumiId.present ? data.bangumiId.value : this.bangumiId,
+      authorId: data.authorId.present ? data.authorId.value : this.authorId,
+      isShared: data.isShared.present ? data.isShared.value : this.isShared,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -1297,13 +1676,23 @@ class Anime extends DataClass implements Insertable<Anime> {
           ..write('name: $name, ')
           ..write('description: $description, ')
           ..write('bangumiId: $bangumiId, ')
+          ..write('authorId: $authorId, ')
+          ..write('isShared: $isShared, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, description, bangumiId, createdAt);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    description,
+    bangumiId,
+    authorId,
+    isShared,
+    createdAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1312,6 +1701,8 @@ class Anime extends DataClass implements Insertable<Anime> {
           other.name == this.name &&
           other.description == this.description &&
           other.bangumiId == this.bangumiId &&
+          other.authorId == this.authorId &&
+          other.isShared == this.isShared &&
           other.createdAt == this.createdAt);
 }
 
@@ -1320,6 +1711,8 @@ class AnimesCompanion extends UpdateCompanion<Anime> {
   final Value<String> name;
   final Value<String?> description;
   final Value<String?> bangumiId;
+  final Value<String> authorId;
+  final Value<bool> isShared;
   final Value<int> createdAt;
   final Value<int> rowid;
   const AnimesCompanion({
@@ -1327,6 +1720,8 @@ class AnimesCompanion extends UpdateCompanion<Anime> {
     this.name = const Value.absent(),
     this.description = const Value.absent(),
     this.bangumiId = const Value.absent(),
+    this.authorId = const Value.absent(),
+    this.isShared = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -1335,15 +1730,20 @@ class AnimesCompanion extends UpdateCompanion<Anime> {
     required String name,
     this.description = const Value.absent(),
     this.bangumiId = const Value.absent(),
+    required String authorId,
+    this.isShared = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
-       name = Value(name);
+       name = Value(name),
+       authorId = Value(authorId);
   static Insertable<Anime> custom({
     Expression<String>? id,
     Expression<String>? name,
     Expression<String>? description,
     Expression<String>? bangumiId,
+    Expression<String>? authorId,
+    Expression<bool>? isShared,
     Expression<int>? createdAt,
     Expression<int>? rowid,
   }) {
@@ -1352,6 +1752,8 @@ class AnimesCompanion extends UpdateCompanion<Anime> {
       if (name != null) 'name': name,
       if (description != null) 'description': description,
       if (bangumiId != null) 'bangumi_id': bangumiId,
+      if (authorId != null) 'author_id': authorId,
+      if (isShared != null) 'is_shared': isShared,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -1362,6 +1764,8 @@ class AnimesCompanion extends UpdateCompanion<Anime> {
     Value<String>? name,
     Value<String?>? description,
     Value<String?>? bangumiId,
+    Value<String>? authorId,
+    Value<bool>? isShared,
     Value<int>? createdAt,
     Value<int>? rowid,
   }) {
@@ -1370,6 +1774,8 @@ class AnimesCompanion extends UpdateCompanion<Anime> {
       name: name ?? this.name,
       description: description ?? this.description,
       bangumiId: bangumiId ?? this.bangumiId,
+      authorId: authorId ?? this.authorId,
+      isShared: isShared ?? this.isShared,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
@@ -1390,6 +1796,12 @@ class AnimesCompanion extends UpdateCompanion<Anime> {
     if (bangumiId.present) {
       map['bangumi_id'] = Variable<String>(bangumiId.value);
     }
+    if (authorId.present) {
+      map['author_id'] = Variable<String>(authorId.value);
+    }
+    if (isShared.present) {
+      map['is_shared'] = Variable<bool>(isShared.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -1406,6 +1818,8 @@ class AnimesCompanion extends UpdateCompanion<Anime> {
           ..write('name: $name, ')
           ..write('description: $description, ')
           ..write('bangumiId: $bangumiId, ')
+          ..write('authorId: $authorId, ')
+          ..write('isShared: $isShared, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -1447,6 +1861,32 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, Tag> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _authorIdMeta = const VerificationMeta(
+    'authorId',
+  );
+  @override
+  late final GeneratedColumn<String> authorId = GeneratedColumn<String>(
+    'author_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isSharedMeta = const VerificationMeta(
+    'isShared',
+  );
+  @override
+  late final GeneratedColumn<bool> isShared = GeneratedColumn<bool>(
+    'is_shared',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_shared" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1460,7 +1900,14 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, Tag> {
     clientDefault: () => DateTime.now().millisecondsSinceEpoch,
   );
   @override
-  List<GeneratedColumn> get $columns => [id, name, description, createdAt];
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    description,
+    authorId,
+    isShared,
+    createdAt,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1495,6 +1942,20 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, Tag> {
         ),
       );
     }
+    if (data.containsKey('author_id')) {
+      context.handle(
+        _authorIdMeta,
+        authorId.isAcceptableOrUnknown(data['author_id']!, _authorIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_authorIdMeta);
+    }
+    if (data.containsKey('is_shared')) {
+      context.handle(
+        _isSharedMeta,
+        isShared.isAcceptableOrUnknown(data['is_shared']!, _isSharedMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1522,6 +1983,14 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, Tag> {
         DriftSqlType.string,
         data['${effectivePrefix}description'],
       ),
+      authorId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_id'],
+      )!,
+      isShared: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_shared'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -1539,11 +2008,15 @@ class Tag extends DataClass implements Insertable<Tag> {
   final String id;
   final String name;
   final String? description;
+  final String authorId;
+  final bool isShared;
   final int createdAt;
   const Tag({
     required this.id,
     required this.name,
     this.description,
+    required this.authorId,
+    required this.isShared,
     required this.createdAt,
   });
   @override
@@ -1554,6 +2027,8 @@ class Tag extends DataClass implements Insertable<Tag> {
     if (!nullToAbsent || description != null) {
       map['description'] = Variable<String>(description);
     }
+    map['author_id'] = Variable<String>(authorId);
+    map['is_shared'] = Variable<bool>(isShared);
     map['created_at'] = Variable<int>(createdAt);
     return map;
   }
@@ -1565,6 +2040,8 @@ class Tag extends DataClass implements Insertable<Tag> {
       description: description == null && nullToAbsent
           ? const Value.absent()
           : Value(description),
+      authorId: Value(authorId),
+      isShared: Value(isShared),
       createdAt: Value(createdAt),
     );
   }
@@ -1578,6 +2055,8 @@ class Tag extends DataClass implements Insertable<Tag> {
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       description: serializer.fromJson<String?>(json['description']),
+      authorId: serializer.fromJson<String>(json['authorId']),
+      isShared: serializer.fromJson<bool>(json['isShared']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
@@ -1588,6 +2067,8 @@ class Tag extends DataClass implements Insertable<Tag> {
       'id': serializer.toJson<String>(id),
       'name': serializer.toJson<String>(name),
       'description': serializer.toJson<String?>(description),
+      'authorId': serializer.toJson<String>(authorId),
+      'isShared': serializer.toJson<bool>(isShared),
       'createdAt': serializer.toJson<int>(createdAt),
     };
   }
@@ -1596,11 +2077,15 @@ class Tag extends DataClass implements Insertable<Tag> {
     String? id,
     String? name,
     Value<String?> description = const Value.absent(),
+    String? authorId,
+    bool? isShared,
     int? createdAt,
   }) => Tag(
     id: id ?? this.id,
     name: name ?? this.name,
     description: description.present ? description.value : this.description,
+    authorId: authorId ?? this.authorId,
+    isShared: isShared ?? this.isShared,
     createdAt: createdAt ?? this.createdAt,
   );
   Tag copyWithCompanion(TagsCompanion data) {
@@ -1610,6 +2095,8 @@ class Tag extends DataClass implements Insertable<Tag> {
       description: data.description.present
           ? data.description.value
           : this.description,
+      authorId: data.authorId.present ? data.authorId.value : this.authorId,
+      isShared: data.isShared.present ? data.isShared.value : this.isShared,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -1620,13 +2107,16 @@ class Tag extends DataClass implements Insertable<Tag> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('description: $description, ')
+          ..write('authorId: $authorId, ')
+          ..write('isShared: $isShared, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, description, createdAt);
+  int get hashCode =>
+      Object.hash(id, name, description, authorId, isShared, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1634,6 +2124,8 @@ class Tag extends DataClass implements Insertable<Tag> {
           other.id == this.id &&
           other.name == this.name &&
           other.description == this.description &&
+          other.authorId == this.authorId &&
+          other.isShared == this.isShared &&
           other.createdAt == this.createdAt);
 }
 
@@ -1641,12 +2133,16 @@ class TagsCompanion extends UpdateCompanion<Tag> {
   final Value<String> id;
   final Value<String> name;
   final Value<String?> description;
+  final Value<String> authorId;
+  final Value<bool> isShared;
   final Value<int> createdAt;
   final Value<int> rowid;
   const TagsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.description = const Value.absent(),
+    this.authorId = const Value.absent(),
+    this.isShared = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -1654,14 +2150,19 @@ class TagsCompanion extends UpdateCompanion<Tag> {
     required String id,
     required String name,
     this.description = const Value.absent(),
+    required String authorId,
+    this.isShared = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
-       name = Value(name);
+       name = Value(name),
+       authorId = Value(authorId);
   static Insertable<Tag> custom({
     Expression<String>? id,
     Expression<String>? name,
     Expression<String>? description,
+    Expression<String>? authorId,
+    Expression<bool>? isShared,
     Expression<int>? createdAt,
     Expression<int>? rowid,
   }) {
@@ -1669,6 +2170,8 @@ class TagsCompanion extends UpdateCompanion<Tag> {
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (description != null) 'description': description,
+      if (authorId != null) 'author_id': authorId,
+      if (isShared != null) 'is_shared': isShared,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -1678,6 +2181,8 @@ class TagsCompanion extends UpdateCompanion<Tag> {
     Value<String>? id,
     Value<String>? name,
     Value<String?>? description,
+    Value<String>? authorId,
+    Value<bool>? isShared,
     Value<int>? createdAt,
     Value<int>? rowid,
   }) {
@@ -1685,6 +2190,8 @@ class TagsCompanion extends UpdateCompanion<Tag> {
       id: id ?? this.id,
       name: name ?? this.name,
       description: description ?? this.description,
+      authorId: authorId ?? this.authorId,
+      isShared: isShared ?? this.isShared,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
@@ -1702,6 +2209,12 @@ class TagsCompanion extends UpdateCompanion<Tag> {
     if (description.present) {
       map['description'] = Variable<String>(description.value);
     }
+    if (authorId.present) {
+      map['author_id'] = Variable<String>(authorId.value);
+    }
+    if (isShared.present) {
+      map['is_shared'] = Variable<bool>(isShared.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -1717,6 +2230,8 @@ class TagsCompanion extends UpdateCompanion<Tag> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('description: $description, ')
+          ..write('authorId: $authorId, ')
+          ..write('isShared: $isShared, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -2221,6 +2736,44 @@ class $TimeChunksTable extends TimeChunks
     requiredDuringInsert: false,
     defaultValue: const Constant('backlog'),
   );
+  static const VerificationMeta _authorIdMeta = const VerificationMeta(
+    'authorId',
+  );
+  @override
+  late final GeneratedColumn<String> authorId = GeneratedColumn<String>(
+    'author_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isSharedMeta = const VerificationMeta(
+    'isShared',
+  );
+  @override
+  late final GeneratedColumn<bool> isShared = GeneratedColumn<bool>(
+    'is_shared',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_shared" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    clientDefault: () => DateTime.now().millisecondsSinceEpoch,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2229,6 +2782,9 @@ class $TimeChunksTable extends TimeChunks
     startTime,
     endTime,
     status,
+    authorId,
+    isShared,
+    createdAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2279,6 +2835,26 @@ class $TimeChunksTable extends TimeChunks
         status.isAcceptableOrUnknown(data['status']!, _statusMeta),
       );
     }
+    if (data.containsKey('author_id')) {
+      context.handle(
+        _authorIdMeta,
+        authorId.isAcceptableOrUnknown(data['author_id']!, _authorIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_authorIdMeta);
+    }
+    if (data.containsKey('is_shared')) {
+      context.handle(
+        _isSharedMeta,
+        isShared.isAcceptableOrUnknown(data['is_shared']!, _isSharedMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
     return context;
   }
 
@@ -2312,6 +2888,18 @@ class $TimeChunksTable extends TimeChunks
         DriftSqlType.string,
         data['${effectivePrefix}status'],
       )!,
+      authorId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_id'],
+      )!,
+      isShared: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_shared'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
     );
   }
 
@@ -2328,6 +2916,9 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
   final String? startTime;
   final String? endTime;
   final String status;
+  final String authorId;
+  final bool isShared;
+  final int createdAt;
   const TimeChunk({
     required this.id,
     required this.poiId,
@@ -2335,6 +2926,9 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     this.startTime,
     this.endTime,
     required this.status,
+    required this.authorId,
+    required this.isShared,
+    required this.createdAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2351,6 +2945,9 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       map['end_time'] = Variable<String>(endTime);
     }
     map['status'] = Variable<String>(status);
+    map['author_id'] = Variable<String>(authorId);
+    map['is_shared'] = Variable<bool>(isShared);
+    map['created_at'] = Variable<int>(createdAt);
     return map;
   }
 
@@ -2366,6 +2963,9 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
           ? const Value.absent()
           : Value(endTime),
       status: Value(status),
+      authorId: Value(authorId),
+      isShared: Value(isShared),
+      createdAt: Value(createdAt),
     );
   }
 
@@ -2381,6 +2981,9 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       startTime: serializer.fromJson<String?>(json['startTime']),
       endTime: serializer.fromJson<String?>(json['endTime']),
       status: serializer.fromJson<String>(json['status']),
+      authorId: serializer.fromJson<String>(json['authorId']),
+      isShared: serializer.fromJson<bool>(json['isShared']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
   @override
@@ -2393,6 +2996,9 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       'startTime': serializer.toJson<String?>(startTime),
       'endTime': serializer.toJson<String?>(endTime),
       'status': serializer.toJson<String>(status),
+      'authorId': serializer.toJson<String>(authorId),
+      'isShared': serializer.toJson<bool>(isShared),
+      'createdAt': serializer.toJson<int>(createdAt),
     };
   }
 
@@ -2403,6 +3009,9 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     Value<String?> startTime = const Value.absent(),
     Value<String?> endTime = const Value.absent(),
     String? status,
+    String? authorId,
+    bool? isShared,
+    int? createdAt,
   }) => TimeChunk(
     id: id ?? this.id,
     poiId: poiId ?? this.poiId,
@@ -2410,6 +3019,9 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     startTime: startTime.present ? startTime.value : this.startTime,
     endTime: endTime.present ? endTime.value : this.endTime,
     status: status ?? this.status,
+    authorId: authorId ?? this.authorId,
+    isShared: isShared ?? this.isShared,
+    createdAt: createdAt ?? this.createdAt,
   );
   TimeChunk copyWithCompanion(TimeChunksCompanion data) {
     return TimeChunk(
@@ -2419,6 +3031,9 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       startTime: data.startTime.present ? data.startTime.value : this.startTime,
       endTime: data.endTime.present ? data.endTime.value : this.endTime,
       status: data.status.present ? data.status.value : this.status,
+      authorId: data.authorId.present ? data.authorId.value : this.authorId,
+      isShared: data.isShared.present ? data.isShared.value : this.isShared,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
 
@@ -2430,13 +3045,26 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
           ..write('date: $date, ')
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
-          ..write('status: $status')
+          ..write('status: $status, ')
+          ..write('authorId: $authorId, ')
+          ..write('isShared: $isShared, ')
+          ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, poiId, date, startTime, endTime, status);
+  int get hashCode => Object.hash(
+    id,
+    poiId,
+    date,
+    startTime,
+    endTime,
+    status,
+    authorId,
+    isShared,
+    createdAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2446,7 +3074,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
           other.date == this.date &&
           other.startTime == this.startTime &&
           other.endTime == this.endTime &&
-          other.status == this.status);
+          other.status == this.status &&
+          other.authorId == this.authorId &&
+          other.isShared == this.isShared &&
+          other.createdAt == this.createdAt);
 }
 
 class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
@@ -2456,6 +3087,9 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
   final Value<String?> startTime;
   final Value<String?> endTime;
   final Value<String> status;
+  final Value<String> authorId;
+  final Value<bool> isShared;
+  final Value<int> createdAt;
   final Value<int> rowid;
   const TimeChunksCompanion({
     this.id = const Value.absent(),
@@ -2464,6 +3098,9 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     this.startTime = const Value.absent(),
     this.endTime = const Value.absent(),
     this.status = const Value.absent(),
+    this.authorId = const Value.absent(),
+    this.isShared = const Value.absent(),
+    this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TimeChunksCompanion.insert({
@@ -2473,9 +3110,13 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     this.startTime = const Value.absent(),
     this.endTime = const Value.absent(),
     this.status = const Value.absent(),
+    required String authorId,
+    this.isShared = const Value.absent(),
+    this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
-       poiId = Value(poiId);
+       poiId = Value(poiId),
+       authorId = Value(authorId);
   static Insertable<TimeChunk> custom({
     Expression<String>? id,
     Expression<String>? poiId,
@@ -2483,6 +3124,9 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     Expression<String>? startTime,
     Expression<String>? endTime,
     Expression<String>? status,
+    Expression<String>? authorId,
+    Expression<bool>? isShared,
+    Expression<int>? createdAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2492,6 +3136,9 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
       if (startTime != null) 'start_time': startTime,
       if (endTime != null) 'end_time': endTime,
       if (status != null) 'status': status,
+      if (authorId != null) 'author_id': authorId,
+      if (isShared != null) 'is_shared': isShared,
+      if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2503,6 +3150,9 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     Value<String?>? startTime,
     Value<String?>? endTime,
     Value<String>? status,
+    Value<String>? authorId,
+    Value<bool>? isShared,
+    Value<int>? createdAt,
     Value<int>? rowid,
   }) {
     return TimeChunksCompanion(
@@ -2512,6 +3162,9 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
       status: status ?? this.status,
+      authorId: authorId ?? this.authorId,
+      isShared: isShared ?? this.isShared,
+      createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2537,6 +3190,15 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     if (status.present) {
       map['status'] = Variable<String>(status.value);
     }
+    if (authorId.present) {
+      map['author_id'] = Variable<String>(authorId.value);
+    }
+    if (isShared.present) {
+      map['is_shared'] = Variable<bool>(isShared.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2552,6 +3214,9 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
           ..write('status: $status, ')
+          ..write('authorId: $authorId, ')
+          ..write('isShared: $isShared, ')
+          ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2585,16 +3250,27 @@ class $ReferenceImagesTable extends ReferenceImages
       'REFERENCES pois (id)',
     ),
   );
-  static const VerificationMeta _localUriMeta = const VerificationMeta(
-    'localUri',
+  static const VerificationMeta _authorIdMeta = const VerificationMeta(
+    'authorId',
   );
   @override
-  late final GeneratedColumn<String> localUri = GeneratedColumn<String>(
-    'local_uri',
+  late final GeneratedColumn<String> authorId = GeneratedColumn<String>(
+    'author_id',
     aliasedName,
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+  );
+  static const VerificationMeta _localPathMeta = const VerificationMeta(
+    'localPath',
+  );
+  @override
+  late final GeneratedColumn<String> localPath = GeneratedColumn<String>(
+    'local_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _remoteUrlMeta = const VerificationMeta(
     'remoteUrl',
@@ -2634,7 +3310,8 @@ class $ReferenceImagesTable extends ReferenceImages
   List<GeneratedColumn> get $columns => [
     id,
     poiId,
-    localUri,
+    authorId,
+    localPath,
     remoteUrl,
     metadata,
     createdAt,
@@ -2664,13 +3341,19 @@ class $ReferenceImagesTable extends ReferenceImages
     } else if (isInserting) {
       context.missing(_poiIdMeta);
     }
-    if (data.containsKey('local_uri')) {
+    if (data.containsKey('author_id')) {
       context.handle(
-        _localUriMeta,
-        localUri.isAcceptableOrUnknown(data['local_uri']!, _localUriMeta),
+        _authorIdMeta,
+        authorId.isAcceptableOrUnknown(data['author_id']!, _authorIdMeta),
       );
     } else if (isInserting) {
-      context.missing(_localUriMeta);
+      context.missing(_authorIdMeta);
+    }
+    if (data.containsKey('local_path')) {
+      context.handle(
+        _localPathMeta,
+        localPath.isAcceptableOrUnknown(data['local_path']!, _localPathMeta),
+      );
     }
     if (data.containsKey('remote_url')) {
       context.handle(
@@ -2707,10 +3390,14 @@ class $ReferenceImagesTable extends ReferenceImages
         DriftSqlType.string,
         data['${effectivePrefix}poi_id'],
       )!,
-      localUri: attachedDatabase.typeMapping.read(
+      authorId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}local_uri'],
+        data['${effectivePrefix}author_id'],
       )!,
+      localPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_path'],
+      ),
       remoteUrl: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}remote_url'],
@@ -2735,14 +3422,16 @@ class $ReferenceImagesTable extends ReferenceImages
 class ReferenceImage extends DataClass implements Insertable<ReferenceImage> {
   final String id;
   final String poiId;
-  final String localUri;
+  final String authorId;
+  final String? localPath;
   final String? remoteUrl;
   final String? metadata;
   final int createdAt;
   const ReferenceImage({
     required this.id,
     required this.poiId,
-    required this.localUri,
+    required this.authorId,
+    this.localPath,
     this.remoteUrl,
     this.metadata,
     required this.createdAt,
@@ -2752,7 +3441,10 @@ class ReferenceImage extends DataClass implements Insertable<ReferenceImage> {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['poi_id'] = Variable<String>(poiId);
-    map['local_uri'] = Variable<String>(localUri);
+    map['author_id'] = Variable<String>(authorId);
+    if (!nullToAbsent || localPath != null) {
+      map['local_path'] = Variable<String>(localPath);
+    }
     if (!nullToAbsent || remoteUrl != null) {
       map['remote_url'] = Variable<String>(remoteUrl);
     }
@@ -2767,7 +3459,10 @@ class ReferenceImage extends DataClass implements Insertable<ReferenceImage> {
     return ReferenceImagesCompanion(
       id: Value(id),
       poiId: Value(poiId),
-      localUri: Value(localUri),
+      authorId: Value(authorId),
+      localPath: localPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localPath),
       remoteUrl: remoteUrl == null && nullToAbsent
           ? const Value.absent()
           : Value(remoteUrl),
@@ -2786,7 +3481,8 @@ class ReferenceImage extends DataClass implements Insertable<ReferenceImage> {
     return ReferenceImage(
       id: serializer.fromJson<String>(json['id']),
       poiId: serializer.fromJson<String>(json['poiId']),
-      localUri: serializer.fromJson<String>(json['localUri']),
+      authorId: serializer.fromJson<String>(json['authorId']),
+      localPath: serializer.fromJson<String?>(json['localPath']),
       remoteUrl: serializer.fromJson<String?>(json['remoteUrl']),
       metadata: serializer.fromJson<String?>(json['metadata']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
@@ -2798,7 +3494,8 @@ class ReferenceImage extends DataClass implements Insertable<ReferenceImage> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'poiId': serializer.toJson<String>(poiId),
-      'localUri': serializer.toJson<String>(localUri),
+      'authorId': serializer.toJson<String>(authorId),
+      'localPath': serializer.toJson<String?>(localPath),
       'remoteUrl': serializer.toJson<String?>(remoteUrl),
       'metadata': serializer.toJson<String?>(metadata),
       'createdAt': serializer.toJson<int>(createdAt),
@@ -2808,14 +3505,16 @@ class ReferenceImage extends DataClass implements Insertable<ReferenceImage> {
   ReferenceImage copyWith({
     String? id,
     String? poiId,
-    String? localUri,
+    String? authorId,
+    Value<String?> localPath = const Value.absent(),
     Value<String?> remoteUrl = const Value.absent(),
     Value<String?> metadata = const Value.absent(),
     int? createdAt,
   }) => ReferenceImage(
     id: id ?? this.id,
     poiId: poiId ?? this.poiId,
-    localUri: localUri ?? this.localUri,
+    authorId: authorId ?? this.authorId,
+    localPath: localPath.present ? localPath.value : this.localPath,
     remoteUrl: remoteUrl.present ? remoteUrl.value : this.remoteUrl,
     metadata: metadata.present ? metadata.value : this.metadata,
     createdAt: createdAt ?? this.createdAt,
@@ -2824,7 +3523,8 @@ class ReferenceImage extends DataClass implements Insertable<ReferenceImage> {
     return ReferenceImage(
       id: data.id.present ? data.id.value : this.id,
       poiId: data.poiId.present ? data.poiId.value : this.poiId,
-      localUri: data.localUri.present ? data.localUri.value : this.localUri,
+      authorId: data.authorId.present ? data.authorId.value : this.authorId,
+      localPath: data.localPath.present ? data.localPath.value : this.localPath,
       remoteUrl: data.remoteUrl.present ? data.remoteUrl.value : this.remoteUrl,
       metadata: data.metadata.present ? data.metadata.value : this.metadata,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
@@ -2836,7 +3536,8 @@ class ReferenceImage extends DataClass implements Insertable<ReferenceImage> {
     return (StringBuffer('ReferenceImage(')
           ..write('id: $id, ')
           ..write('poiId: $poiId, ')
-          ..write('localUri: $localUri, ')
+          ..write('authorId: $authorId, ')
+          ..write('localPath: $localPath, ')
           ..write('remoteUrl: $remoteUrl, ')
           ..write('metadata: $metadata, ')
           ..write('createdAt: $createdAt')
@@ -2845,15 +3546,23 @@ class ReferenceImage extends DataClass implements Insertable<ReferenceImage> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, poiId, localUri, remoteUrl, metadata, createdAt);
+  int get hashCode => Object.hash(
+    id,
+    poiId,
+    authorId,
+    localPath,
+    remoteUrl,
+    metadata,
+    createdAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ReferenceImage &&
           other.id == this.id &&
           other.poiId == this.poiId &&
-          other.localUri == this.localUri &&
+          other.authorId == this.authorId &&
+          other.localPath == this.localPath &&
           other.remoteUrl == this.remoteUrl &&
           other.metadata == this.metadata &&
           other.createdAt == this.createdAt);
@@ -2862,7 +3571,8 @@ class ReferenceImage extends DataClass implements Insertable<ReferenceImage> {
 class ReferenceImagesCompanion extends UpdateCompanion<ReferenceImage> {
   final Value<String> id;
   final Value<String> poiId;
-  final Value<String> localUri;
+  final Value<String> authorId;
+  final Value<String?> localPath;
   final Value<String?> remoteUrl;
   final Value<String?> metadata;
   final Value<int> createdAt;
@@ -2870,7 +3580,8 @@ class ReferenceImagesCompanion extends UpdateCompanion<ReferenceImage> {
   const ReferenceImagesCompanion({
     this.id = const Value.absent(),
     this.poiId = const Value.absent(),
-    this.localUri = const Value.absent(),
+    this.authorId = const Value.absent(),
+    this.localPath = const Value.absent(),
     this.remoteUrl = const Value.absent(),
     this.metadata = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -2879,18 +3590,20 @@ class ReferenceImagesCompanion extends UpdateCompanion<ReferenceImage> {
   ReferenceImagesCompanion.insert({
     required String id,
     required String poiId,
-    required String localUri,
+    required String authorId,
+    this.localPath = const Value.absent(),
     this.remoteUrl = const Value.absent(),
     this.metadata = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        poiId = Value(poiId),
-       localUri = Value(localUri);
+       authorId = Value(authorId);
   static Insertable<ReferenceImage> custom({
     Expression<String>? id,
     Expression<String>? poiId,
-    Expression<String>? localUri,
+    Expression<String>? authorId,
+    Expression<String>? localPath,
     Expression<String>? remoteUrl,
     Expression<String>? metadata,
     Expression<int>? createdAt,
@@ -2899,7 +3612,8 @@ class ReferenceImagesCompanion extends UpdateCompanion<ReferenceImage> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (poiId != null) 'poi_id': poiId,
-      if (localUri != null) 'local_uri': localUri,
+      if (authorId != null) 'author_id': authorId,
+      if (localPath != null) 'local_path': localPath,
       if (remoteUrl != null) 'remote_url': remoteUrl,
       if (metadata != null) 'metadata': metadata,
       if (createdAt != null) 'created_at': createdAt,
@@ -2910,7 +3624,8 @@ class ReferenceImagesCompanion extends UpdateCompanion<ReferenceImage> {
   ReferenceImagesCompanion copyWith({
     Value<String>? id,
     Value<String>? poiId,
-    Value<String>? localUri,
+    Value<String>? authorId,
+    Value<String?>? localPath,
     Value<String?>? remoteUrl,
     Value<String?>? metadata,
     Value<int>? createdAt,
@@ -2919,7 +3634,8 @@ class ReferenceImagesCompanion extends UpdateCompanion<ReferenceImage> {
     return ReferenceImagesCompanion(
       id: id ?? this.id,
       poiId: poiId ?? this.poiId,
-      localUri: localUri ?? this.localUri,
+      authorId: authorId ?? this.authorId,
+      localPath: localPath ?? this.localPath,
       remoteUrl: remoteUrl ?? this.remoteUrl,
       metadata: metadata ?? this.metadata,
       createdAt: createdAt ?? this.createdAt,
@@ -2936,8 +3652,11 @@ class ReferenceImagesCompanion extends UpdateCompanion<ReferenceImage> {
     if (poiId.present) {
       map['poi_id'] = Variable<String>(poiId.value);
     }
-    if (localUri.present) {
-      map['local_uri'] = Variable<String>(localUri.value);
+    if (authorId.present) {
+      map['author_id'] = Variable<String>(authorId.value);
+    }
+    if (localPath.present) {
+      map['local_path'] = Variable<String>(localPath.value);
     }
     if (remoteUrl.present) {
       map['remote_url'] = Variable<String>(remoteUrl.value);
@@ -2959,7 +3678,8 @@ class ReferenceImagesCompanion extends UpdateCompanion<ReferenceImage> {
     return (StringBuffer('ReferenceImagesCompanion(')
           ..write('id: $id, ')
           ..write('poiId: $poiId, ')
-          ..write('localUri: $localUri, ')
+          ..write('authorId: $authorId, ')
+          ..write('localPath: $localPath, ')
           ..write('remoteUrl: $remoteUrl, ')
           ..write('metadata: $metadata, ')
           ..write('createdAt: $createdAt, ')
@@ -2996,6 +3716,17 @@ class $MediaAssetsTable extends MediaAssets
       'REFERENCES pois (id)',
     ),
   );
+  static const VerificationMeta _authorIdMeta = const VerificationMeta(
+    'authorId',
+  );
+  @override
+  late final GeneratedColumn<String> authorId = GeneratedColumn<String>(
+    'author_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _typeMeta = const VerificationMeta('type');
   @override
   late final GeneratedColumn<String> type = GeneratedColumn<String>(
@@ -3005,16 +3736,16 @@ class $MediaAssetsTable extends MediaAssets
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _localUriMeta = const VerificationMeta(
-    'localUri',
+  static const VerificationMeta _localPathMeta = const VerificationMeta(
+    'localPath',
   );
   @override
-  late final GeneratedColumn<String> localUri = GeneratedColumn<String>(
-    'local_uri',
+  late final GeneratedColumn<String> localPath = GeneratedColumn<String>(
+    'local_path',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.string,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _remoteUrlMeta = const VerificationMeta(
     'remoteUrl',
@@ -3068,8 +3799,9 @@ class $MediaAssetsTable extends MediaAssets
   List<GeneratedColumn> get $columns => [
     id,
     poiId,
+    authorId,
     type,
-    localUri,
+    localPath,
     remoteUrl,
     metadata,
     referenceImageId,
@@ -3100,6 +3832,14 @@ class $MediaAssetsTable extends MediaAssets
     } else if (isInserting) {
       context.missing(_poiIdMeta);
     }
+    if (data.containsKey('author_id')) {
+      context.handle(
+        _authorIdMeta,
+        authorId.isAcceptableOrUnknown(data['author_id']!, _authorIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_authorIdMeta);
+    }
     if (data.containsKey('type')) {
       context.handle(
         _typeMeta,
@@ -3108,13 +3848,11 @@ class $MediaAssetsTable extends MediaAssets
     } else if (isInserting) {
       context.missing(_typeMeta);
     }
-    if (data.containsKey('local_uri')) {
+    if (data.containsKey('local_path')) {
       context.handle(
-        _localUriMeta,
-        localUri.isAcceptableOrUnknown(data['local_uri']!, _localUriMeta),
+        _localPathMeta,
+        localPath.isAcceptableOrUnknown(data['local_path']!, _localPathMeta),
       );
-    } else if (isInserting) {
-      context.missing(_localUriMeta);
     }
     if (data.containsKey('remote_url')) {
       context.handle(
@@ -3160,14 +3898,18 @@ class $MediaAssetsTable extends MediaAssets
         DriftSqlType.string,
         data['${effectivePrefix}poi_id'],
       )!,
+      authorId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_id'],
+      )!,
       type: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}type'],
       )!,
-      localUri: attachedDatabase.typeMapping.read(
+      localPath: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}local_uri'],
-      )!,
+        data['${effectivePrefix}local_path'],
+      ),
       remoteUrl: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}remote_url'],
@@ -3196,8 +3938,9 @@ class $MediaAssetsTable extends MediaAssets
 class MediaAsset extends DataClass implements Insertable<MediaAsset> {
   final String id;
   final String poiId;
+  final String authorId;
   final String type;
-  final String localUri;
+  final String? localPath;
   final String? remoteUrl;
   final String? metadata;
   final String? referenceImageId;
@@ -3205,8 +3948,9 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
   const MediaAsset({
     required this.id,
     required this.poiId,
+    required this.authorId,
     required this.type,
-    required this.localUri,
+    this.localPath,
     this.remoteUrl,
     this.metadata,
     this.referenceImageId,
@@ -3217,8 +3961,11 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['poi_id'] = Variable<String>(poiId);
+    map['author_id'] = Variable<String>(authorId);
     map['type'] = Variable<String>(type);
-    map['local_uri'] = Variable<String>(localUri);
+    if (!nullToAbsent || localPath != null) {
+      map['local_path'] = Variable<String>(localPath);
+    }
     if (!nullToAbsent || remoteUrl != null) {
       map['remote_url'] = Variable<String>(remoteUrl);
     }
@@ -3236,8 +3983,11 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
     return MediaAssetsCompanion(
       id: Value(id),
       poiId: Value(poiId),
+      authorId: Value(authorId),
       type: Value(type),
-      localUri: Value(localUri),
+      localPath: localPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localPath),
       remoteUrl: remoteUrl == null && nullToAbsent
           ? const Value.absent()
           : Value(remoteUrl),
@@ -3259,8 +4009,9 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
     return MediaAsset(
       id: serializer.fromJson<String>(json['id']),
       poiId: serializer.fromJson<String>(json['poiId']),
+      authorId: serializer.fromJson<String>(json['authorId']),
       type: serializer.fromJson<String>(json['type']),
-      localUri: serializer.fromJson<String>(json['localUri']),
+      localPath: serializer.fromJson<String?>(json['localPath']),
       remoteUrl: serializer.fromJson<String?>(json['remoteUrl']),
       metadata: serializer.fromJson<String?>(json['metadata']),
       referenceImageId: serializer.fromJson<String?>(json['referenceImageId']),
@@ -3273,8 +4024,9 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'poiId': serializer.toJson<String>(poiId),
+      'authorId': serializer.toJson<String>(authorId),
       'type': serializer.toJson<String>(type),
-      'localUri': serializer.toJson<String>(localUri),
+      'localPath': serializer.toJson<String?>(localPath),
       'remoteUrl': serializer.toJson<String?>(remoteUrl),
       'metadata': serializer.toJson<String?>(metadata),
       'referenceImageId': serializer.toJson<String?>(referenceImageId),
@@ -3285,8 +4037,9 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
   MediaAsset copyWith({
     String? id,
     String? poiId,
+    String? authorId,
     String? type,
-    String? localUri,
+    Value<String?> localPath = const Value.absent(),
     Value<String?> remoteUrl = const Value.absent(),
     Value<String?> metadata = const Value.absent(),
     Value<String?> referenceImageId = const Value.absent(),
@@ -3294,8 +4047,9 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
   }) => MediaAsset(
     id: id ?? this.id,
     poiId: poiId ?? this.poiId,
+    authorId: authorId ?? this.authorId,
     type: type ?? this.type,
-    localUri: localUri ?? this.localUri,
+    localPath: localPath.present ? localPath.value : this.localPath,
     remoteUrl: remoteUrl.present ? remoteUrl.value : this.remoteUrl,
     metadata: metadata.present ? metadata.value : this.metadata,
     referenceImageId: referenceImageId.present
@@ -3307,8 +4061,9 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
     return MediaAsset(
       id: data.id.present ? data.id.value : this.id,
       poiId: data.poiId.present ? data.poiId.value : this.poiId,
+      authorId: data.authorId.present ? data.authorId.value : this.authorId,
       type: data.type.present ? data.type.value : this.type,
-      localUri: data.localUri.present ? data.localUri.value : this.localUri,
+      localPath: data.localPath.present ? data.localPath.value : this.localPath,
       remoteUrl: data.remoteUrl.present ? data.remoteUrl.value : this.remoteUrl,
       metadata: data.metadata.present ? data.metadata.value : this.metadata,
       referenceImageId: data.referenceImageId.present
@@ -3323,8 +4078,9 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
     return (StringBuffer('MediaAsset(')
           ..write('id: $id, ')
           ..write('poiId: $poiId, ')
+          ..write('authorId: $authorId, ')
           ..write('type: $type, ')
-          ..write('localUri: $localUri, ')
+          ..write('localPath: $localPath, ')
           ..write('remoteUrl: $remoteUrl, ')
           ..write('metadata: $metadata, ')
           ..write('referenceImageId: $referenceImageId, ')
@@ -3337,8 +4093,9 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
   int get hashCode => Object.hash(
     id,
     poiId,
+    authorId,
     type,
-    localUri,
+    localPath,
     remoteUrl,
     metadata,
     referenceImageId,
@@ -3350,8 +4107,9 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
       (other is MediaAsset &&
           other.id == this.id &&
           other.poiId == this.poiId &&
+          other.authorId == this.authorId &&
           other.type == this.type &&
-          other.localUri == this.localUri &&
+          other.localPath == this.localPath &&
           other.remoteUrl == this.remoteUrl &&
           other.metadata == this.metadata &&
           other.referenceImageId == this.referenceImageId &&
@@ -3361,8 +4119,9 @@ class MediaAsset extends DataClass implements Insertable<MediaAsset> {
 class MediaAssetsCompanion extends UpdateCompanion<MediaAsset> {
   final Value<String> id;
   final Value<String> poiId;
+  final Value<String> authorId;
   final Value<String> type;
-  final Value<String> localUri;
+  final Value<String?> localPath;
   final Value<String?> remoteUrl;
   final Value<String?> metadata;
   final Value<String?> referenceImageId;
@@ -3371,8 +4130,9 @@ class MediaAssetsCompanion extends UpdateCompanion<MediaAsset> {
   const MediaAssetsCompanion({
     this.id = const Value.absent(),
     this.poiId = const Value.absent(),
+    this.authorId = const Value.absent(),
     this.type = const Value.absent(),
-    this.localUri = const Value.absent(),
+    this.localPath = const Value.absent(),
     this.remoteUrl = const Value.absent(),
     this.metadata = const Value.absent(),
     this.referenceImageId = const Value.absent(),
@@ -3382,8 +4142,9 @@ class MediaAssetsCompanion extends UpdateCompanion<MediaAsset> {
   MediaAssetsCompanion.insert({
     required String id,
     required String poiId,
+    required String authorId,
     required String type,
-    required String localUri,
+    this.localPath = const Value.absent(),
     this.remoteUrl = const Value.absent(),
     this.metadata = const Value.absent(),
     this.referenceImageId = const Value.absent(),
@@ -3391,13 +4152,14 @@ class MediaAssetsCompanion extends UpdateCompanion<MediaAsset> {
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        poiId = Value(poiId),
-       type = Value(type),
-       localUri = Value(localUri);
+       authorId = Value(authorId),
+       type = Value(type);
   static Insertable<MediaAsset> custom({
     Expression<String>? id,
     Expression<String>? poiId,
+    Expression<String>? authorId,
     Expression<String>? type,
-    Expression<String>? localUri,
+    Expression<String>? localPath,
     Expression<String>? remoteUrl,
     Expression<String>? metadata,
     Expression<String>? referenceImageId,
@@ -3407,8 +4169,9 @@ class MediaAssetsCompanion extends UpdateCompanion<MediaAsset> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (poiId != null) 'poi_id': poiId,
+      if (authorId != null) 'author_id': authorId,
       if (type != null) 'type': type,
-      if (localUri != null) 'local_uri': localUri,
+      if (localPath != null) 'local_path': localPath,
       if (remoteUrl != null) 'remote_url': remoteUrl,
       if (metadata != null) 'metadata': metadata,
       if (referenceImageId != null) 'reference_image_id': referenceImageId,
@@ -3420,8 +4183,9 @@ class MediaAssetsCompanion extends UpdateCompanion<MediaAsset> {
   MediaAssetsCompanion copyWith({
     Value<String>? id,
     Value<String>? poiId,
+    Value<String>? authorId,
     Value<String>? type,
-    Value<String>? localUri,
+    Value<String?>? localPath,
     Value<String?>? remoteUrl,
     Value<String?>? metadata,
     Value<String?>? referenceImageId,
@@ -3431,8 +4195,9 @@ class MediaAssetsCompanion extends UpdateCompanion<MediaAsset> {
     return MediaAssetsCompanion(
       id: id ?? this.id,
       poiId: poiId ?? this.poiId,
+      authorId: authorId ?? this.authorId,
       type: type ?? this.type,
-      localUri: localUri ?? this.localUri,
+      localPath: localPath ?? this.localPath,
       remoteUrl: remoteUrl ?? this.remoteUrl,
       metadata: metadata ?? this.metadata,
       referenceImageId: referenceImageId ?? this.referenceImageId,
@@ -3450,11 +4215,14 @@ class MediaAssetsCompanion extends UpdateCompanion<MediaAsset> {
     if (poiId.present) {
       map['poi_id'] = Variable<String>(poiId.value);
     }
+    if (authorId.present) {
+      map['author_id'] = Variable<String>(authorId.value);
+    }
     if (type.present) {
       map['type'] = Variable<String>(type.value);
     }
-    if (localUri.present) {
-      map['local_uri'] = Variable<String>(localUri.value);
+    if (localPath.present) {
+      map['local_path'] = Variable<String>(localPath.value);
     }
     if (remoteUrl.present) {
       map['remote_url'] = Variable<String>(remoteUrl.value);
@@ -3479,8 +4247,9 @@ class MediaAssetsCompanion extends UpdateCompanion<MediaAsset> {
     return (StringBuffer('MediaAssetsCompanion(')
           ..write('id: $id, ')
           ..write('poiId: $poiId, ')
+          ..write('authorId: $authorId, ')
           ..write('type: $type, ')
-          ..write('localUri: $localUri, ')
+          ..write('localPath: $localPath, ')
           ..write('remoteUrl: $remoteUrl, ')
           ..write('metadata: $metadata, ')
           ..write('referenceImageId: $referenceImageId, ')
@@ -3572,6 +4341,8 @@ typedef $$RoisTableCreateCompanionBuilder =
       required String id,
       required String name,
       Value<String?> description,
+      required String authorId,
+      Value<bool> isShared,
       Value<int> isOfflineCached,
       Value<int> createdAt,
       Value<int> rowid,
@@ -3581,6 +4352,8 @@ typedef $$RoisTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> name,
       Value<String?> description,
+      Value<String> authorId,
+      Value<bool> isShared,
       Value<int> isOfflineCached,
       Value<int> createdAt,
       Value<int> rowid,
@@ -3630,6 +4403,16 @@ class $$RoisTableFilterComposer extends Composer<_$AppDatabase, $RoisTable> {
 
   ColumnFilters<String> get description => $composableBuilder(
     column: $table.description,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3692,6 +4475,16 @@ class $$RoisTableOrderingComposer extends Composer<_$AppDatabase, $RoisTable> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get isOfflineCached => $composableBuilder(
     column: $table.isOfflineCached,
     builder: (column) => ColumnOrderings(column),
@@ -3722,6 +4515,12 @@ class $$RoisTableAnnotationComposer
     column: $table.description,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get authorId =>
+      $composableBuilder(column: $table.authorId, builder: (column) => column);
+
+  GeneratedColumn<bool> get isShared =>
+      $composableBuilder(column: $table.isShared, builder: (column) => column);
 
   GeneratedColumn<int> get isOfflineCached => $composableBuilder(
     column: $table.isOfflineCached,
@@ -3788,6 +4587,8 @@ class $$RoisTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String?> description = const Value.absent(),
+                Value<String> authorId = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
                 Value<int> isOfflineCached = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -3795,6 +4596,8 @@ class $$RoisTableTableManager
                 id: id,
                 name: name,
                 description: description,
+                authorId: authorId,
+                isShared: isShared,
                 isOfflineCached: isOfflineCached,
                 createdAt: createdAt,
                 rowid: rowid,
@@ -3804,6 +4607,8 @@ class $$RoisTableTableManager
                 required String id,
                 required String name,
                 Value<String?> description = const Value.absent(),
+                required String authorId,
+                Value<bool> isShared = const Value.absent(),
                 Value<int> isOfflineCached = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -3811,6 +4616,8 @@ class $$RoisTableTableManager
                 id: id,
                 name: name,
                 description: description,
+                authorId: authorId,
+                isShared: isShared,
                 isOfflineCached: isOfflineCached,
                 createdAt: createdAt,
                 rowid: rowid,
@@ -3864,6 +4671,7 @@ typedef $$PoisTableCreateCompanionBuilder =
     PoisCompanion Function({
       required String id,
       Value<String?> roiId,
+      required String authorId,
       required String name,
       Value<String?> description,
       Value<String?> address,
@@ -3871,14 +4679,18 @@ typedef $$PoisTableCreateCompanionBuilder =
       required double lng,
       Value<String?> businessHours,
       Value<String?> contactInfo,
-      Value<String?> coverImageUri,
+      Value<String?> localCoverImagePath,
+      Value<String?> remoteCoverImageUrl,
       Value<int> createdAt,
+      Value<bool> isShared,
+      Value<int> sortOrder,
       Value<int> rowid,
     });
 typedef $$PoisTableUpdateCompanionBuilder =
     PoisCompanion Function({
       Value<String> id,
       Value<String?> roiId,
+      Value<String> authorId,
       Value<String> name,
       Value<String?> description,
       Value<String?> address,
@@ -3886,8 +4698,11 @@ typedef $$PoisTableUpdateCompanionBuilder =
       Value<double> lng,
       Value<String?> businessHours,
       Value<String?> contactInfo,
-      Value<String?> coverImageUri,
+      Value<String?> localCoverImagePath,
+      Value<String?> remoteCoverImageUrl,
       Value<int> createdAt,
+      Value<bool> isShared,
+      Value<int> sortOrder,
       Value<int> rowid,
     });
 
@@ -4019,6 +4834,11 @@ class $$PoisTableFilterComposer extends Composer<_$AppDatabase, $PoisTable> {
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnFilters(column),
@@ -4054,13 +4874,28 @@ class $$PoisTableFilterComposer extends Composer<_$AppDatabase, $PoisTable> {
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get coverImageUri => $composableBuilder(
-    column: $table.coverImageUri,
+  ColumnFilters<String> get localCoverImagePath => $composableBuilder(
+    column: $table.localCoverImagePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteCoverImageUrl => $composableBuilder(
+    column: $table.remoteCoverImageUrl,
     builder: (column) => ColumnFilters(column),
   );
 
   ColumnFilters<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4226,6 +5061,11 @@ class $$PoisTableOrderingComposer extends Composer<_$AppDatabase, $PoisTable> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnOrderings(column),
@@ -4261,13 +5101,28 @@ class $$PoisTableOrderingComposer extends Composer<_$AppDatabase, $PoisTable> {
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get coverImageUri => $composableBuilder(
-    column: $table.coverImageUri,
+  ColumnOrderings<String> get localCoverImagePath => $composableBuilder(
+    column: $table.localCoverImagePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get remoteCoverImageUrl => $composableBuilder(
+    column: $table.remoteCoverImageUrl,
     builder: (column) => ColumnOrderings(column),
   );
 
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -4307,6 +5162,9 @@ class $$PoisTableAnnotationComposer
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
+  GeneratedColumn<String> get authorId =>
+      $composableBuilder(column: $table.authorId, builder: (column) => column);
+
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
 
@@ -4334,13 +5192,24 @@ class $$PoisTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get coverImageUri => $composableBuilder(
-    column: $table.coverImageUri,
+  GeneratedColumn<String> get localCoverImagePath => $composableBuilder(
+    column: $table.localCoverImagePath,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get remoteCoverImageUrl => $composableBuilder(
+    column: $table.remoteCoverImageUrl,
     builder: (column) => column,
   );
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get isShared =>
+      $composableBuilder(column: $table.isShared, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
   $$RoisTableAnnotationComposer get roiId {
     final $$RoisTableAnnotationComposer composer = $composerBuilder(
@@ -4528,6 +5397,7 @@ class $$PoisTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String?> roiId = const Value.absent(),
+                Value<String> authorId = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String?> description = const Value.absent(),
                 Value<String?> address = const Value.absent(),
@@ -4535,12 +5405,16 @@ class $$PoisTableTableManager
                 Value<double> lng = const Value.absent(),
                 Value<String?> businessHours = const Value.absent(),
                 Value<String?> contactInfo = const Value.absent(),
-                Value<String?> coverImageUri = const Value.absent(),
+                Value<String?> localCoverImagePath = const Value.absent(),
+                Value<String?> remoteCoverImageUrl = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PoisCompanion(
                 id: id,
                 roiId: roiId,
+                authorId: authorId,
                 name: name,
                 description: description,
                 address: address,
@@ -4548,14 +5422,18 @@ class $$PoisTableTableManager
                 lng: lng,
                 businessHours: businessHours,
                 contactInfo: contactInfo,
-                coverImageUri: coverImageUri,
+                localCoverImagePath: localCoverImagePath,
+                remoteCoverImageUrl: remoteCoverImageUrl,
                 createdAt: createdAt,
+                isShared: isShared,
+                sortOrder: sortOrder,
                 rowid: rowid,
               ),
           createCompanionCallback:
               ({
                 required String id,
                 Value<String?> roiId = const Value.absent(),
+                required String authorId,
                 required String name,
                 Value<String?> description = const Value.absent(),
                 Value<String?> address = const Value.absent(),
@@ -4563,12 +5441,16 @@ class $$PoisTableTableManager
                 required double lng,
                 Value<String?> businessHours = const Value.absent(),
                 Value<String?> contactInfo = const Value.absent(),
-                Value<String?> coverImageUri = const Value.absent(),
+                Value<String?> localCoverImagePath = const Value.absent(),
+                Value<String?> remoteCoverImageUrl = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PoisCompanion.insert(
                 id: id,
                 roiId: roiId,
+                authorId: authorId,
                 name: name,
                 description: description,
                 address: address,
@@ -4576,8 +5458,11 @@ class $$PoisTableTableManager
                 lng: lng,
                 businessHours: businessHours,
                 contactInfo: contactInfo,
-                coverImageUri: coverImageUri,
+                localCoverImagePath: localCoverImagePath,
+                remoteCoverImageUrl: remoteCoverImageUrl,
                 createdAt: createdAt,
+                isShared: isShared,
+                sortOrder: sortOrder,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -4754,6 +5639,8 @@ typedef $$AnimesTableCreateCompanionBuilder =
       required String name,
       Value<String?> description,
       Value<String?> bangumiId,
+      required String authorId,
+      Value<bool> isShared,
       Value<int> createdAt,
       Value<int> rowid,
     });
@@ -4763,6 +5650,8 @@ typedef $$AnimesTableUpdateCompanionBuilder =
       Value<String> name,
       Value<String?> description,
       Value<String?> bangumiId,
+      Value<String> authorId,
+      Value<bool> isShared,
       Value<int> createdAt,
       Value<int> rowid,
     });
@@ -4816,6 +5705,16 @@ class $$AnimesTableFilterComposer
 
   ColumnFilters<String> get bangumiId => $composableBuilder(
     column: $table.bangumiId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4879,6 +5778,16 @@ class $$AnimesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -4907,6 +5816,12 @@ class $$AnimesTableAnnotationComposer
 
   GeneratedColumn<String> get bangumiId =>
       $composableBuilder(column: $table.bangumiId, builder: (column) => column);
+
+  GeneratedColumn<String> get authorId =>
+      $composableBuilder(column: $table.authorId, builder: (column) => column);
+
+  GeneratedColumn<bool> get isShared =>
+      $composableBuilder(column: $table.isShared, builder: (column) => column);
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -4969,6 +5884,8 @@ class $$AnimesTableTableManager
                 Value<String> name = const Value.absent(),
                 Value<String?> description = const Value.absent(),
                 Value<String?> bangumiId = const Value.absent(),
+                Value<String> authorId = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AnimesCompanion(
@@ -4976,6 +5893,8 @@ class $$AnimesTableTableManager
                 name: name,
                 description: description,
                 bangumiId: bangumiId,
+                authorId: authorId,
+                isShared: isShared,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
@@ -4985,6 +5904,8 @@ class $$AnimesTableTableManager
                 required String name,
                 Value<String?> description = const Value.absent(),
                 Value<String?> bangumiId = const Value.absent(),
+                required String authorId,
+                Value<bool> isShared = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AnimesCompanion.insert(
@@ -4992,6 +5913,8 @@ class $$AnimesTableTableManager
                 name: name,
                 description: description,
                 bangumiId: bangumiId,
+                authorId: authorId,
+                isShared: isShared,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
@@ -5046,6 +5969,8 @@ typedef $$TagsTableCreateCompanionBuilder =
       required String id,
       required String name,
       Value<String?> description,
+      required String authorId,
+      Value<bool> isShared,
       Value<int> createdAt,
       Value<int> rowid,
     });
@@ -5054,6 +5979,8 @@ typedef $$TagsTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> name,
       Value<String?> description,
+      Value<String> authorId,
+      Value<bool> isShared,
       Value<int> createdAt,
       Value<int> rowid,
     });
@@ -5102,6 +6029,16 @@ class $$TagsTableFilterComposer extends Composer<_$AppDatabase, $TagsTable> {
 
   ColumnFilters<String> get description => $composableBuilder(
     column: $table.description,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5159,6 +6096,16 @@ class $$TagsTableOrderingComposer extends Composer<_$AppDatabase, $TagsTable> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -5184,6 +6131,12 @@ class $$TagsTableAnnotationComposer
     column: $table.description,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get authorId =>
+      $composableBuilder(column: $table.authorId, builder: (column) => column);
+
+  GeneratedColumn<bool> get isShared =>
+      $composableBuilder(column: $table.isShared, builder: (column) => column);
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -5245,12 +6198,16 @@ class $$TagsTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String?> description = const Value.absent(),
+                Value<String> authorId = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TagsCompanion(
                 id: id,
                 name: name,
                 description: description,
+                authorId: authorId,
+                isShared: isShared,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
@@ -5259,12 +6216,16 @@ class $$TagsTableTableManager
                 required String id,
                 required String name,
                 Value<String?> description = const Value.absent(),
+                required String authorId,
+                Value<bool> isShared = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TagsCompanion.insert(
                 id: id,
                 name: name,
                 description: description,
+                authorId: authorId,
+                isShared: isShared,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
@@ -6012,6 +6973,9 @@ typedef $$TimeChunksTableCreateCompanionBuilder =
       Value<String?> startTime,
       Value<String?> endTime,
       Value<String> status,
+      required String authorId,
+      Value<bool> isShared,
+      Value<int> createdAt,
       Value<int> rowid,
     });
 typedef $$TimeChunksTableUpdateCompanionBuilder =
@@ -6022,6 +6986,9 @@ typedef $$TimeChunksTableUpdateCompanionBuilder =
       Value<String?> startTime,
       Value<String?> endTime,
       Value<String> status,
+      Value<String> authorId,
+      Value<bool> isShared,
+      Value<int> createdAt,
       Value<int> rowid,
     });
 
@@ -6079,6 +7046,21 @@ class $$TimeChunksTableFilterComposer
 
   ColumnFilters<String> get status => $composableBuilder(
     column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6140,6 +7122,21 @@ class $$TimeChunksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$PoisTableOrderingComposer get poiId {
     final $$PoisTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -6187,6 +7184,15 @@ class $$TimeChunksTableAnnotationComposer
 
   GeneratedColumn<String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get authorId =>
+      $composableBuilder(column: $table.authorId, builder: (column) => column);
+
+  GeneratedColumn<bool> get isShared =>
+      $composableBuilder(column: $table.isShared, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
   $$PoisTableAnnotationComposer get poiId {
     final $$PoisTableAnnotationComposer composer = $composerBuilder(
@@ -6246,6 +7252,9 @@ class $$TimeChunksTableTableManager
                 Value<String?> startTime = const Value.absent(),
                 Value<String?> endTime = const Value.absent(),
                 Value<String> status = const Value.absent(),
+                Value<String> authorId = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TimeChunksCompanion(
                 id: id,
@@ -6254,6 +7263,9 @@ class $$TimeChunksTableTableManager
                 startTime: startTime,
                 endTime: endTime,
                 status: status,
+                authorId: authorId,
+                isShared: isShared,
+                createdAt: createdAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6264,6 +7276,9 @@ class $$TimeChunksTableTableManager
                 Value<String?> startTime = const Value.absent(),
                 Value<String?> endTime = const Value.absent(),
                 Value<String> status = const Value.absent(),
+                required String authorId,
+                Value<bool> isShared = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TimeChunksCompanion.insert(
                 id: id,
@@ -6272,6 +7287,9 @@ class $$TimeChunksTableTableManager
                 startTime: startTime,
                 endTime: endTime,
                 status: status,
+                authorId: authorId,
+                isShared: isShared,
+                createdAt: createdAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -6345,7 +7363,8 @@ typedef $$ReferenceImagesTableCreateCompanionBuilder =
     ReferenceImagesCompanion Function({
       required String id,
       required String poiId,
-      required String localUri,
+      required String authorId,
+      Value<String?> localPath,
       Value<String?> remoteUrl,
       Value<String?> metadata,
       Value<int> createdAt,
@@ -6355,7 +7374,8 @@ typedef $$ReferenceImagesTableUpdateCompanionBuilder =
     ReferenceImagesCompanion Function({
       Value<String> id,
       Value<String> poiId,
-      Value<String> localUri,
+      Value<String> authorId,
+      Value<String?> localPath,
       Value<String?> remoteUrl,
       Value<String?> metadata,
       Value<int> createdAt,
@@ -6425,8 +7445,13 @@ class $$ReferenceImagesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get localUri => $composableBuilder(
-    column: $table.localUri,
+  ColumnFilters<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localPath => $composableBuilder(
+    column: $table.localPath,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6508,8 +7533,13 @@ class $$ReferenceImagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get localUri => $composableBuilder(
-    column: $table.localUri,
+  ColumnOrderings<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get localPath => $composableBuilder(
+    column: $table.localPath,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -6564,8 +7594,11 @@ class $$ReferenceImagesTableAnnotationComposer
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<String> get localUri =>
-      $composableBuilder(column: $table.localUri, builder: (column) => column);
+  GeneratedColumn<String> get authorId =>
+      $composableBuilder(column: $table.authorId, builder: (column) => column);
+
+  GeneratedColumn<String> get localPath =>
+      $composableBuilder(column: $table.localPath, builder: (column) => column);
 
   GeneratedColumn<String> get remoteUrl =>
       $composableBuilder(column: $table.remoteUrl, builder: (column) => column);
@@ -6657,7 +7690,8 @@ class $$ReferenceImagesTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String> poiId = const Value.absent(),
-                Value<String> localUri = const Value.absent(),
+                Value<String> authorId = const Value.absent(),
+                Value<String?> localPath = const Value.absent(),
                 Value<String?> remoteUrl = const Value.absent(),
                 Value<String?> metadata = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
@@ -6665,7 +7699,8 @@ class $$ReferenceImagesTableTableManager
               }) => ReferenceImagesCompanion(
                 id: id,
                 poiId: poiId,
-                localUri: localUri,
+                authorId: authorId,
+                localPath: localPath,
                 remoteUrl: remoteUrl,
                 metadata: metadata,
                 createdAt: createdAt,
@@ -6675,7 +7710,8 @@ class $$ReferenceImagesTableTableManager
               ({
                 required String id,
                 required String poiId,
-                required String localUri,
+                required String authorId,
+                Value<String?> localPath = const Value.absent(),
                 Value<String?> remoteUrl = const Value.absent(),
                 Value<String?> metadata = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
@@ -6683,7 +7719,8 @@ class $$ReferenceImagesTableTableManager
               }) => ReferenceImagesCompanion.insert(
                 id: id,
                 poiId: poiId,
-                localUri: localUri,
+                authorId: authorId,
+                localPath: localPath,
                 remoteUrl: remoteUrl,
                 metadata: metadata,
                 createdAt: createdAt,
@@ -6784,8 +7821,9 @@ typedef $$MediaAssetsTableCreateCompanionBuilder =
     MediaAssetsCompanion Function({
       required String id,
       required String poiId,
+      required String authorId,
       required String type,
-      required String localUri,
+      Value<String?> localPath,
       Value<String?> remoteUrl,
       Value<String?> metadata,
       Value<String?> referenceImageId,
@@ -6796,8 +7834,9 @@ typedef $$MediaAssetsTableUpdateCompanionBuilder =
     MediaAssetsCompanion Function({
       Value<String> id,
       Value<String> poiId,
+      Value<String> authorId,
       Value<String> type,
-      Value<String> localUri,
+      Value<String?> localPath,
       Value<String?> remoteUrl,
       Value<String?> metadata,
       Value<String?> referenceImageId,
@@ -6864,13 +7903,18 @@ class $$MediaAssetsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get type => $composableBuilder(
     column: $table.type,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get localUri => $composableBuilder(
-    column: $table.localUri,
+  ColumnFilters<String> get localPath => $composableBuilder(
+    column: $table.localPath,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6950,13 +7994,18 @@ class $$MediaAssetsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get authorId => $composableBuilder(
+    column: $table.authorId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get type => $composableBuilder(
     column: $table.type,
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get localUri => $composableBuilder(
-    column: $table.localUri,
+  ColumnOrderings<String> get localPath => $composableBuilder(
+    column: $table.localPath,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -7034,11 +8083,14 @@ class $$MediaAssetsTableAnnotationComposer
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
+  GeneratedColumn<String> get authorId =>
+      $composableBuilder(column: $table.authorId, builder: (column) => column);
+
   GeneratedColumn<String> get type =>
       $composableBuilder(column: $table.type, builder: (column) => column);
 
-  GeneratedColumn<String> get localUri =>
-      $composableBuilder(column: $table.localUri, builder: (column) => column);
+  GeneratedColumn<String> get localPath =>
+      $composableBuilder(column: $table.localPath, builder: (column) => column);
 
   GeneratedColumn<String> get remoteUrl =>
       $composableBuilder(column: $table.remoteUrl, builder: (column) => column);
@@ -7126,8 +8178,9 @@ class $$MediaAssetsTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String> poiId = const Value.absent(),
+                Value<String> authorId = const Value.absent(),
                 Value<String> type = const Value.absent(),
-                Value<String> localUri = const Value.absent(),
+                Value<String?> localPath = const Value.absent(),
                 Value<String?> remoteUrl = const Value.absent(),
                 Value<String?> metadata = const Value.absent(),
                 Value<String?> referenceImageId = const Value.absent(),
@@ -7136,8 +8189,9 @@ class $$MediaAssetsTableTableManager
               }) => MediaAssetsCompanion(
                 id: id,
                 poiId: poiId,
+                authorId: authorId,
                 type: type,
-                localUri: localUri,
+                localPath: localPath,
                 remoteUrl: remoteUrl,
                 metadata: metadata,
                 referenceImageId: referenceImageId,
@@ -7148,8 +8202,9 @@ class $$MediaAssetsTableTableManager
               ({
                 required String id,
                 required String poiId,
+                required String authorId,
                 required String type,
-                required String localUri,
+                Value<String?> localPath = const Value.absent(),
                 Value<String?> remoteUrl = const Value.absent(),
                 Value<String?> metadata = const Value.absent(),
                 Value<String?> referenceImageId = const Value.absent(),
@@ -7158,8 +8213,9 @@ class $$MediaAssetsTableTableManager
               }) => MediaAssetsCompanion.insert(
                 id: id,
                 poiId: poiId,
+                authorId: authorId,
                 type: type,
-                localUri: localUri,
+                localPath: localPath,
                 remoteUrl: remoteUrl,
                 metadata: metadata,
                 referenceImageId: referenceImageId,

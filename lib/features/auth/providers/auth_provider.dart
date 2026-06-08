@@ -23,6 +23,21 @@ Stream<User?> authStateChanges(AuthStateChangesRef ref) {
   return ref.watch(firebaseAuthProvider).authStateChanges();
 }
 
+@Riverpod(keepAlive: true)
+String currentUserId(CurrentUserIdRef ref) {
+  // Watch the auth state. It returns an AsyncValue<User?>.
+  final authState = ref.watch(authStateChangesProvider);
+  final user = authState.valueOrNull;
+
+  if (user != null) {
+    return user.uid;
+  }
+
+  // FALLBACK: For offline-first functionality when the user hasn't signed in.
+  // TODO: Upgrade this to a persistent Device UUID stored in SharedPreferences.
+  return 'guest_local_user';
+}
+
 // --- [Controller] ---
 
 final authControllerProvider = NotifierProvider<AuthController, AsyncValue<User?>>(() {

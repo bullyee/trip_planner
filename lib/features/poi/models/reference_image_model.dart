@@ -1,9 +1,12 @@
 class ReferenceImageModel {
   final String id;
   final String poiId;
-  final String localUri;
-  final String? remoteUrl;  // FIXED: Added missing field
-  final String? metadata;   // FIXED: Added missing field
+  final String authorId;
+  
+  final String? localPath; 
+  final String? remoteUrl;  
+  
+  final String? metadata;   
   final String? description;
   final int createdAt;
   final bool isShared;
@@ -11,9 +14,10 @@ class ReferenceImageModel {
   ReferenceImageModel({
     required this.id,
     required this.poiId,
-    required this.localUri,
-    this.remoteUrl,         // FIXED: Added to constructor
-    this.metadata,          // FIXED: Added to constructor
+    required this.authorId,
+    this.localPath,
+    this.remoteUrl,         
+    this.metadata,          
     this.description,
     required this.createdAt,
     this.isShared = false,

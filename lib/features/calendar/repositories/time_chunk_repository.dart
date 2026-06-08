@@ -24,15 +24,23 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
 
   @override
   Future<void> addTimeChunk(TimeChunkModel chunk) async {
-    await localDb.insertTimeChunk(
-      TimeChunksCompanion.insert(
-        id: chunk.id,
-        poiId: chunk.poiId,
-        date: Value(chunk.date),
-        startTime: Value(chunk.startTime),
-        endTime: Value(chunk.endTime),
-      ),
+    // CRITICAL FIX: Map ALL fields from the model to prevent data loss.
+    // Use the default Companion constructor and wrap everything in Value()
+    // to maintain perfect consistency with updateTimeChunk.
+    final companion = TimeChunksCompanion(
+      id: Value(chunk.id),
+      poiId: Value(chunk.poiId),
+      // Use the explicitly injected authorId from the model, not the repository's context
+      authorId: Value(chunk.authorId), 
+      date: Value(chunk.date),
+      startTime: Value(chunk.startTime),
+      endTime: Value(chunk.endTime),
+      status: Value(chunk.status ?? 'backlog'),       // Was missing!
+      createdAt: Value(chunk.createdAt), // Was missing!
+      isShared: Value(chunk.isShared),   // Was missing!
     );
+
+    await localDb.insertTimeChunk(companion);
   }
 
   @override
@@ -42,6 +50,7 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
       return list.map((chunk) => TimeChunkModel(
         id: chunk.id,
         poiId: chunk.poiId,
+        authorId: chunk.authorId,
         date: chunk.date,
         startTime: chunk.startTime,
         endTime: chunk.endTime,
@@ -57,10 +66,13 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
     await localDb.updateTimeChunk(TimeChunksCompanion(
       id: Value(chunk.id),
       poiId: Value(chunk.poiId),
+      authorId: Value(chunk.authorId),
       date: Value(chunk.date),
       startTime: Value(chunk.startTime),
       endTime: Value(chunk.endTime),
       status: Value(chunk.status ?? 'backlog'),
+      createdAt: Value(chunk.createdAt),
+      isShared: Value(chunk.isShared),
     ));
   }
 
@@ -75,6 +87,7 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
       return list.map((chunk) => TimeChunkModel(
         id: chunk.id,
         poiId: chunk.poiId,
+        authorId: chunk.authorId,
         date: chunk.date,
         startTime: chunk.startTime,
         endTime: chunk.endTime,
@@ -91,6 +104,7 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
       return list.map((chunk) => TimeChunkModel(
         id: chunk.id,
         poiId: chunk.poiId,
+        authorId: chunk.authorId,
         date: chunk.date,
         startTime: chunk.startTime,
         endTime: chunk.endTime,

@@ -6,12 +6,23 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:trip_planner/features/auth/providers/auth_provider.dart';
 
+import '../../sync/services/sync_engine_service.dart';
+
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen(authStateChangesProvider, (previous, next) {
+      next.whenData((user) {
+        if (user != null) {
+          ref.read(syncEngineProvider).startSync();
+        } else {
+          ref.read(syncEngineProvider).stopSync();
+        }
+      });
+    });
     final theme = Theme.of(context);
     
     // Watch the authentication state to determine which button to show
@@ -94,6 +105,13 @@ class HomeScreen extends ConsumerWidget {
                 title: 'Map',
                 subtitle: 'Visualize POIs on the map',
                 onTap: () => context.push('/map'),
+              ),
+              const SizedBox(height: 12),
+              _HomeCard(
+                icon: Icons.flight_takeoff, // 或 Icons.map, Icons.luggage
+                title: 'My Trips',
+                subtitle: 'Manage your travel plans',
+                onTap: () => context.push('/rois'),
               ),
               const SizedBox(height: 12),
               _HomeCard(
