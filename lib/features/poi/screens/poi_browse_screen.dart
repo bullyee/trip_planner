@@ -121,10 +121,6 @@ class _ByRegionTab extends ConsumerWidget {
             final roi = rois[index];
             return Card(
               child: ListTile(
-                leading: Icon(
-                  roi.isOfflineCached ? Icons.cloud_done : Icons.cloud_outlined,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
                 title: Text(roi.name),
                 subtitle: roi.description != null
                     ? Text(roi.description!, maxLines: 2)
@@ -265,24 +261,7 @@ class _AllPoisTab extends ConsumerWidget {
                 ? Text(subtitle)
                 : const SizedBox.shrink();
           },
-        ),
-        
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Tooltip(
-              message: poi.isShared ? 'cloud_done' : 'cloud_off',
-              child: Icon(
-                poi.isShared ? Icons.cloud_done : Icons.cloud_off_outlined,
-                color: poi.isShared ? Colors.green : Colors.grey,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right),
-          ],
-        ),
-        
+        ),        
         onTap: () => context.push('/pois/${poi.id}'),
       ),
     );

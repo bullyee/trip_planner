@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../features/auth/providers/auth_provider.dart';
 import '../../features/calendar/models/time_chunk_model.dart';
 import '../../features/calendar/providers/calendar_provider.dart';
 import '../../features/calendar/repositories/time_chunk_repository.dart';
@@ -109,20 +110,41 @@ final endController = TextEditingController(text: chunk.endTime ?? '12:00');
               child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
-              final updatedChunk = TimeChunkModel(
-                id: chunk.id,
-                poiId: chunk.poiId,
-                authorId: chunk.authorId,
-                date: chunk.date, 
-                startTime: chunk.startTime, 
-                endTime: chunk.endTime, 
-                status: 'scheduled', 
-                createdAt: chunk.createdAt,
-                isShared: chunk.isShared,
-              );
-              await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
-              if (!context.mounted) return;
-              Navigator.pop(ctx);
+              try {
+                final currentUserId = ref.read(currentUserIdProvider);
+                final dynamic dirtyAuthorId = chunk.authorId;
+                final String safeAuthorId = (dirtyAuthorId == null || dirtyAuthorId.toString().isEmpty) 
+                    ? currentUserId 
+                    : dirtyAuthorId.toString();
+
+                final updatedChunk = TimeChunkModel(
+                  id: chunk.id,
+                  poiId: chunk.poiId,
+                  authorId: safeAuthorId,
+                  date: selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : chunk.date,
+                  startTime: startController.text.trim(),
+                  endTime: endController.text.trim(),
+                  status: 'scheduled', 
+                  createdAt: chunk.createdAt,
+                  isShared: chunk.isShared,
+                );
+
+                await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
+                
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Schedule updated!')),
+                  );
+                }
+              } catch (e, stackTrace) {
+                debugPrint('[Edit Schedule Error]: $e\n$stackTrace');
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to update: $e'), backgroundColor: Colors.red),
+                  );
+                }
+              }
             },
             child: const Text('Edit'),
           ),
@@ -193,7 +215,8 @@ class _MonthCalendarPickerState extends ConsumerState<MonthCalendarPicker> {
     final theme = Theme.of(context);
 
     return Dialog(
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Month/year selector and calendar
@@ -304,6 +327,7 @@ class _MonthCalendarPickerState extends ConsumerState<MonthCalendarPicker> {
           ),
         ],
       ),
+      )
     );
   }
 

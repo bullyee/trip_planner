@@ -36,10 +36,6 @@ class RoiListScreen extends ConsumerWidget {
                   subtitle: roi.description != null
                       ? Text(roi.description!, maxLines: 2)
                       : null,
-                  leading: Icon(
-                    roi.isOfflineCached ? Icons.cloud_done : Icons.cloud_outlined,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/rois/${roi.id}'),
                 ),

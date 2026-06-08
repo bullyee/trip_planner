@@ -16,6 +16,7 @@ abstract class PoiRepository {
     required bool isUpdate,
   });
   Future<void> deletePoi(String id);
+  Future<void> updatePoi(PoiModel poi);
 
   Future<PoiModel> getPoiById(String id);
   Future<List<PoiModel>> getAllPois();
@@ -37,6 +38,26 @@ class LocalPoiRepository implements PoiRepository {
   final String currentUserId;
 
   LocalPoiRepository(this.localDb, this.currentUserId);
+
+  @override
+  Future<void> updatePoi(PoiModel poi) async {
+    final companion = PoisCompanion(
+      id: Value(poi.id),
+      name: Value(poi.name),
+      roiId: Value(poi.roiId),
+      authorId: Value(poi.authorId),
+      description: Value(poi.description),
+      address: Value(poi.address),
+      lat: Value(poi.lat),
+      lng: Value(poi.lng),
+      businessHours: Value(poi.businessHours),
+      contactInfo: Value(poi.contactInfo),
+      createdAt: Value(poi.createdAt),
+      isShared: Value(poi.isShared),
+    );
+    
+    await localDb.updatePoi(companion); 
+  }
 
   @override
   Future<void> savePoiWithRelations({

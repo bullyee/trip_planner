@@ -335,10 +335,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         );
       }
     } catch (e, stackTrace) {
-      debugPrint('=== 崩潰追蹤開始 ===');
+      debugPrint('=== start ===');
       debugPrint('[Schedule Error] Failed to update time chunk: $e');
-      debugPrint('$stackTrace'); // 這行會精準印出是哪個檔案的第幾行炸掉的
-      debugPrint('=== 崩潰追蹤結束 ===');
+      debugPrint('$stackTrace');
+      debugPrint('===  end  ===');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -471,14 +471,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                       return ListTile(
                                         title: Text(poi.name),
                                         subtitle: Text(poi.address ?? 'No address'),
-                                        trailing: Tooltip(
-                                          message: poi.isShared ? 'cloud_done' : 'cloud_off',
-                                          child: Icon(
-                                            poi.isShared ? Icons.cloud_done : Icons.cloud_off_outlined,
-                                            color: poi.isShared ? Colors.green : Colors.grey,
-                                            size: 20,
-                                          ),
-                                        ),
                                         onTap: () async {
                                           // persist last selected ROI for backlog block
                                           ref.read(lastSelectedBacklogRoiProvider.notifier).updateRoi(selectedRoiId);

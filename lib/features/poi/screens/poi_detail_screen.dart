@@ -54,14 +54,6 @@ class PoiDetailScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Tooltip(
-                message: poi.isShared ? 'cloud_done' : 'cloud_off',
-                child: Icon(
-                  poi.isShared ? Icons.cloud_done : Icons.cloud_off_outlined,
-                  color: poi.isShared ? Colors.green : Colors.grey,
-                  size: 20,
-                ),
-              ),
             ],
           ),
           loading: () => const Text('Loading...'),
@@ -573,7 +565,6 @@ class PoiDetailScreen extends ConsumerWidget {
                     );
                   }
                 } catch (e) {
-                  // 抓到錯誤並顯示給使用者看！
                   debugPrint('Schedule Add Error: $e');
                   if (ctx.mounted) {
                     ScaffoldMessenger.of(ctx).showSnackBar(

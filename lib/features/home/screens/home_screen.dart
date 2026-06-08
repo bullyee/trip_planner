@@ -108,6 +108,13 @@ class HomeScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               _HomeCard(
+                icon: Icons.flight_takeoff, // 或 Icons.map, Icons.luggage
+                title: 'My Trips',
+                subtitle: 'Manage your travel plans',
+                onTap: () => context.push('/rois'),
+              ),
+              const SizedBox(height: 12),
+              _HomeCard(
                 icon: Icons.calendar_month,
                 title: 'Trip Calendar',
                 subtitle: 'Schedule your visits',
