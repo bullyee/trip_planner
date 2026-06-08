@@ -38,11 +38,8 @@ class LocalRoiRepository implements RoiRepository {
         description: Value(roi.description),
         isOfflineCached: Value(existingIsOfflineCached ?? 0),
         createdAt: Value(roi.createdAt),
-        
-        // REMOVED: authorId and isShared
-        // By omitting them, they default to Value.absent(). 
-        // Drift will ignore these columns during the UPDATE, 
-        // perfectly preserving the original ownership and sync status.
+        authorId: Value(roi.authorId), 
+        isShared: Value(roi.isShared),
       ),
     );
   }
@@ -73,6 +70,7 @@ class LocalRoiRepository implements RoiRepository {
       createdAt: driftRoi.createdAt, // Assumes Drift has this column
       isOfflineCached: driftRoi.isOfflineCached == 1,
       isShared: false, // Set default or map from Drift if you have a column for it
+      authorId: driftRoi.authorId,
     );
   }
   
@@ -90,6 +88,8 @@ class LocalRoiRepository implements RoiRepository {
         description: row.description,
         createdAt: row.createdAt, 
         isOfflineCached: row.isOfflineCached == 1,
+        authorId: row.authorId,
+        isShared: false,
       )).toList();
     });
   }
@@ -104,6 +104,8 @@ class LocalRoiRepository implements RoiRepository {
         description: row.description,
         createdAt: row.createdAt,
         isOfflineCached: row.isOfflineCached == 1,
+        authorId: row.authorId,
+        isShared: false,
       );
     });
   }

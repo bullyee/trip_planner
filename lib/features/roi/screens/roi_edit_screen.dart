@@ -108,7 +108,8 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
       description: _descController.text,
       createdAt: _existing!.createdAt,
       existingIsOfflineCached: _existing!.isOfflineCached ? 1 : 0,
-      isShared: _existing!.isShared,                           
+      isShared: _existing!.isShared, 
+      authorId: _existing!.authorId, 
     );
 
     if (!mounted) return;

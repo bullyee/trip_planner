@@ -141,17 +141,7 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> insertRoi(RoisCompanion roi) => into(rois).insert(roi);
 
-  Future<bool> updateRoi(RoisCompanion roi) => update(rois).replace(
-        Roi(
-          id: roi.id.value,
-          name: roi.name.value,
-          description: roi.description.value,
-          authorId: roi.authorId.value,
-          isShared: roi.isShared.value,
-          isOfflineCached: roi.isOfflineCached.value,
-          createdAt: roi.createdAt.value,
-        ),
-      );
+  Future<bool> updateRoi(RoisCompanion roi) => update(rois).replace(roi);
 
   Future<int> deleteRoi(String id) =>
       (delete(rois)..where((r) => r.id.equals(id))).go();

@@ -6,6 +6,7 @@ import 'package:trip_planner/features/roi/repositories/roi_repository.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/widgets/add_speed_dial.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../roi/providers/roi_provider.dart';
 import '../../anime/providers/anime_provider.dart';
 import '../../tag/providers/tag_provider.dart';
@@ -307,10 +308,9 @@ void showCreateRoiDialog(BuildContext context) {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
 
-              // 1. Resolve the repository from Riverpod
               final roiRepository = ref.read(roiRepositoryProvider);
-
-              // 2. Construct the pure domain model (No RoisCompanion or Value wrappers)
+              final currentUserId = ref.read(currentUserIdProvider); 
+              
               final newRoi = RoiModel(
                 id: const Uuid().v4(),
                 name: name,
@@ -318,6 +318,8 @@ void showCreateRoiDialog(BuildContext context) {
                     ? null
                     : descController.text.trim(),
                 createdAt: DateTime.now().millisecondsSinceEpoch,
+                authorId: currentUserId, // 🎯 補上這行
+                isShared: false,         // 如果有缺少這個也順便補上
               );
 
               // 3. Delegate the database operation to the repository

@@ -184,31 +184,59 @@ class _BatchAddBottomSheetState extends ConsumerState<_BatchAddBottomSheet> {
                   );
                 }
 
-                return ListView.builder(
-                  itemCount: draftPois.length,
-                  itemBuilder: (ctx, index) {
-                    final poi = draftPois[index];
-                    final isSelected = _selectedIds.contains(poi.id);
-                    return CheckboxListTile(
-                      title: Text(poi.name),
-                      subtitle: Text(poi.address ?? 'No address'),
-                      value: isSelected,
+                final bool isAllSelected = _selectedIds.length == draftPois.length;
+
+                return Column(
+                  children: [
+                    // Sticky Select All Checkbox
+                    CheckboxListTile(
+                      title: const Text('Select All', style: TextStyle(fontWeight: FontWeight.bold)),
+                      value: isAllSelected,
+                      activeColor: Theme.of(context).colorScheme.primary,
                       onChanged: (val) {
                         setState(() {
                           if (val == true) {
-                            _selectedIds.add(poi.id);
+                            // Add all draft IDs to the set
+                            _selectedIds.addAll(draftPois.map((p) => p.id));
                           } else {
-                            _selectedIds.remove(poi.id);
+                            // Clear all selections
+                            _selectedIds.clear();
                           }
                         });
                       },
-                    );
-                  },
+                    ),
+                    const Divider(height: 1),
+                    // 景點列表 (List of POIs)
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: draftPois.length,
+                        itemBuilder: (ctx, index) {
+                          final poi = draftPois[index];
+                          final isSelected = _selectedIds.contains(poi.id);
+                          return CheckboxListTile(
+                            title: Text(poi.name),
+                            subtitle: Text(poi.address ?? 'No address'),
+                            value: isSelected,
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == true) {
+                                  _selectedIds.add(poi.id);
+                                } else {
+                                  _selectedIds.remove(poi.id);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
           ),
 
+          // 底部確認按鈕 (Keep as is)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: FilledButton.icon(

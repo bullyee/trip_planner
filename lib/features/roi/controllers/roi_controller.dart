@@ -1,6 +1,8 @@
+import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../auth/providers/auth_provider.dart';
 import '../models/roi_model.dart';
 import '../repositories/roi_repository.dart';
 
@@ -17,6 +19,7 @@ class RoiController extends _$RoiController {
     required String description,
     required int createdAt, // 1. Require the original timestamp from UI
     required bool isShared, // 2. Require the original sync state from UI
+    required String authorId,
     int? existingIsOfflineCached,
   }) async {
     state = const AsyncValue.loading();
@@ -31,6 +34,7 @@ class RoiController extends _$RoiController {
         createdAt: createdAt, // Preserve the timestamp
         description: nullIfEmpty(description),
         isShared: isShared,   // Preserve the sync state
+        authorId: authorId,
       );
 
       // 2. Delegate the operation to the Repository layer.
@@ -41,8 +45,11 @@ class RoiController extends _$RoiController {
 
       state = const AsyncValue.data(null);
       return true;
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+    } catch (e, stackTrace) {
+      debugPrint('=== 🚨 ROI Update Crash Trace Start ===');
+      debugPrint('Error: $e');
+      debugPrint('$stackTrace');
+      debugPrint('=== 🚨 ROI Update Crash Trace End ===');
       return false;
     }
   }
@@ -55,13 +62,15 @@ class RoiController extends _$RoiController {
     try {
       String? nullIfEmpty(String s) => s.trim().isEmpty ? null : s.trim();
 
-      // 1. Construct the domain model and assign a new UUID here
+      final currentUserId = ref.read(currentUserIdProvider);
+
       final newRoi = RoiModel(
-        id: const Uuid().v4(), // Generate ID in the controller
+        id: const Uuid().v4(), 
         name: name.trim(),
         createdAt: DateTime.now().millisecondsSinceEpoch,
         description: nullIfEmpty(description),
         isShared: false,
+        authorId: currentUserId,
       );
 
       // 2. Pass it to the repository
