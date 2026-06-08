@@ -23,7 +23,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6; // Updated from 5
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -40,6 +40,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 5) {
             await _addCreatedAtColumns();
+          }
+          if (from < 6) {
+            await m.addColumn(pois, pois.sortOrder);
           }
         },
         beforeOpen: (details) async {
@@ -147,6 +150,31 @@ class AppDatabase extends _$AppDatabase {
       (delete(rois)..where((r) => r.id.equals(id))).go();
 
   // --- POI Queries ---
+  /// Fetches the highest sortOrder currently assigned to a POI within a specific ROI.
+  /// Returns 0 if the ROI is empty.
+  Future<int> _getMaxSortOrderForRoi(String roiId) async {
+    final query = select(pois)
+      ..where((t) => t.roiId.equals(roiId))
+      ..orderBy([
+        (t) => OrderingTerm(expression: t.sortOrder, mode: OrderingMode.desc)
+      ])
+      ..limit(1);
+
+    final lastPoi = await query.getSingleOrNull();
+    return lastPoi?.sortOrder ?? 0;
+  }
+
+  /// Inserts a new POI and automatically assigns a spaced sortOrder (default spacing 2048).
+  /// Use this method instead of insertPoi when adding a POI to an ROI.
+  Future<int> insertPoiWithSpacedOrder(PoisCompanion poi, String roiId) async {
+    final currentMaxOrder = await _getMaxSortOrderForRoi(roiId);
+    final nextOrder = currentMaxOrder + 2048;
+
+    final updatedPoi = poi.copyWith(sortOrder: Value(nextOrder));
+    
+    return into(pois).insert(updatedPoi);
+  }
+  
   Future<List<Poi>> getPoisByRoi(String roiId) =>
       (select(pois)..where((p) => p.roiId.equals(roiId))).get();
 

@@ -64,6 +64,8 @@ class Pois extends Table {
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
   BoolColumn get isShared => boolean().withDefault(const Constant(false))();
 
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
   @override
   Set<Column> get primaryKey => {id};
 }

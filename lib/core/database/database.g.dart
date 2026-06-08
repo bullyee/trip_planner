@@ -629,6 +629,18 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -645,6 +657,7 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
     remoteCoverImageUrl,
     createdAt,
     isShared,
+    sortOrder,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -764,6 +777,12 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
         isShared.isAcceptableOrUnknown(data['is_shared']!, _isSharedMeta),
       );
     }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
     return context;
   }
 
@@ -829,6 +848,10 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_shared'],
       )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
     );
   }
 
@@ -853,6 +876,7 @@ class Poi extends DataClass implements Insertable<Poi> {
   final String? remoteCoverImageUrl;
   final int createdAt;
   final bool isShared;
+  final int sortOrder;
   const Poi({
     required this.id,
     this.roiId,
@@ -868,6 +892,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     this.remoteCoverImageUrl,
     required this.createdAt,
     required this.isShared,
+    required this.sortOrder,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -900,6 +925,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     }
     map['created_at'] = Variable<int>(createdAt);
     map['is_shared'] = Variable<bool>(isShared);
+    map['sort_order'] = Variable<int>(sortOrder);
     return map;
   }
 
@@ -933,6 +959,7 @@ class Poi extends DataClass implements Insertable<Poi> {
           : Value(remoteCoverImageUrl),
       createdAt: Value(createdAt),
       isShared: Value(isShared),
+      sortOrder: Value(sortOrder),
     );
   }
 
@@ -960,6 +987,7 @@ class Poi extends DataClass implements Insertable<Poi> {
       ),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       isShared: serializer.fromJson<bool>(json['isShared']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
     );
   }
   @override
@@ -980,6 +1008,7 @@ class Poi extends DataClass implements Insertable<Poi> {
       'remoteCoverImageUrl': serializer.toJson<String?>(remoteCoverImageUrl),
       'createdAt': serializer.toJson<int>(createdAt),
       'isShared': serializer.toJson<bool>(isShared),
+      'sortOrder': serializer.toJson<int>(sortOrder),
     };
   }
 
@@ -998,6 +1027,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     Value<String?> remoteCoverImageUrl = const Value.absent(),
     int? createdAt,
     bool? isShared,
+    int? sortOrder,
   }) => Poi(
     id: id ?? this.id,
     roiId: roiId.present ? roiId.value : this.roiId,
@@ -1019,6 +1049,7 @@ class Poi extends DataClass implements Insertable<Poi> {
         : this.remoteCoverImageUrl,
     createdAt: createdAt ?? this.createdAt,
     isShared: isShared ?? this.isShared,
+    sortOrder: sortOrder ?? this.sortOrder,
   );
   Poi copyWithCompanion(PoisCompanion data) {
     return Poi(
@@ -1046,6 +1077,7 @@ class Poi extends DataClass implements Insertable<Poi> {
           : this.remoteCoverImageUrl,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       isShared: data.isShared.present ? data.isShared.value : this.isShared,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
     );
   }
 
@@ -1065,7 +1097,8 @@ class Poi extends DataClass implements Insertable<Poi> {
           ..write('localCoverImagePath: $localCoverImagePath, ')
           ..write('remoteCoverImageUrl: $remoteCoverImageUrl, ')
           ..write('createdAt: $createdAt, ')
-          ..write('isShared: $isShared')
+          ..write('isShared: $isShared, ')
+          ..write('sortOrder: $sortOrder')
           ..write(')'))
         .toString();
   }
@@ -1086,6 +1119,7 @@ class Poi extends DataClass implements Insertable<Poi> {
     remoteCoverImageUrl,
     createdAt,
     isShared,
+    sortOrder,
   );
   @override
   bool operator ==(Object other) =>
@@ -1104,7 +1138,8 @@ class Poi extends DataClass implements Insertable<Poi> {
           other.localCoverImagePath == this.localCoverImagePath &&
           other.remoteCoverImageUrl == this.remoteCoverImageUrl &&
           other.createdAt == this.createdAt &&
-          other.isShared == this.isShared);
+          other.isShared == this.isShared &&
+          other.sortOrder == this.sortOrder);
 }
 
 class PoisCompanion extends UpdateCompanion<Poi> {
@@ -1122,6 +1157,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
   final Value<String?> remoteCoverImageUrl;
   final Value<int> createdAt;
   final Value<bool> isShared;
+  final Value<int> sortOrder;
   final Value<int> rowid;
   const PoisCompanion({
     this.id = const Value.absent(),
@@ -1138,6 +1174,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     this.remoteCoverImageUrl = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.isShared = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PoisCompanion.insert({
@@ -1155,6 +1192,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     this.remoteCoverImageUrl = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.isShared = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        authorId = Value(authorId),
@@ -1176,6 +1214,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     Expression<String>? remoteCoverImageUrl,
     Expression<int>? createdAt,
     Expression<bool>? isShared,
+    Expression<int>? sortOrder,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1195,6 +1234,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
         'remote_cover_image_url': remoteCoverImageUrl,
       if (createdAt != null) 'created_at': createdAt,
       if (isShared != null) 'is_shared': isShared,
+      if (sortOrder != null) 'sort_order': sortOrder,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1214,6 +1254,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     Value<String?>? remoteCoverImageUrl,
     Value<int>? createdAt,
     Value<bool>? isShared,
+    Value<int>? sortOrder,
     Value<int>? rowid,
   }) {
     return PoisCompanion(
@@ -1231,6 +1272,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
       remoteCoverImageUrl: remoteCoverImageUrl ?? this.remoteCoverImageUrl,
       createdAt: createdAt ?? this.createdAt,
       isShared: isShared ?? this.isShared,
+      sortOrder: sortOrder ?? this.sortOrder,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1284,6 +1326,9 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     if (isShared.present) {
       map['is_shared'] = Variable<bool>(isShared.value);
     }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1307,6 +1352,7 @@ class PoisCompanion extends UpdateCompanion<Poi> {
           ..write('remoteCoverImageUrl: $remoteCoverImageUrl, ')
           ..write('createdAt: $createdAt, ')
           ..write('isShared: $isShared, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4637,6 +4683,7 @@ typedef $$PoisTableCreateCompanionBuilder =
       Value<String?> remoteCoverImageUrl,
       Value<int> createdAt,
       Value<bool> isShared,
+      Value<int> sortOrder,
       Value<int> rowid,
     });
 typedef $$PoisTableUpdateCompanionBuilder =
@@ -4655,6 +4702,7 @@ typedef $$PoisTableUpdateCompanionBuilder =
       Value<String?> remoteCoverImageUrl,
       Value<int> createdAt,
       Value<bool> isShared,
+      Value<int> sortOrder,
       Value<int> rowid,
     });
 
@@ -4843,6 +4891,11 @@ class $$PoisTableFilterComposer extends Composer<_$AppDatabase, $PoisTable> {
 
   ColumnFilters<bool> get isShared => $composableBuilder(
     column: $table.isShared,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5068,6 +5121,11 @@ class $$PoisTableOrderingComposer extends Composer<_$AppDatabase, $PoisTable> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$RoisTableOrderingComposer get roiId {
     final $$RoisTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -5149,6 +5207,9 @@ class $$PoisTableAnnotationComposer
 
   GeneratedColumn<bool> get isShared =>
       $composableBuilder(column: $table.isShared, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
   $$RoisTableAnnotationComposer get roiId {
     final $$RoisTableAnnotationComposer composer = $composerBuilder(
@@ -5348,6 +5409,7 @@ class $$PoisTableTableManager
                 Value<String?> remoteCoverImageUrl = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<bool> isShared = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PoisCompanion(
                 id: id,
@@ -5364,6 +5426,7 @@ class $$PoisTableTableManager
                 remoteCoverImageUrl: remoteCoverImageUrl,
                 createdAt: createdAt,
                 isShared: isShared,
+                sortOrder: sortOrder,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5382,6 +5445,7 @@ class $$PoisTableTableManager
                 Value<String?> remoteCoverImageUrl = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<bool> isShared = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PoisCompanion.insert(
                 id: id,
@@ -5398,6 +5462,7 @@ class $$PoisTableTableManager
                 remoteCoverImageUrl: remoteCoverImageUrl,
                 createdAt: createdAt,
                 isShared: isShared,
+                sortOrder: sortOrder,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
