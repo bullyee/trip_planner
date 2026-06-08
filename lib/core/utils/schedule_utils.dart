@@ -20,6 +20,7 @@ Future<void> handleTimeChunkAction(BuildContext context, WidgetRef ref, String a
       final updatedChunk = TimeChunkModel(
         id: chunk.id,
         poiId: chunk.poiId,
+        authorId: chunk.authorId,
         date: chunk.date,
         startTime: chunk.startTime,
         endTime: chunk.endTime,
@@ -33,6 +34,7 @@ Future<void> handleTimeChunkAction(BuildContext context, WidgetRef ref, String a
       final backlogChunk = TimeChunkModel(
         id: chunk.id,
         poiId: chunk.poiId,
+        authorId: chunk.authorId,
         date: null,
         startTime: null,
         endTime: null,
@@ -110,6 +112,7 @@ final endController = TextEditingController(text: chunk.endTime ?? '12:00');
               final updatedChunk = TimeChunkModel(
                 id: chunk.id,
                 poiId: chunk.poiId,
+                authorId: chunk.authorId,
                 date: chunk.date, 
                 startTime: chunk.startTime, 
                 endTime: chunk.endTime, 

@@ -12,6 +12,7 @@ import '../repositories/time_chunk_repository.dart';
 import '../widgets/week_strip.dart';
 import '../widgets/time_chunk_card.dart';
 import '../../../core/utils/schedule_utils.dart';
+import '../../auth/providers/auth_provider.dart';
 
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
@@ -285,7 +286,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                       icon: const Icon(Icons.add),
                                       tooltip: 'Schedule',
                                       onPressed: () => _scheduleForDate(
-                                        ref, chunk, dateStr),
+                                        context, ref, chunk, dateStr),
                                     ),
                                   ],
                                 ),
@@ -305,20 +306,48 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Future<void> _scheduleForDate(WidgetRef ref, TimeChunkModel chunk, String dateStr) async {
-    final updatedChunk = TimeChunkModel(
-      id: chunk.id,
-      poiId: chunk.poiId,
-      date: dateStr,                                 
-      startTime: chunk.startTime ?? '10:00',
-      endTime: chunk.endTime ?? '12:00',
-      status: 'scheduled',                           
-      createdAt: chunk.createdAt,
-      isShared: chunk.isShared,
-    );
+  Future<void> _scheduleForDate(BuildContext context, WidgetRef ref, TimeChunkModel chunk, String dateStr) async {
+    try {
+      final currentUserId = ref.read(currentUserIdProvider);
+      
+      final dynamic dirtyAuthorId = chunk.authorId;
+      final String safeAuthorId = (dirtyAuthorId == null || dirtyAuthorId.toString().isEmpty) 
+          ? currentUserId 
+          : dirtyAuthorId.toString();
 
-    // 2. 交給 Repository 去處理底層更新
-    await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
+      final updatedChunk = TimeChunkModel(
+        id: chunk.id,
+        poiId: chunk.poiId,
+        authorId: safeAuthorId,
+        date: dateStr,                                 
+        startTime: chunk.startTime ?? '10:00',
+        endTime: chunk.endTime ?? '12:00',
+        status: 'scheduled',                           
+        createdAt: chunk.createdAt,
+        isShared: chunk.isShared,
+      );
+
+      await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Successfully scheduled for $dateStr!')),
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('=== 崩潰追蹤開始 ===');
+      debugPrint('[Schedule Error] Failed to update time chunk: $e');
+      debugPrint('$stackTrace'); // 這行會精準印出是哪個檔案的第幾行炸掉的
+      debugPrint('=== 崩潰追蹤結束 ===');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _showAddToBacklogDialog(BuildContext context, WidgetRef ref) async {
@@ -457,6 +486,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                           final newChunk = TimeChunkModel(
                                             id: const Uuid().v4(),
                                             poiId: poi.id,
+                                            authorId: dialogRef.read(currentUserIdProvider),
                                             date: null,
                                             startTime: '10:00',
                                             endTime: '12:00',

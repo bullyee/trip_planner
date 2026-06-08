@@ -551,21 +551,35 @@ class PoiDetailScreen extends ConsumerWidget {
                 child: const Text('Cancel')),
             FilledButton(
               onPressed: () async {
-                final newChunk = TimeChunkModel(
-                  id: const Uuid().v4(),
-                  poiId: poiId,
-                  date: selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : null,
-                  startTime: status == 'scheduled' ? startController.text.trim() : null,
-                  endTime: status == 'scheduled' ? endController.text.trim() : null,
-                  status: status,
-                  createdAt: DateTime.now().millisecondsSinceEpoch,
-                  isShared: false,
-                );
+                try {
+                  final newChunk = TimeChunkModel(
+                    id: const Uuid().v4(),
+                    poiId: poiId,
+                    authorId: ref.read(currentUserIdProvider),
+                    date: selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : null,
+                    startTime: status == 'scheduled' ? startController.text.trim() : null,
+                    endTime: status == 'scheduled' ? endController.text.trim() : null,
+                    status: status,
+                    createdAt: DateTime.now().millisecondsSinceEpoch,
+                    isShared: false,
+                  );
 
-                await ref.read(timeChunkRepositoryProvider).addTimeChunk(newChunk);
-                
-                if (ctx.mounted) {
-                  Navigator.pop(ctx);
+                  await ref.read(timeChunkRepositoryProvider).addTimeChunk(newChunk);
+                  
+                  if (ctx.mounted) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Schedule added successfully!')),
+                    );
+                  }
+                } catch (e) {
+                  // 抓到錯誤並顯示給使用者看！
+                  debugPrint('Schedule Add Error: $e');
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(content: Text('Failed to add schedule: $e')),
+                    );
+                  }
                 }
               },
               child: const Text('Add'),

@@ -419,19 +419,9 @@ class AppDatabase extends _$AppDatabase {
       into(timeChunks).insert(chunk);
 
   Future<bool> updateTimeChunk(TimeChunksCompanion chunk) =>
-      update(timeChunks).replace(
-        TimeChunk(
-          id: chunk.id.value,
-          poiId: chunk.poiId.value,
-          date: chunk.date.value,
-          startTime: chunk.startTime.value,
-          endTime: chunk.endTime.value,
-          status: chunk.status.value,
-          authorId: chunk.authorId.value,
-          isShared: chunk.isShared.value,
-          createdAt: chunk.createdAt.value,
-        ),
-      );
+      // CRITICAL FIX: Pass the companion directly to Drift.
+      // Never manually unpack .value properties. Drift handles absent values automatically.
+      update(timeChunks).replace(chunk);
 
   Stream<List<TimeChunk>> watchAllScheduledChunks() => (select(timeChunks)
         ..where((t) => t.status.equals('scheduled'))

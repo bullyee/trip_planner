@@ -7,7 +7,7 @@ part of 'time_chunk_repository.dart';
 // **************************************************************************
 
 String _$timeChunkRepositoryHash() =>
-    r'5299c55ad1dba50dfd5c566ea5774eb89b4d234a';
+    r'bfe1bf3b0fa68a2fc8c4ec377fe1761c67fd3b45';
 
 /// See also [timeChunkRepository].
 @ProviderFor(timeChunkRepository)
