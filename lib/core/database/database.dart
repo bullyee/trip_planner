@@ -42,7 +42,7 @@ class AppDatabase extends _$AppDatabase {
             await _addCreatedAtColumns();
           }
           if (from < 6) {
-            await m.addColumn(pois, pois.sortOrder);
+            await _migrateToSyncSchema(m);
           }
         },
         beforeOpen: (details) async {
@@ -129,6 +129,108 @@ class AppDatabase extends _$AppDatabase {
         'ALTER TABLE $table ADD COLUMN created_at INTEGER NOT NULL DEFAULT $now',
       );
     }
+  }
+
+  /// v5 -> v6: introduce the dual-track sync schema.
+  ///
+  /// This adds the per-row ownership / sync columns and splits the local-file
+  /// columns into local/remote pairs:
+  ///   * `author_id` (non-nullable) on rois, animes, tags, pois, time_chunks,
+  ///     media_assets and reference_images;
+  ///   * `is_shared` on rois, animes, tags, pois and time_chunks;
+  ///   * `created_at` on time_chunks;
+  ///   * `sort_order` and `remote_cover_image_url` on pois, with
+  ///     `cover_image_uri` renamed to `local_cover_image_path`;
+  ///   * `local_uri` renamed to `local_path` on media_assets and
+  ///     reference_images.
+  ///
+  /// Each affected table is rebuilt with [TableMigration] so existing rows are
+  /// preserved. New non-nullable columns are backfilled — `author_id` to the
+  /// offline guest id (the same placeholder the running app uses before sign-in,
+  /// see `currentUserIdProvider`), `created_at` to the migration timestamp — and
+  /// the renamed file columns are relaxed to nullable to match the new schema.
+  Future<void> _migrateToSyncSchema(Migrator m) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const guestAuthorId = 'guest_local_user';
+
+    // pois: + author_id, is_shared, sort_order, remote_cover_image_url;
+    //       cover_image_uri -> local_cover_image_path (kept nullable).
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      pois,
+      newColumns: [
+        pois.authorId,
+        pois.isShared,
+        pois.sortOrder,
+        pois.remoteCoverImageUrl,
+      ],
+      columnTransformer: {
+        pois.authorId: const Constant(guestAuthorId),
+        pois.localCoverImagePath:
+            const CustomExpression<String>('cover_image_uri'),
+      },
+    ));
+
+    // rois: + author_id, is_shared.
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      rois,
+      newColumns: [rois.authorId, rois.isShared],
+      columnTransformer: {rois.authorId: const Constant(guestAuthorId)},
+    ));
+
+    // animes: + author_id, is_shared.
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      animes,
+      newColumns: [animes.authorId, animes.isShared],
+      columnTransformer: {animes.authorId: const Constant(guestAuthorId)},
+    ));
+
+    // tags: + author_id, is_shared.
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      tags,
+      newColumns: [tags.authorId, tags.isShared],
+      columnTransformer: {tags.authorId: const Constant(guestAuthorId)},
+    ));
+
+    // time_chunks: + author_id, is_shared, created_at.
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      timeChunks,
+      newColumns: [
+        timeChunks.authorId,
+        timeChunks.isShared,
+        timeChunks.createdAt,
+      ],
+      columnTransformer: {
+        timeChunks.authorId: const Constant(guestAuthorId),
+        timeChunks.createdAt: Constant(now),
+      },
+    ));
+
+    // media_assets: + author_id; local_uri -> local_path (kept nullable).
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      mediaAssets,
+      newColumns: [mediaAssets.authorId],
+      columnTransformer: {
+        mediaAssets.authorId: const Constant(guestAuthorId),
+        mediaAssets.localPath: const CustomExpression('local_uri'),
+      },
+    ));
+
+    // reference_images: + author_id; local_uri -> local_path (kept nullable).
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      referenceImages,
+      newColumns: [referenceImages.authorId],
+      columnTransformer: {
+        referenceImages.authorId: const Constant(guestAuthorId),
+        referenceImages.localPath: const CustomExpression('local_uri'),
+      },
+    ));
   }
 
   // --- ROI Queries ---
