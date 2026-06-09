@@ -2736,6 +2736,57 @@ class $TimeChunksTable extends TimeChunks
     requiredDuringInsert: false,
     defaultValue: const Constant('backlog'),
   );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _durationMeta = const VerificationMeta(
+    'duration',
+  );
+  @override
+  late final GeneratedColumn<int> duration = GeneratedColumn<int>(
+    'duration',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(60),
+  );
+  static const VerificationMeta _transitDurationMeta = const VerificationMeta(
+    'transitDuration',
+  );
+  @override
+  late final GeneratedColumn<int> transitDuration = GeneratedColumn<int>(
+    'transit_duration',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _isFixedTimeMeta = const VerificationMeta(
+    'isFixedTime',
+  );
+  @override
+  late final GeneratedColumn<bool> isFixedTime = GeneratedColumn<bool>(
+    'is_fixed_time',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_fixed_time" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _authorIdMeta = const VerificationMeta(
     'authorId',
   );
@@ -2782,6 +2833,10 @@ class $TimeChunksTable extends TimeChunks
     startTime,
     endTime,
     status,
+    sortOrder,
+    duration,
+    transitDuration,
+    isFixedTime,
     authorId,
     isShared,
     createdAt,
@@ -2833,6 +2888,36 @@ class $TimeChunksTable extends TimeChunks
       context.handle(
         _statusMeta,
         status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
+    if (data.containsKey('duration')) {
+      context.handle(
+        _durationMeta,
+        duration.isAcceptableOrUnknown(data['duration']!, _durationMeta),
+      );
+    }
+    if (data.containsKey('transit_duration')) {
+      context.handle(
+        _transitDurationMeta,
+        transitDuration.isAcceptableOrUnknown(
+          data['transit_duration']!,
+          _transitDurationMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_fixed_time')) {
+      context.handle(
+        _isFixedTimeMeta,
+        isFixedTime.isAcceptableOrUnknown(
+          data['is_fixed_time']!,
+          _isFixedTimeMeta,
+        ),
       );
     }
     if (data.containsKey('author_id')) {
@@ -2888,6 +2973,22 @@ class $TimeChunksTable extends TimeChunks
         DriftSqlType.string,
         data['${effectivePrefix}status'],
       )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+      duration: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration'],
+      )!,
+      transitDuration: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}transit_duration'],
+      )!,
+      isFixedTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_fixed_time'],
+      )!,
       authorId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}author_id'],
@@ -2916,6 +3017,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
   final String? startTime;
   final String? endTime;
   final String status;
+  final int sortOrder;
+  final int duration;
+  final int transitDuration;
+  final bool isFixedTime;
   final String authorId;
   final bool isShared;
   final int createdAt;
@@ -2926,6 +3031,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     this.startTime,
     this.endTime,
     required this.status,
+    required this.sortOrder,
+    required this.duration,
+    required this.transitDuration,
+    required this.isFixedTime,
     required this.authorId,
     required this.isShared,
     required this.createdAt,
@@ -2945,6 +3054,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       map['end_time'] = Variable<String>(endTime);
     }
     map['status'] = Variable<String>(status);
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['duration'] = Variable<int>(duration);
+    map['transit_duration'] = Variable<int>(transitDuration);
+    map['is_fixed_time'] = Variable<bool>(isFixedTime);
     map['author_id'] = Variable<String>(authorId);
     map['is_shared'] = Variable<bool>(isShared);
     map['created_at'] = Variable<int>(createdAt);
@@ -2963,6 +3076,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
           ? const Value.absent()
           : Value(endTime),
       status: Value(status),
+      sortOrder: Value(sortOrder),
+      duration: Value(duration),
+      transitDuration: Value(transitDuration),
+      isFixedTime: Value(isFixedTime),
       authorId: Value(authorId),
       isShared: Value(isShared),
       createdAt: Value(createdAt),
@@ -2981,6 +3098,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       startTime: serializer.fromJson<String?>(json['startTime']),
       endTime: serializer.fromJson<String?>(json['endTime']),
       status: serializer.fromJson<String>(json['status']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      duration: serializer.fromJson<int>(json['duration']),
+      transitDuration: serializer.fromJson<int>(json['transitDuration']),
+      isFixedTime: serializer.fromJson<bool>(json['isFixedTime']),
       authorId: serializer.fromJson<String>(json['authorId']),
       isShared: serializer.fromJson<bool>(json['isShared']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
@@ -2996,6 +3117,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       'startTime': serializer.toJson<String?>(startTime),
       'endTime': serializer.toJson<String?>(endTime),
       'status': serializer.toJson<String>(status),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'duration': serializer.toJson<int>(duration),
+      'transitDuration': serializer.toJson<int>(transitDuration),
+      'isFixedTime': serializer.toJson<bool>(isFixedTime),
       'authorId': serializer.toJson<String>(authorId),
       'isShared': serializer.toJson<bool>(isShared),
       'createdAt': serializer.toJson<int>(createdAt),
@@ -3009,6 +3134,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     Value<String?> startTime = const Value.absent(),
     Value<String?> endTime = const Value.absent(),
     String? status,
+    int? sortOrder,
+    int? duration,
+    int? transitDuration,
+    bool? isFixedTime,
     String? authorId,
     bool? isShared,
     int? createdAt,
@@ -3019,6 +3148,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     startTime: startTime.present ? startTime.value : this.startTime,
     endTime: endTime.present ? endTime.value : this.endTime,
     status: status ?? this.status,
+    sortOrder: sortOrder ?? this.sortOrder,
+    duration: duration ?? this.duration,
+    transitDuration: transitDuration ?? this.transitDuration,
+    isFixedTime: isFixedTime ?? this.isFixedTime,
     authorId: authorId ?? this.authorId,
     isShared: isShared ?? this.isShared,
     createdAt: createdAt ?? this.createdAt,
@@ -3031,6 +3164,14 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       startTime: data.startTime.present ? data.startTime.value : this.startTime,
       endTime: data.endTime.present ? data.endTime.value : this.endTime,
       status: data.status.present ? data.status.value : this.status,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      duration: data.duration.present ? data.duration.value : this.duration,
+      transitDuration: data.transitDuration.present
+          ? data.transitDuration.value
+          : this.transitDuration,
+      isFixedTime: data.isFixedTime.present
+          ? data.isFixedTime.value
+          : this.isFixedTime,
       authorId: data.authorId.present ? data.authorId.value : this.authorId,
       isShared: data.isShared.present ? data.isShared.value : this.isShared,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
@@ -3046,6 +3187,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
           ..write('status: $status, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('duration: $duration, ')
+          ..write('transitDuration: $transitDuration, ')
+          ..write('isFixedTime: $isFixedTime, ')
           ..write('authorId: $authorId, ')
           ..write('isShared: $isShared, ')
           ..write('createdAt: $createdAt')
@@ -3061,6 +3206,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     startTime,
     endTime,
     status,
+    sortOrder,
+    duration,
+    transitDuration,
+    isFixedTime,
     authorId,
     isShared,
     createdAt,
@@ -3075,6 +3224,10 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
           other.startTime == this.startTime &&
           other.endTime == this.endTime &&
           other.status == this.status &&
+          other.sortOrder == this.sortOrder &&
+          other.duration == this.duration &&
+          other.transitDuration == this.transitDuration &&
+          other.isFixedTime == this.isFixedTime &&
           other.authorId == this.authorId &&
           other.isShared == this.isShared &&
           other.createdAt == this.createdAt);
@@ -3087,6 +3240,10 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
   final Value<String?> startTime;
   final Value<String?> endTime;
   final Value<String> status;
+  final Value<int> sortOrder;
+  final Value<int> duration;
+  final Value<int> transitDuration;
+  final Value<bool> isFixedTime;
   final Value<String> authorId;
   final Value<bool> isShared;
   final Value<int> createdAt;
@@ -3098,6 +3255,10 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     this.startTime = const Value.absent(),
     this.endTime = const Value.absent(),
     this.status = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.duration = const Value.absent(),
+    this.transitDuration = const Value.absent(),
+    this.isFixedTime = const Value.absent(),
     this.authorId = const Value.absent(),
     this.isShared = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -3110,6 +3271,10 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     this.startTime = const Value.absent(),
     this.endTime = const Value.absent(),
     this.status = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.duration = const Value.absent(),
+    this.transitDuration = const Value.absent(),
+    this.isFixedTime = const Value.absent(),
     required String authorId,
     this.isShared = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -3124,6 +3289,10 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     Expression<String>? startTime,
     Expression<String>? endTime,
     Expression<String>? status,
+    Expression<int>? sortOrder,
+    Expression<int>? duration,
+    Expression<int>? transitDuration,
+    Expression<bool>? isFixedTime,
     Expression<String>? authorId,
     Expression<bool>? isShared,
     Expression<int>? createdAt,
@@ -3136,6 +3305,10 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
       if (startTime != null) 'start_time': startTime,
       if (endTime != null) 'end_time': endTime,
       if (status != null) 'status': status,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (duration != null) 'duration': duration,
+      if (transitDuration != null) 'transit_duration': transitDuration,
+      if (isFixedTime != null) 'is_fixed_time': isFixedTime,
       if (authorId != null) 'author_id': authorId,
       if (isShared != null) 'is_shared': isShared,
       if (createdAt != null) 'created_at': createdAt,
@@ -3150,6 +3323,10 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     Value<String?>? startTime,
     Value<String?>? endTime,
     Value<String>? status,
+    Value<int>? sortOrder,
+    Value<int>? duration,
+    Value<int>? transitDuration,
+    Value<bool>? isFixedTime,
     Value<String>? authorId,
     Value<bool>? isShared,
     Value<int>? createdAt,
@@ -3162,6 +3339,10 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
       status: status ?? this.status,
+      sortOrder: sortOrder ?? this.sortOrder,
+      duration: duration ?? this.duration,
+      transitDuration: transitDuration ?? this.transitDuration,
+      isFixedTime: isFixedTime ?? this.isFixedTime,
       authorId: authorId ?? this.authorId,
       isShared: isShared ?? this.isShared,
       createdAt: createdAt ?? this.createdAt,
@@ -3190,6 +3371,18 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     if (status.present) {
       map['status'] = Variable<String>(status.value);
     }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (duration.present) {
+      map['duration'] = Variable<int>(duration.value);
+    }
+    if (transitDuration.present) {
+      map['transit_duration'] = Variable<int>(transitDuration.value);
+    }
+    if (isFixedTime.present) {
+      map['is_fixed_time'] = Variable<bool>(isFixedTime.value);
+    }
     if (authorId.present) {
       map['author_id'] = Variable<String>(authorId.value);
     }
@@ -3214,6 +3407,10 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
           ..write('status: $status, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('duration: $duration, ')
+          ..write('transitDuration: $transitDuration, ')
+          ..write('isFixedTime: $isFixedTime, ')
           ..write('authorId: $authorId, ')
           ..write('isShared: $isShared, ')
           ..write('createdAt: $createdAt, ')
@@ -6973,6 +7170,10 @@ typedef $$TimeChunksTableCreateCompanionBuilder =
       Value<String?> startTime,
       Value<String?> endTime,
       Value<String> status,
+      Value<int> sortOrder,
+      Value<int> duration,
+      Value<int> transitDuration,
+      Value<bool> isFixedTime,
       required String authorId,
       Value<bool> isShared,
       Value<int> createdAt,
@@ -6986,6 +7187,10 @@ typedef $$TimeChunksTableUpdateCompanionBuilder =
       Value<String?> startTime,
       Value<String?> endTime,
       Value<String> status,
+      Value<int> sortOrder,
+      Value<int> duration,
+      Value<int> transitDuration,
+      Value<bool> isFixedTime,
       Value<String> authorId,
       Value<bool> isShared,
       Value<int> createdAt,
@@ -7046,6 +7251,26 @@ class $$TimeChunksTableFilterComposer
 
   ColumnFilters<String> get status => $composableBuilder(
     column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get duration => $composableBuilder(
+    column: $table.duration,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get transitDuration => $composableBuilder(
+    column: $table.transitDuration,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isFixedTime => $composableBuilder(
+    column: $table.isFixedTime,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7122,6 +7347,26 @@ class $$TimeChunksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get duration => $composableBuilder(
+    column: $table.duration,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get transitDuration => $composableBuilder(
+    column: $table.transitDuration,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isFixedTime => $composableBuilder(
+    column: $table.isFixedTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get authorId => $composableBuilder(
     column: $table.authorId,
     builder: (column) => ColumnOrderings(column),
@@ -7184,6 +7429,22 @@ class $$TimeChunksTableAnnotationComposer
 
   GeneratedColumn<String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<int> get duration =>
+      $composableBuilder(column: $table.duration, builder: (column) => column);
+
+  GeneratedColumn<int> get transitDuration => $composableBuilder(
+    column: $table.transitDuration,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isFixedTime => $composableBuilder(
+    column: $table.isFixedTime,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get authorId =>
       $composableBuilder(column: $table.authorId, builder: (column) => column);
@@ -7252,6 +7513,10 @@ class $$TimeChunksTableTableManager
                 Value<String?> startTime = const Value.absent(),
                 Value<String?> endTime = const Value.absent(),
                 Value<String> status = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<int> duration = const Value.absent(),
+                Value<int> transitDuration = const Value.absent(),
+                Value<bool> isFixedTime = const Value.absent(),
                 Value<String> authorId = const Value.absent(),
                 Value<bool> isShared = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
@@ -7263,6 +7528,10 @@ class $$TimeChunksTableTableManager
                 startTime: startTime,
                 endTime: endTime,
                 status: status,
+                sortOrder: sortOrder,
+                duration: duration,
+                transitDuration: transitDuration,
+                isFixedTime: isFixedTime,
                 authorId: authorId,
                 isShared: isShared,
                 createdAt: createdAt,
@@ -7276,6 +7545,10 @@ class $$TimeChunksTableTableManager
                 Value<String?> startTime = const Value.absent(),
                 Value<String?> endTime = const Value.absent(),
                 Value<String> status = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<int> duration = const Value.absent(),
+                Value<int> transitDuration = const Value.absent(),
+                Value<bool> isFixedTime = const Value.absent(),
                 required String authorId,
                 Value<bool> isShared = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
@@ -7287,6 +7560,10 @@ class $$TimeChunksTableTableManager
                 startTime: startTime,
                 endTime: endTime,
                 status: status,
+                sortOrder: sortOrder,
+                duration: duration,
+                transitDuration: transitDuration,
+                isFixedTime: isFixedTime,
                 authorId: authorId,
                 isShared: isShared,
                 createdAt: createdAt,

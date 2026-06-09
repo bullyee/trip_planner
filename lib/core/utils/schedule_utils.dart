@@ -117,24 +117,58 @@ final endController = TextEditingController(text: chunk.endTime ?? '12:00');
                     ? currentUserId 
                     : dirtyAuthorId.toString();
 
-                final updatedChunk = TimeChunkModel(
-                  id: chunk.id,
-                  poiId: chunk.poiId,
+                int timeToMins(String? t) {
+                  if (t == null || t == '--:--') return 9999;
+                  final parts = t.split(':');
+                  if (parts.length != 2) return 0;
+                  return (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+                }
+
+                final newStart = startController.text.trim();
+                final newEnd = endController.text.trim();
+                int newDuration = timeToMins(newEnd) - timeToMins(newStart);
+                if (newDuration < 0) newDuration += 24 * 60;
+
+                final targetDateStr = selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : chunk.date;
+
+                final updatedChunk = chunk.copyWith(
                   authorId: safeAuthorId,
-                  date: selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : chunk.date,
-                  startTime: startController.text.trim(),
-                  endTime: endController.text.trim(),
-                  status: 'scheduled', 
-                  createdAt: chunk.createdAt,
-                  isShared: chunk.isShared,
+                  date: targetDateStr,
+                  startTime: newStart,
+                  endTime: newEnd,
+                  duration: newDuration > 0 ? newDuration : chunk.duration,
+                  isFixedTime: true,
+                  status: 'scheduled',
                 );
 
-                await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
+                if (targetDateStr == null) {
+                   await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
+                   if (ctx.mounted) Navigator.pop(ctx);
+                   return;
+                }
+
+                final currentChunks = await ref.read(timeChunkRepositoryProvider).watchTimeChunksByDate(targetDateStr).first;
+                List<TimeChunkModel> mutableChunks = List.from(currentChunks);
+                
+                final existingIndex = mutableChunks.indexWhere((c) => c.id == chunk.id);
+                if (existingIndex >= 0) {
+                  mutableChunks[existingIndex] = updatedChunk;
+                } else {
+                  mutableChunks.add(updatedChunk);
+                }
+
+                mutableChunks.sort((a, b) => timeToMins(a.startTime).compareTo(timeToMins(b.startTime)));
+
+                for (int i = 0; i < mutableChunks.length; i++) {
+                  mutableChunks[i] = mutableChunks[i].copyWith(sortOrder: i * 1024);
+                }
+                final engine = ref.read(scheduleEngineProvider);
+                await engine.recalculateDaySchedule(mutableChunks);
                 
                 if (ctx.mounted) {
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Schedule updated!')),
+                    const SnackBar(content: Text('update！')),
                   );
                 }
               } catch (e, stackTrace) {

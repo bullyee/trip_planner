@@ -97,6 +97,12 @@ class TimeChunks extends Table {
   TextColumn get startTime => text().nullable()();
   TextColumn get endTime => text().nullable()();
   TextColumn get status => text().withDefault(const Constant('backlog'))();
+
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  
+  IntColumn get duration => integer().withDefault(const Constant(60))();
+  IntColumn get transitDuration => integer().withDefault(const Constant(0))();
+  BoolColumn get isFixedTime => boolean().withDefault(const Constant(false))();
   
   // ADDED: Required fields for dual-track sync
   TextColumn get authorId => text()();
