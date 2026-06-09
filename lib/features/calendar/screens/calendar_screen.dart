@@ -213,8 +213,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                 buildDefaultDragHandles: false,
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                                 itemCount: sorted.length,
-                                onReorderItem: (oldIndex, newIndex) async {
-                                  if (_isScheduleSelectionMode) return; 
+                                onReorder: (oldIndex, newIndex) async {
+                                  if (_isScheduleSelectionMode) return;
+
+                                  // ReorderableListView reports newIndex in the
+                                  // pre-removal coordinate space; adjust when
+                                  // dragging an item downward.
+                                  if (newIndex > oldIndex) newIndex -= 1;
 
                                   if (oldIndex == newIndex) return;
 
