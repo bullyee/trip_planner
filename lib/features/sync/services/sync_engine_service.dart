@@ -1,104 +1,287 @@
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:drift/drift.dart'; 
+import 'package:uuid/uuid.dart';
 
 import '../../../../core/database/database.dart';
+import '../../../../core/database/tables.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../../core/providers/database_provider.dart';
+import 'firestore_sync_service.dart';
 
 class SyncEngineService {
   final AppDatabase localDb;
-  final FirebaseFirestore firestore;
+  final FirestoreSyncService firestoreSync;
   final String currentUserId;
-  
-  StreamSubscription? _upstreamSub;
+
+  StreamSubscription? _globalSyncSub;
+  Timer? _debounceTimer;
 
   SyncEngineService({
     required this.localDb,
-    required this.firestore,
+    required this.firestoreSync,
     required this.currentUserId,
   });
 
-  /// Starts the bidirectional sync process.
+  // ==========================================
+  // ORCHESTRATOR: Background Sync Triggers
+  // ==========================================
+  
+  /// Starts observing local database for dirty records and triggers push.
   void startSync() {
-    debugPrint('[SyncEngine] Starting real-time synchronization for user: $currentUserId');
-    _startUpstreamSync();
+    debugPrint('[SyncEngine] Starting global background sync orchestrator...');
+    
+    // Watch for ANY time chunks that are marked as dirty
+    _globalSyncSub = (localDb.select(localDb.timeChunks)
+      ..where((t) => t.syncStatus.equals(SyncStatus.dirty.index)))
+      .watch()
+      .listen((dirtyChunks) {
+        if (dirtyChunks.isEmpty) return;
+
+        // Debounce: Wait for 2 seconds of inactivity before pushing 
+        // to avoid spamming Firestore locks during rapid drag-and-drop.
+        _debounceTimer?.cancel();
+        _debounceTimer = Timer(const Duration(seconds: 2), () async {
+          await _processGlobalDirtyChunks(dirtyChunks);
+        });
+    });
   }
 
-  /// Stops all active sync streams to prevent memory leaks.
+  /// Stops background synchronization.
   void stopSync() {
-    debugPrint('[SyncEngine] Stopping synchronization');
-    _upstreamSub?.cancel();
+    debugPrint('[SyncEngine] Stopping global sync orchestrator...');
+    _globalSyncSub?.cancel();
+    _debounceTimer?.cancel();
   }
 
-  /// Pushes local unsynced data (isShared == false) to Firestore.
-  /// Only POIs assigned to a specific ROI (Trip) are uploaded. Unassigned POIs remain local.
-  void _startUpstreamSync() {
-    _upstreamSub = localDb.watchUnsyncedPois().listen((unsyncedPois) async {
+  /// Helper: Extracts affected ROIs and pushes them sequentially
+  Future<void> _processGlobalDirtyChunks(List<TimeChunk> dirtyChunks) async {
+    try {
+      // 1. Find all unique POI IDs from the dirty chunks
+      final poiIds = dirtyChunks.map((c) => c.poiId).toSet().toList();
+      if (poiIds.isEmpty) return;
+
+      // 2. Fetch those POIs to determine which Trips (ROIs) are affected
+      final affectedPois = await (localDb.select(localDb.pois)
+        ..where((p) => p.id.isIn(poiIds))).get();
       
-      // 1. [Sandbox Defense] Filter out local drafts. 
-      // Only process POIs that have been explicitly added to a Trip (roiId != null).
-      final poisToSync = unsyncedPois.where((poi) => poi.roiId != null).toList();
+      final affectedRoiIds = affectedPois
+          .map((p) => p.roiId)
+          .whereType<String>() // Filter out nulls
+          .toSet();
 
-      if (poisToSync.isEmpty) return;
+      // 3. Trigger push for each affected Trip sequentially
+      for (final roiId in affectedRoiIds) {
+        debugPrint('[SyncEngine] Auto-triggering push for Trip: $roiId');
+        await executePush(roiId);
+      }
+    } catch (e) {
+      debugPrint('[SyncEngine] Auto-push failed: $e');
+    }
+  }
 
-      for (final poi in poisToSync) {
-        try {
-          // 2. [Identity Correction] If the POI was created offline, reassign ownership 
-          // from the placeholder 'guest_local_user' to the actual authenticated user.
-          final realAuthorId = (poi.authorId == 'guest_local_user' || poi.authorId.isEmpty) 
-              ? currentUserId 
-              : poi.authorId;
+  // ==========================================
+  // PUSH & PULL CORE
+  // ==========================================
 
-          // Prepare the payload with the corrected author ID and a server timestamp.
-          final payload = {
-            'roiId': poi.roiId,
-            'authorId': realAuthorId,
-            'name': poi.name,
-            'description': poi.description,
-            'lat': poi.lat,
-            'lng': poi.lng,
-            'address': poi.address,
-            'businessHours': poi.businessHours,
-            'contactInfo': poi.contactInfo,
-            'remoteCoverImageUrl': poi.remoteCoverImageUrl,
-            'createdAt': poi.createdAt,
-            'updatedAt': FieldValue.serverTimestamp(),
-          };
+  Future<void> executePush(String roiId) async {
+    final lockAcquired = await firestoreSync.acquireLock(roiId, currentUserId);
+    if (!lockAcquired) {
+      throw Exception('Resource is currently locked by another user or process.');
+    }
 
-          // 3. [Strict Routing] Upload exclusively to the collaborative Trip sub-collection.
-          await firestore
-              .collection('trips')
-              .doc(poi.roiId)
-              .collection('pois')
-              .doc(poi.id)
-              .set(payload, SetOptions(merge: true));
-              
-          debugPrint('[SyncEngine] Synced Collaborative POI: ${poi.name} to Trip: ${poi.roiId}');
+    try {
+      final cloudVersion = await firestoreSync.fetchTripVersion(roiId);
+      final roiRecord = await localDb.getRoiById(roiId);
+      final localVersion = roiRecord.cloudVersion;
+      
+      if (cloudVersion > localVersion) {
+        throw Exception('Local version is obsolete. A pull is required before pushing.');
+      }
 
-          // 4. Mark as shared locally upon successful upload to prevent infinite loops.
-          await localDb.markPoiAsShared(poi.id);
+      final dirtyData = await _fetchDirtyRecords(roiId);
+      if (dirtyData.isEmpty) {
+        await firestoreSync.releaseLock(roiId);
+        return;
+      }
+
+      final chunks = _splitIntoBatches(dirtyData, 490);
+
+      // Sequential write
+      for (int i = 0; i < chunks.length; i++) {
+        final batch = firestoreSync.createBatch();
+        
+        for (final item in chunks[i]) {
+          firestoreSync.buildBatchOperations(batch, item, roiId);
+        }
+        
+        final isLastBatch = i == (chunks.length - 1);
+        if (isLastBatch) {
+          firestoreSync.appendVersionBumpAndLockRelease(batch, roiId, cloudVersion + 1);
+        }
+        
+        await firestoreSync.commitBatch(batch);
+      }
+
+      await _postPushLocalCleanup(roiId, dirtyData, cloudVersion + 1);
+
+    } catch (e) {
+      debugPrint('[SyncEngine] Push failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> executePull(String roiId) async {
+    try {
+      final cloudVersion = await firestoreSync.fetchTripVersion(roiId);
+      final roiRecord = await localDb.getRoiById(roiId);
+      
+      if (roiRecord.cloudVersion == cloudVersion) return;
+
+      final cloudData = await firestoreSync.fetchTripData(roiId);
+      
+      await localDb.transaction(() async {
+        for (final remoteChunk in cloudData) {
+          final chunkId = remoteChunk['id'] as String;
+          final isRemoteDeleted = remoteChunk['isDeleted'] as bool? ?? false;
           
-        } catch (e) {
-          debugPrint('[SyncEngine] Failed to sync POI ${poi.name}: $e');
+          final localChunk = await (localDb.select(localDb.timeChunks)
+            ..where((t) => t.id.equals(chunkId))).getSingleOrNull();
+
+          if (localChunk == null) {
+            if (!isRemoteDeleted) await _insertCloudData(remoteChunk);
+            continue;
+          }
+
+          final isLocalDirty = localChunk.syncStatus == SyncStatus.dirty;
+
+          if (isRemoteDeleted) {
+            if (isLocalDirty) {
+              await _stashLocalEffort(localChunk);
+            } else {
+              await (localDb.delete(localDb.timeChunks)..where((t) => t.id.equals(chunkId))).go();
+            }
+          } else {
+            if (isLocalDirty) {
+              await _stashLocalEffort(localChunk);
+              await _insertCloudData(remoteChunk);
+            } else {
+              await _updateCloudData(remoteChunk);
+            }
+          }
+        }
+
+        await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
+          RoisCompanion(cloudVersion: Value(cloudVersion)),
+        );
+      });
+    } catch (e) {
+      debugPrint('[SyncEngine] Pull failed: $e');
+      rethrow;
+    }
+  }
+
+  List<List<T>> _splitIntoBatches<T>(List<T> list, int batchSize) {
+    List<List<T>> chunks = [];
+    for (var i = 0; i < list.length; i += batchSize) {
+      int end = (i + batchSize < list.length) ? i + batchSize : list.length;
+      chunks.add(list.sublist(i, end));
+    }
+    return chunks;
+  }
+
+  Future<List<TimeChunk>> _fetchDirtyRecords(String roiId) async {
+    return await (localDb.select(localDb.timeChunks).join([
+      innerJoin(localDb.pois, localDb.pois.id.equalsExp(localDb.timeChunks.poiId))
+    ])
+      ..where(localDb.pois.roiId.equals(roiId) & 
+              localDb.timeChunks.syncStatus.equals(SyncStatus.dirty.index)))
+        .map((row) => row.readTable(localDb.timeChunks))
+        .get();
+  }
+
+  Future<void> _postPushLocalCleanup(String roiId, List<TimeChunk> pushedData, int newVersion) async {
+    await localDb.transaction(() async {
+      for (final chunk in pushedData) {
+        if (chunk.isDeleted) {
+          await (localDb.delete(localDb.timeChunks)..where((t) => t.id.equals(chunk.id))).go();
+        } else {
+          await (localDb.update(localDb.timeChunks)..where((t) => t.id.equals(chunk.id))).write(
+            TimeChunksCompanion(
+              syncStatus: Value(SyncStatus.synced.index as SyncStatus),
+              hasEverSynced: const Value(true),
+            ),
+          );
         }
       }
+      await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
+        RoisCompanion(cloudVersion: Value(newVersion)),
+      );
     });
+  }
+
+  Future<void> _stashLocalEffort(TimeChunk localData) async {
+    final stashedId = const Uuid().v4();
+    final companion = TimeChunksCompanion(
+      id: Value(stashedId),
+      poiId: Value(localData.poiId),
+      date: Value(localData.date),
+      originalStartTime: Value(localData.startTime),
+      originalEndTime: Value(localData.endTime),
+      startTime: const Value(null),
+      endTime: const Value(null),
+      status: const Value('backlog'),
+      syncStatus: Value(SyncStatus.stashed.index as SyncStatus),
+      isDeleted: const Value(false),
+      hasEverSynced: const Value(false),
+      authorId: Value(localData.authorId),
+    );
+
+    await localDb.into(localDb.timeChunks).insert(companion);
+    await (localDb.delete(localDb.timeChunks)..where((t) => t.id.equals(localData.id))).go();
+  }
+
+  Future<void> _insertCloudData(Map<String, dynamic> data) async {
+    final companion = TimeChunksCompanion(
+      id: Value(data['id']),
+      poiId: Value(data['poiId']),
+      date: Value(data['date']),
+      startTime: Value(data['startTime']),
+      endTime: Value(data['endTime']),
+      status: Value(data['status']),
+      sortOrder: Value(data['sortOrder'] ?? 0),
+      duration: Value(data['duration'] ?? 60),
+      transitDuration: Value(data['transitDuration'] ?? 0),
+      isFixedTime: Value(data['isFixedTime'] ?? false),
+      syncStatus: Value(SyncStatus.synced.index as SyncStatus),
+      isDeleted: const Value(false),
+      hasEverSynced: const Value(true),
+      authorId: Value(data['authorId'] ?? currentUserId),
+    );
+    await localDb.into(localDb.timeChunks).insert(companion);
+  }
+
+  Future<void> _updateCloudData(Map<String, dynamic> data) async {
+    final companion = TimeChunksCompanion(
+      syncStatus: Value(SyncStatus.synced.index as SyncStatus),
+      date: Value(data['date']),
+      startTime: Value(data['startTime']),
+      endTime: Value(data['endTime']),
+      status: Value(data['status']),
+      sortOrder: Value(data['sortOrder'] ?? 0),
+      duration: Value(data['duration'] ?? 60),
+      transitDuration: Value(data['transitDuration'] ?? 0),
+      isFixedTime: Value(data['isFixedTime'] ?? false),
+    );
+    await (localDb.update(localDb.timeChunks)..where((t) => t.id.equals(data['id']))).write(companion);
   }
 }
 
-// Provider for injecting the SyncEngine globally
 final syncEngineProvider = Provider<SyncEngineService>((ref) {
-  final engine = SyncEngineService(
+  return SyncEngineService(
     localDb: ref.watch(databaseProvider),
-    firestore: FirebaseFirestore.instance,
+    firestoreSync: ref.watch(firestoreSyncServiceProvider),
     currentUserId: ref.watch(currentUserIdProvider),
   );
-
-  ref.onDispose(() {
-    engine.stopSync();
-  });
-
-  return engine;
 });

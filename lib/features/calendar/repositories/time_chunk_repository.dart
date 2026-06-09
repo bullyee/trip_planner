@@ -109,7 +109,7 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
 
   @override
   Future<void> deleteTimeChunk(String id) async {
-    await localDb.deleteTimeChunk(id);
+    await localDb.executeLocalDelete(id);
   }
 
   @override
