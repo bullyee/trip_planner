@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../core/utils/schedule_engine.dart';
 import '../models/time_chunk_model.dart';
 import '../repositories/time_chunk_repository.dart';
 
@@ -31,4 +32,10 @@ class SelectedDate extends _$SelectedDate {
 @riverpod
 Stream<List<TimeChunkModel>> timeChunksByPoi(TimeChunksByPoiRef ref, String poiId) {
   return ref.watch(timeChunkRepositoryProvider).watchTimeChunksByPoi(poiId);
+}
+
+@riverpod
+ScheduleEngine scheduleEngine(ScheduleEngineRef ref) {
+  final repository = ref.watch(timeChunkRepositoryProvider);
+  return ScheduleEngine(repository);
 }

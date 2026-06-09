@@ -23,7 +23,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 6; // Updated from 5
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -43,6 +43,13 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 6) {
             await _migrateToSyncSchema(m);
+          }
+          if (from < 7) {
+            await m.addColumn(timeChunks, timeChunks.sortOrder);
+            await m.addColumn(timeChunks, timeChunks.duration);
+          }
+          if (from < 8) {
+          await m.addColumn(timeChunks, timeChunks.transitDuration);
           }
         },
         beforeOpen: (details) async {
@@ -525,6 +532,12 @@ class AppDatabase extends _$AppDatabase {
   }
 
   // --- TimeChunk Queries ---
+  Future<void> batchUpdateTimeChunks(List<TimeChunksCompanion> chunks) async {
+    await batch((batch) {
+      batch.replaceAll(timeChunks, chunks);
+    });
+  }
+  
   Future<List<TimeChunk>> getTimeChunksByPoi(String poiId) =>
       (select(timeChunks)..where((t) => t.poiId.equals(poiId))).get();
 

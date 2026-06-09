@@ -288,6 +288,23 @@ class _TimeChunksByPoiProviderElement
   String get poiId => (origin as TimeChunksByPoiProvider).poiId;
 }
 
+String _$scheduleEngineHash() => r'c9d898488f8cd76c47a941fea41d28de5dd852c2';
+
+/// See also [scheduleEngine].
+@ProviderFor(scheduleEngine)
+final scheduleEngineProvider = AutoDisposeProvider<ScheduleEngine>.internal(
+  scheduleEngine,
+  name: r'scheduleEngineProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$scheduleEngineHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ScheduleEngineRef = AutoDisposeProviderRef<ScheduleEngine>;
 String _$selectedDateHash() => r'6806d5610d7069f5c67cb504e4c71468009bd446';
 
 /// See also [SelectedDate].

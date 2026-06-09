@@ -110,9 +110,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               },
               
               onAcceptWithDetails: (details) {
-                final chunkToSchedule = details.data;
-                _scheduleForDate(context, ref, chunkToSchedule, dateStr);
-              },
+                    final chunkToSchedule = details.data;
+                    // Safely extract the current day's schedule from the AsyncValue
+                    final currentDayChunks = chunksAsync.value ?? [];
+                    _scheduleForDate(context, ref, chunkToSchedule, dateStr, currentDayChunks);
+                  },
               
               builder: (context, candidateData, rejectedData) {
                 final isHovering = candidateData.isNotEmpty;
@@ -152,19 +154,86 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             ),
                           );
                         }
+                        // IMPORTANT: Sort by sortOrder instead of startTime to support auto-cascading
                         final sorted = List<TimeChunkModel>.from(chunks)
-                          ..sort((a, b) => (a.startTime ?? '').compareTo(b.startTime ?? ''));
-                          
-                        return ListView.builder(
+                          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+                        return ReorderableListView.builder(
+                          buildDefaultDragHandles: false,
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           itemCount: sorted.length,
+                          // REPLACED: onReorder with onReorderItem to avoid deprecation.
+                          // CRITICAL: The manual index adjustment (newIndex -= 1) MUST be removed 
+                          // because onReorderItem handles the offset natively.
+                          onReorderItem: (oldIndex, newIndex) async {
+                          if (oldIndex == newIndex) return;
+
+                          try {
+                            // 1. Create a mutable copy to calculate the new order
+                            final mutableChunks = List<TimeChunkModel>.from(sorted);
+                            final movedChunk = mutableChunks.removeAt(oldIndex);
+
+                            // 2. Calculate the new spaced sortOrder perfectly without collisions
+                            int newSortOrder;
+                            if (mutableChunks.isEmpty) {
+                              newSortOrder = 0;
+                            } else if (newIndex == 0) {
+                              // CRITICAL FIX: If moved to the very top, subtract from the first item
+                              newSortOrder = mutableChunks.first.sortOrder - 2048;
+                            } else if (newIndex == mutableChunks.length) {
+                              // If moved to the very bottom, add to the last item
+                              newSortOrder = mutableChunks.last.sortOrder + 2048;
+                            } else {
+                              // If moved between two items, find the midpoint
+                              final int prevOrder = mutableChunks[newIndex - 1].sortOrder;
+                              final int nextOrder = mutableChunks[newIndex].sortOrder;
+                              newSortOrder = prevOrder + ((nextOrder - prevOrder) ~/ 2);
+                            }
+
+                            // 3. Update the moved chunk and insert it into the new position
+                            final updatedChunk = movedChunk.copyWith(sortOrder: newSortOrder);
+                            mutableChunks.insert(newIndex, updatedChunk);
+
+                            // 4. Pass the reordered list to the Schedule Engine
+                            final engine = ref.read(scheduleEngineProvider);
+                            await engine.recalculateDaySchedule(mutableChunks);
+
+                          } catch (e, stackTrace) {
+                            debugPrint('=== Reorder Error ===');
+                            debugPrint('Failed to recalculate and save schedule: $e');
+                            debugPrint('$stackTrace');
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to update order: $e'),
+                                  backgroundColor: Theme.of(context).colorScheme.error,
+                                ),
+                              );
+                            }
+                          }
+                        },
                           itemBuilder: (context, index) {
                             final chunk = sorted[index];
                             final poi = poisMap[chunk.poiId];
-                            return TimeChunkCard(
-                              chunk: chunk,
-                              poiName: poi?.name ?? 'Unknown POI',
-                              onAction: (action) => handleTimeChunkAction(context, ref, action, chunk),
+                            
+                            // REQUIRED: ReorderableListView needs a unique key for every item
+                            return Container(
+                              key: ValueKey(chunk.id), 
+                              child: TimeChunkCard(
+                                index: index,
+                                chunk: chunk,
+                                poiName: poi?.name ?? 'Unknown POI',
+                                onAction: (action) {
+                                  if (action == 'edit_duration') {
+                                    _showDurationEditDialog(context, ref, chunk, sorted);
+                                  } else if (action == 'edit_transit') {
+                                    // ADDED: Intercept the new transit edit action
+                                    _showTransitEditDialog(context, ref, chunk, sorted);
+                                  } else {
+                                    handleTimeChunkAction(context, ref, action, chunk);
+                                  }
+                                },
+                              ),
                             );
                           },
                         );
@@ -397,7 +466,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                         visualDensity: VisualDensity.compact,
                                         icon: const Icon(Icons.add),
                                         tooltip: 'add',
-                                        onPressed: () => _scheduleForDate(context, ref, chunk, dateStr),
+                                        onPressed: () {
+                                          // CRITICAL: Do NOT use the 'chunks' from the Backlog scope.
+                                          // Fetch the day's schedule directly from chunksAsync.
+                                          final currentDayChunks = chunksAsync.value ?? [];
+                                          _scheduleForDate(context, ref, chunk, dateStr, currentDayChunks);
+                                        },
                                       ),
                                     ],
                                   ),
@@ -418,7 +492,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Future<void> _scheduleForDate(BuildContext context, WidgetRef ref, TimeChunkModel chunk, String dateStr) async {
+  Future<void> _scheduleForDate(
+    BuildContext context, 
+    WidgetRef ref, 
+    TimeChunkModel chunk, 
+    String dateStr,
+    List<TimeChunkModel> currentDayChunks, // REQUIRED: Pass the current day's schedule
+  ) async {
     try {
       final currentUserId = ref.read(currentUserIdProvider);
       
@@ -427,23 +507,32 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           ? currentUserId 
           : dirtyAuthorId.toString();
 
-      final updatedChunk = TimeChunkModel(
-        id: chunk.id,
-        poiId: chunk.poiId,
+      // Calculate the new sort order (append to the end of the existing schedule)
+      int maxOrder = 0;
+      if (currentDayChunks.isNotEmpty) {
+        maxOrder = currentDayChunks.map((c) => c.sortOrder).reduce((a, b) => a > b ? a : b);
+      }
+      final int newSortOrder = maxOrder + 1024;
+
+      // Update the chunk properties. Time fields are intentionally left unchanged 
+      // as the ScheduleEngine will handle the absolute time allocation.
+      final updatedChunk = chunk.copyWith(
         authorId: safeAuthorId,
-        date: dateStr,                                 
-        startTime: chunk.startTime ?? '10:00',
-        endTime: chunk.endTime ?? '12:00',
-        status: 'scheduled',                           
-        createdAt: chunk.createdAt,
-        isShared: chunk.isShared,
+        date: dateStr,
+        status: 'scheduled',
+        sortOrder: newSortOrder,
       );
 
-      await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
+      // Create a mutable copy of the day's schedule and append the new chunk
+      final newDayChunks = List<TimeChunkModel>.from(currentDayChunks)..add(updatedChunk);
+
+      // Trigger the cascade engine to recalculate all start and end times
+      final engine = ref.read(scheduleEngineProvider);
+      await engine.recalculateDaySchedule(newDayChunks);
       
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Successfully scheduled for $dateStr!')),
+          SnackBar(content: Text('Successfully scheduled and recalculated for $dateStr!')),
         );
       }
     } catch (e, stackTrace) {
@@ -679,4 +768,205 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
+  Future<void> _showDurationEditDialog(
+    BuildContext context,
+    WidgetRef ref,
+    TimeChunkModel targetChunk,
+    List<TimeChunkModel> currentDayChunks,
+  ) async {
+    int selectedDuration = targetChunk.duration;
+    final List<int> presetDurations = [15, 30, 45, 60, 90, 120, 180];
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Adjust Duration'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Current: $selectedDuration minutes',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: presetDurations.map((duration) {
+                      return ChoiceChip(
+                        label: Text('${duration}m'),
+                        selected: selectedDuration == duration,
+                        onSelected: (selected) {
+                          if (selected) setState(() => selectedDuration = duration);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  Slider(
+                    value: selectedDuration.toDouble(),
+                    min: 5,
+                    max: 300,
+                    divisions: 59,
+                    label: '${selectedDuration}m',
+                    onChanged: (value) {
+                      setState(() => selectedDuration = value.toInt());
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Apply & Recalculate'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed == true && selectedDuration != targetChunk.duration) {
+      try {
+        // Map the new duration to the specific chunk
+        final updatedDayChunks = currentDayChunks.map((chunk) {
+          if (chunk.id == targetChunk.id) {
+            return chunk.copyWith(duration: selectedDuration);
+          }
+          return chunk;
+        }).toList();
+
+        // Feed updated list to the engine to cascade time changes
+        final engine = ref.read(scheduleEngineProvider);
+        await engine.recalculateDaySchedule(updatedDayChunks);
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Schedule updated based on new duration.')),
+          );
+        }
+      } catch (e) {
+        debugPrint('Failed to recalculate duration: $e');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _showTransitEditDialog(
+    BuildContext context,
+    WidgetRef ref,
+    TimeChunkModel targetChunk,
+    List<TimeChunkModel> currentDayChunks,
+  ) async {
+    int selectedTransit = targetChunk.transitDuration;
+    
+    // Presets tailored for transit, including 0 for "next door"
+    final List<int> presetDurations = [0, 15, 30, 45, 60, 90, 120];
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Adjust Transit Time'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Current: $selectedTransit minutes',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: presetDurations.map((duration) {
+                      return ChoiceChip(
+                        label: Text('${duration}m'),
+                        selected: selectedTransit == duration,
+                        onSelected: (selected) {
+                          if (selected) setState(() => selectedTransit = duration);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  Slider(
+                    value: selectedTransit.toDouble(),
+                    min: 0,
+                    max: 180, // Max 3 hours for transit
+                    divisions: 36, // 5-minute increments
+                    label: '${selectedTransit}m',
+                    onChanged: (value) {
+                      setState(() => selectedTransit = value.toInt());
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Apply & Recalculate'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed == true && selectedTransit != targetChunk.transitDuration) {
+      try {
+        // Map the new transit duration to the target chunk
+        final updatedDayChunks = currentDayChunks.map((chunk) {
+          if (chunk.id == targetChunk.id) {
+            return chunk.copyWith(transitDuration: selectedTransit);
+          }
+          return chunk;
+        }).toList();
+
+        // Pass the updated schedule to the cascading engine
+        final engine = ref.read(scheduleEngineProvider);
+        await engine.recalculateDaySchedule(updatedDayChunks);
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Schedule updated based on new transit time.')),
+          );
+        }
+      } catch (e) {
+        debugPrint('Failed to recalculate transit time: $e');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
 }
