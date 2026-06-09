@@ -94,6 +94,17 @@ class TimeChunkCard extends StatelessWidget {
                     tooltip: 'Adjust Duration',
                     onPressed: () => onAction('edit_duration'),
                   ),
+                  IconButton(
+                    icon: Icon(
+                      chunk.isFixedTime ? Icons.lock : Icons.lock_open,
+                      size: 20,
+                      color: chunk.isFixedTime 
+                          ? theme.colorScheme.primary 
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    tooltip: chunk.isFixedTime ? 'Unlock Time' : 'Lock Time',
+                    onPressed: () => onAction('toggle_fixed'),
+                  ),
                   PopupMenuButton<String>(
                     onSelected: onAction,
                     icon: const Icon(Icons.more_vert, size: 20),
@@ -119,17 +130,27 @@ class TimeChunkCard extends StatelessWidget {
                     ],
                   ),
 
-                  ReorderableDragStartListener(
-                    index: index,
-                    child: Padding(
+                  if (!chunk.isFixedTime)
+                    ReorderableDragStartListener(
+                      index: index,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 4.0),
+                        child: Icon(
+                          Icons.drag_handle, 
+                          size: 24, 
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    )
+                  else
+                    Padding(
                       padding: const EdgeInsets.only(left: 4.0),
                       child: Icon(
                         Icons.drag_handle, 
                         size: 24, 
-                        color: theme.colorScheme.onSurfaceVariant,
+                        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

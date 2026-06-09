@@ -208,58 +208,128 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                               ),
                             ),
 
-                            // The actual list
                             Expanded(
                               child: ReorderableListView.builder(
                                 buildDefaultDragHandles: false,
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                                 itemCount: sorted.length,
                                 onReorderItem: (oldIndex, newIndex) async {
-                                  // Disable reordering when in selection mode
                                   if (_isScheduleSelectionMode) return; 
-                                  // ... (Keep your existing reorder logic) ...
+
+                                  if (oldIndex == newIndex) return;
+
+                                  try {
+                                    final mutableChunks = List<TimeChunkModel>.from(sorted);
+                                    final movedChunk = mutableChunks.removeAt(oldIndex);
+
+                                    int newSortOrder;
+                                    if (mutableChunks.isEmpty) {
+                                      newSortOrder = 0;
+                                    } else if (newIndex == 0) {
+                                      newSortOrder = mutableChunks.first.sortOrder - 2048;
+                                    } else if (newIndex == mutableChunks.length) {
+                                      newSortOrder = mutableChunks.last.sortOrder + 2048;
+                                    } else {
+                                      final int prevOrder = mutableChunks[newIndex - 1].sortOrder;
+                                      final int nextOrder = mutableChunks[newIndex].sortOrder;
+                                      newSortOrder = prevOrder + ((nextOrder - prevOrder) ~/ 2);
+                                    }
+
+                                    final updatedChunk = movedChunk.copyWith(sortOrder: newSortOrder);
+                                    mutableChunks.insert(newIndex, updatedChunk);
+
+                                    final engine = ref.read(scheduleEngineProvider);
+                                    await engine.recalculateDaySchedule(mutableChunks);
+                                  } catch (e) {
+                                    debugPrint('Reorder Error: $e');
+                                  }
                                 },
                                 itemBuilder: (context, index) {
                                   final chunk = sorted[index];
                                   final poi = poisMap[chunk.poiId];
                                   final isSelected = _selectedScheduleIds.contains(chunk.id);
-                                  
+
+                                  Widget gapWidget = const SizedBox.shrink();
+                                  if (index > 0) {
+                                    final prevChunk = sorted[index - 1];
+                                    final prevEndTime = prevChunk.endTime ?? '00:00';
+                                    
+                                    int prevEndMins = (int.tryParse(prevEndTime.split(':')[0]) ?? 0) * 60 + 
+                                                      (int.tryParse(prevEndTime.split(':')[1]) ?? 0);
+                                    int arrivalMins = prevEndMins + prevChunk.transitDuration;
+                                    
+                                    final currStartTime = chunk.startTime ?? '00:00';
+                                    int currStartMins = (int.tryParse(currStartTime.split(':')[0]) ?? 0) * 60 + 
+                                                        (int.tryParse(currStartTime.split(':')[1]) ?? 0);
+                                    
+                                    int gap = currStartMins - arrivalMins;
+                                    if (gap > 0) {
+                                      gapWidget = Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                        child: Center(
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                                              borderRadius: BorderRadius.circular(16),
+                                            ),
+                                            child: Text(
+                                              'Free Time: $gap min',
+                                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                                color: Theme.of(context).colorScheme.onSecondaryContainer,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+
                                   return Container(
                                     key: ValueKey(chunk.id), 
-                                    // ADDED: Wrap TimeChunkCard in a Row to conditionally show a Checkbox
-                                    child: Row(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        if (_isScheduleSelectionMode)
-                                          Checkbox(
-                                            value: isSelected,
-                                            onChanged: (bool? checked) {
-                                              setState(() {
-                                                if (checked == true) {
-                                                  _selectedScheduleIds.add(chunk.id);
-                                                } else {
-                                                  _selectedScheduleIds.remove(chunk.id);
-                                                }
-                                              });
-                                            },
-                                          ),
-                                        Expanded(
-                                          child: TimeChunkCard(
-                                            index: index, 
-                                            chunk: chunk,
-                                            poiName: poi?.name ?? 'Unknown POI',
-                                            onAction: (action) {
-                                              // Disable actions when selecting
-                                              if (_isScheduleSelectionMode) return; 
+                                        gapWidget,
+                                        Row(
+                                          children: [
+                                            if (_isScheduleSelectionMode)
+                                              Checkbox(
+                                                value: isSelected,
+                                                onChanged: (bool? checked) {
+                                                  setState(() {
+                                                    if (checked == true) {
+                                                      _selectedScheduleIds.add(chunk.id);
+                                                    } else {
+                                                      _selectedScheduleIds.remove(chunk.id);
+                                                    }
+                                                  });
+                                                },
+                                              ),
+                                            Expanded(
+                                              child: TimeChunkCard(
+                                                index: index, 
+                                                chunk: chunk,
+                                                poiName: poi?.name ?? 'Unknown POI',
+                                                onAction: (action) {
+                                                  if (_isScheduleSelectionMode) return; 
 
-                                              if (action == 'edit_duration') {
-                                                _showDurationEditDialog(context, ref, chunk, sorted);
-                                              } else if (action == 'edit_transit') {
-                                                _showTransitEditDialog(context, ref, chunk, sorted);
-                                              } else {
-                                                handleTimeChunkAction(context, ref, action, chunk);
-                                              }
-                                            },
-                                          ),
+                                                  if (action == 'edit_duration') {
+                                                    _showDurationEditDialog(context, ref, chunk, sorted);
+                                                  } else if (action == 'edit_transit') {
+                                                    _showTransitEditDialog(context, ref, chunk, sorted);
+                                                  } else if (action == 'toggle_fixed') {
+                                                    final updatedChunk = chunk.copyWith(isFixedTime: !chunk.isFixedTime);
+                                                    final updatedChunks = sorted.map((c) => c.id == chunk.id ? updatedChunk : c).toList();
+                                                    ref.read(scheduleEngineProvider).recalculateDaySchedule(updatedChunks);
+                                                  } else {
+                                                    handleTimeChunkAction(context, ref, action, chunk);
+                                                  }
+                                                },
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),

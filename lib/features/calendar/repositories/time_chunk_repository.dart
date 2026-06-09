@@ -37,6 +37,7 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
       sortOrder: dbChunk.sortOrder, 
       duration: dbChunk.duration,   
       transitDuration: dbChunk.transitDuration,
+      isFixedTime: dbChunk.isFixedTime
     );
   }
 
@@ -54,7 +55,8 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
       isShared: Value(model.isShared),
       sortOrder: Value(model.sortOrder),
       duration: Value(model.duration),
-      transitDuration: Value(model.transitDuration)
+      transitDuration: Value(model.transitDuration),
+      isFixedTime: Value(model.isFixedTime)
     )).toList();
 
     await localDb.batchUpdateTimeChunks(companions);
@@ -74,7 +76,8 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
       isShared: Value(chunk.isShared),
       sortOrder: Value(chunk.sortOrder),
       duration: Value(chunk.duration), 
-      transitDuration: Value(chunk.transitDuration)
+      transitDuration: Value(chunk.transitDuration),
+      isFixedTime: Value(chunk.isFixedTime)
     );
 
     await localDb.insertTimeChunk(companion);
@@ -100,6 +103,7 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
       isShared: Value(chunk.isShared),
       sortOrder: Value(chunk.sortOrder),
       duration: Value(chunk.duration),
+      isFixedTime: Value(chunk.isFixedTime)
     ));
   }
 

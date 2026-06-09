@@ -15,6 +15,7 @@ class TimeChunkModel {
   final int sortOrder;
   final int duration;
   final int transitDuration;
+  final bool isFixedTime;
 
   TimeChunkModel({
     required this.id,
@@ -29,6 +30,7 @@ class TimeChunkModel {
     this.sortOrder = 0,
     this.duration = 60,
     this.transitDuration = 0,
+    this.isFixedTime = false,
   });
 
   TimeChunkModel copyWith({
@@ -44,6 +46,7 @@ class TimeChunkModel {
     int? sortOrder,
     int? duration,
     int? transitDuration,
+    bool? isFixedTime,
   }) {
     return TimeChunkModel(
       id: id ?? this.id,
@@ -58,6 +61,7 @@ class TimeChunkModel {
       sortOrder: sortOrder ?? this.sortOrder,
       duration: duration ?? this.duration,
       transitDuration: transitDuration ?? this.transitDuration,
+      isFixedTime: isFixedTime ?? this.isFixedTime,
     );
   }
 }

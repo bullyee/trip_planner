@@ -102,6 +102,7 @@ class TimeChunks extends Table {
   
   IntColumn get duration => integer().withDefault(const Constant(60))();
   IntColumn get transitDuration => integer().withDefault(const Constant(0))();
+  BoolColumn get isFixedTime => boolean().withDefault(const Constant(false))();
   
   // ADDED: Required fields for dual-track sync
   TextColumn get authorId => text()();
