@@ -118,7 +118,7 @@ class TimeChunks extends Table {
   BoolColumn get isShared => boolean().withDefault(const Constant(false))();
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
 
-  IntColumn get syncStatus => intEnum<SyncStatus>().withDefault(const Constant(0))();
+  IntColumn get syncStatus => integer().withDefault(const Constant(0))();
   BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
   BoolColumn get hasEverSynced => boolean().withDefault(const Constant(false))();
 

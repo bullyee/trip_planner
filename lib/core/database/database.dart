@@ -64,6 +64,7 @@ class AppDatabase extends _$AppDatabase {
     await m.addColumn(rois, rois.cloudVersion);
     await m.addColumn(rois, rois.syncLockExpiresAt);
 
+    // ignore: experimental_member_use
     await m.alterTable(TableMigration(
       timeChunks,
       newColumns: [
@@ -177,6 +178,7 @@ class AppDatabase extends _$AppDatabase {
   ///   * `local_uri` renamed to `local_path` on media_assets and
   ///     reference_images.
   ///
+  // ignore: experimental_member_use
   /// Each affected table is rebuilt with [TableMigration] so existing rows are
   /// preserved. New non-nullable columns are backfilled — `author_id` to the
   /// offline guest id (the same placeholder the running app uses before sign-in,
@@ -596,7 +598,7 @@ class AppDatabase extends _$AppDatabase {
         await (update(timeChunks)..where((t) => t.id.equals(chunkId))).write(
           TimeChunksCompanion(
             isDeleted: const Value(true),
-            syncStatus: const Value(SyncStatus.dirty),
+            syncStatus: Value(SyncStatus.dirty.index), 
             lastModifiedAt: Value(DateTime.now()),
           ),
         );

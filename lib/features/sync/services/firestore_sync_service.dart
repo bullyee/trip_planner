@@ -84,6 +84,26 @@ class FirestoreSyncService {
     final snapshot = await _db.collection('trips').doc(roiId).collection('timeChunks').get();
     return snapshot.docs.map((d) => d.data()).toList();
   }
+
+  Future<void> initializeCloudTrip(String roiId, String userId, String tripName) async {
+    final docRef = _db.collection('trips').doc(roiId);
+    
+    final snapshot = await docRef.get();
+    if (snapshot.exists) {
+      // Already initialized on the cloud. 
+      // Could happen if another user invited them, but locally it wasn't marked shared yet.
+      return; 
+    }
+
+    await docRef.set({
+      'id': roiId,
+      'name': tripName, // Optional metadata for cloud listing
+      'authorId': userId,
+      'members': [userId], // Critical for Firestore Security Rules
+      'cloudVersion': 1,   // Start at version 1
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
 }
 
 final firestoreSyncServiceProvider = Provider<FirestoreSyncService>((ref) {

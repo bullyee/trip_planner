@@ -16,6 +16,9 @@ class TimeChunkModel {
   final int duration;
   final int transitDuration;
   final bool isFixedTime;
+  final int syncStatus;
+  final bool isDeleted;
+  final bool hasEverSynced;
 
   TimeChunkModel({
     required this.id,
@@ -31,6 +34,9 @@ class TimeChunkModel {
     this.duration = 60,
     this.transitDuration = 0,
     this.isFixedTime = false,
+    this.syncStatus = 0,
+    this.isDeleted = false,
+    this.hasEverSynced = false,
   });
 
   TimeChunkModel copyWith({
@@ -47,6 +53,9 @@ class TimeChunkModel {
     int? duration,
     int? transitDuration,
     bool? isFixedTime,
+    int? syncStatus,
+    bool? isDeleted,
+    bool? hasEverSynced,
   }) {
     return TimeChunkModel(
       id: id ?? this.id,
@@ -62,6 +71,9 @@ class TimeChunkModel {
       duration: duration ?? this.duration,
       transitDuration: transitDuration ?? this.transitDuration,
       isFixedTime: isFixedTime ?? this.isFixedTime,
+      syncStatus: syncStatus ?? this.syncStatus,
+      isDeleted: isDeleted ?? this.isDeleted,
+      hasEverSynced: hasEverSynced ?? this.hasEverSynced,
     );
   }
 }

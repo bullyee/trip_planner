@@ -24,81 +24,73 @@ class SyncEngineService {
     required this.currentUserId,
   });
 
-  // ==========================================
-  // ORCHESTRATOR: Background Sync Triggers
-  // ==========================================
-  
-  /// Starts observing local database for dirty records and triggers push.
   void startSync() {
     debugPrint('[SyncEngine] Starting global background sync orchestrator...');
     
-    // Watch for ANY time chunks that are marked as dirty
-    _globalSyncSub = (localDb.select(localDb.timeChunks)
-      ..where((t) => t.syncStatus.equals(SyncStatus.dirty.index)))
-      .watch()
-      .listen((dirtyChunks) {
-        if (dirtyChunks.isEmpty) return;
+    final query = localDb.select(localDb.timeChunks).join([
+      innerJoin(localDb.pois, localDb.pois.id.equalsExp(localDb.timeChunks.poiId)),
+      innerJoin(localDb.rois, localDb.rois.id.equalsExp(localDb.pois.roiId)),
+    ])
+      ..where(localDb.timeChunks.syncStatus.equals(SyncStatus.dirty.index) & 
+              localDb.rois.isShared.equals(true));
 
-        // Debounce: Wait for 2 seconds of inactivity before pushing 
-        // to avoid spamming Firestore locks during rapid drag-and-drop.
-        _debounceTimer?.cancel();
-        _debounceTimer = Timer(const Duration(seconds: 2), () async {
-          await _processGlobalDirtyChunks(dirtyChunks);
-        });
+    _globalSyncSub = query.watch().listen((rows) {
+      if (rows.isEmpty) return;
+
+      if (currentUserId.isEmpty || currentUserId == 'guest_local_user') {
+        return;
+      }
+
+      final dirtyChunks = rows.map((row) => row.readTable(localDb.timeChunks)).toList();
+
+      _debounceTimer?.cancel();
+      _debounceTimer = Timer(const Duration(seconds: 2), () async {
+        await _processGlobalDirtyChunks(dirtyChunks);
+      });
     });
   }
 
-  /// Stops background synchronization.
   void stopSync() {
     debugPrint('[SyncEngine] Stopping global sync orchestrator...');
     _globalSyncSub?.cancel();
     _debounceTimer?.cancel();
   }
 
-  /// Helper: Extracts affected ROIs and pushes them sequentially
   Future<void> _processGlobalDirtyChunks(List<TimeChunk> dirtyChunks) async {
     try {
-      // 1. Find all unique POI IDs from the dirty chunks
       final poiIds = dirtyChunks.map((c) => c.poiId).toSet().toList();
       if (poiIds.isEmpty) return;
 
-      // 2. Fetch those POIs to determine which Trips (ROIs) are affected
       final affectedPois = await (localDb.select(localDb.pois)
         ..where((p) => p.id.isIn(poiIds))).get();
       
       final affectedRoiIds = affectedPois
           .map((p) => p.roiId)
-          .whereType<String>() // Filter out nulls
+          .whereType<String>()
           .toSet();
 
-      // 3. Trigger push for each affected Trip sequentially
       for (final roiId in affectedRoiIds) {
-        debugPrint('[SyncEngine] Auto-triggering push for Trip: $roiId');
-        await executePush(roiId);
+        final roi = await localDb.getRoiById(roiId);
+        if (roi.isShared) {
+          debugPrint('[SyncEngine] Auto-triggering push for SHARED Trip: $roiId');
+          await executePush(roiId);
+        }
       }
     } catch (e) {
       debugPrint('[SyncEngine] Auto-push failed: $e');
     }
   }
 
-  // ==========================================
-  // PUSH & PULL CORE
-  // ==========================================
-
   Future<void> executePush(String roiId) async {
     final lockAcquired = await firestoreSync.acquireLock(roiId, currentUserId);
-    if (!lockAcquired) {
-      throw Exception('Resource is currently locked by another user or process.');
-    }
+    if (!lockAcquired) throw Exception('Resource locked.');
 
     try {
       final cloudVersion = await firestoreSync.fetchTripVersion(roiId);
       final roiRecord = await localDb.getRoiById(roiId);
       final localVersion = roiRecord.cloudVersion;
       
-      if (cloudVersion > localVersion) {
-        throw Exception('Local version is obsolete. A pull is required before pushing.');
-      }
+      if (cloudVersion > localVersion) throw Exception('Local version obsolete.');
 
       final dirtyData = await _fetchDirtyRecords(roiId);
       if (dirtyData.isEmpty) {
@@ -107,25 +99,18 @@ class SyncEngineService {
       }
 
       final chunks = _splitIntoBatches(dirtyData, 490);
-
-      // Sequential write
       for (int i = 0; i < chunks.length; i++) {
         final batch = firestoreSync.createBatch();
-        
         for (final item in chunks[i]) {
           firestoreSync.buildBatchOperations(batch, item, roiId);
         }
-        
-        final isLastBatch = i == (chunks.length - 1);
-        if (isLastBatch) {
+        if (i == chunks.length - 1) {
           firestoreSync.appendVersionBumpAndLockRelease(batch, roiId, cloudVersion + 1);
         }
-        
         await firestoreSync.commitBatch(batch);
       }
 
       await _postPushLocalCleanup(roiId, dirtyData, cloudVersion + 1);
-
     } catch (e) {
       debugPrint('[SyncEngine] Push failed: $e');
       rethrow;
@@ -154,7 +139,7 @@ class SyncEngineService {
             continue;
           }
 
-          final isLocalDirty = localChunk.syncStatus == SyncStatus.dirty;
+          final isLocalDirty = localChunk.syncStatus == SyncStatus.dirty.index;
 
           if (isRemoteDeleted) {
             if (isLocalDirty) {
@@ -171,7 +156,6 @@ class SyncEngineService {
             }
           }
         }
-
         await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
           RoisCompanion(cloudVersion: Value(cloudVersion)),
         );
@@ -209,7 +193,7 @@ class SyncEngineService {
         } else {
           await (localDb.update(localDb.timeChunks)..where((t) => t.id.equals(chunk.id))).write(
             TimeChunksCompanion(
-              syncStatus: Value(SyncStatus.synced.index as SyncStatus),
+              syncStatus: Value(SyncStatus.synced.index),
               hasEverSynced: const Value(true),
             ),
           );
@@ -232,7 +216,7 @@ class SyncEngineService {
       startTime: const Value(null),
       endTime: const Value(null),
       status: const Value('backlog'),
-      syncStatus: Value(SyncStatus.stashed.index as SyncStatus),
+      syncStatus: Value(SyncStatus.stashed.index),
       isDeleted: const Value(false),
       hasEverSynced: const Value(false),
       authorId: Value(localData.authorId),
@@ -254,7 +238,7 @@ class SyncEngineService {
       duration: Value(data['duration'] ?? 60),
       transitDuration: Value(data['transitDuration'] ?? 0),
       isFixedTime: Value(data['isFixedTime'] ?? false),
-      syncStatus: Value(SyncStatus.synced.index as SyncStatus),
+      syncStatus: Value(SyncStatus.synced.index),
       isDeleted: const Value(false),
       hasEverSynced: const Value(true),
       authorId: Value(data['authorId'] ?? currentUserId),
@@ -264,7 +248,7 @@ class SyncEngineService {
 
   Future<void> _updateCloudData(Map<String, dynamic> data) async {
     final companion = TimeChunksCompanion(
-      syncStatus: Value(SyncStatus.synced.index as SyncStatus),
+      syncStatus: Value(SyncStatus.synced.index),
       date: Value(data['date']),
       startTime: Value(data['startTime']),
       endTime: Value(data['endTime']),

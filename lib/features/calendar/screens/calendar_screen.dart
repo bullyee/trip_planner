@@ -601,7 +601,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     WidgetRef ref, 
     TimeChunkModel chunk, 
     String dateStr,
-    List<TimeChunkModel> currentDayChunks, // REQUIRED: Pass the current day's schedule
+    List<TimeChunkModel> currentDayChunks,
   ) async {
     try {
       final currentUserId = ref.read(currentUserIdProvider);
@@ -611,45 +611,48 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           ? currentUserId 
           : dirtyAuthorId.toString();
 
-      // Calculate the new sort order (append to the end of the existing schedule)
+      final bool isStashed = chunk.syncStatus == 2; 
+      final String activeId = isStashed ? const Uuid().v4() : chunk.id;
+
       int maxOrder = 0;
       if (currentDayChunks.isNotEmpty) {
         maxOrder = currentDayChunks.map((c) => c.sortOrder).reduce((a, b) => a > b ? a : b);
       }
       final int newSortOrder = maxOrder + 1024;
 
-      // Update the chunk properties. Time fields are intentionally left unchanged 
-      // as the ScheduleEngine will handle the absolute time allocation.
       final updatedChunk = chunk.copyWith(
+        id: activeId,
         authorId: safeAuthorId,
         date: dateStr,
         status: 'scheduled',
         sortOrder: newSortOrder,
+        syncStatus: 1, // 1 = dirty
+        isDeleted: false,
+        hasEverSynced: isStashed ? false : chunk.hasEverSynced,
       );
 
-      // Create a mutable copy of the day's schedule and append the new chunk
-      final newDayChunks = List<TimeChunkModel>.from(currentDayChunks)..add(updatedChunk);
+      if (isStashed) {
+        await ref.read(timeChunkRepositoryProvider).addTimeChunk(updatedChunk);
+        await ref.read(timeChunkRepositoryProvider).deleteTimeChunk(chunk.id);
+      }
 
-      // Trigger the cascade engine to recalculate all start and end times
+      final newDayChunks = List<TimeChunkModel>.from(currentDayChunks)
+        ..removeWhere((c) => c.id == chunk.id)
+        ..add(updatedChunk);
+
       final engine = ref.read(scheduleEngineProvider);
       await engine.recalculateDaySchedule(newDayChunks);
       
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Successfully scheduled and recalculated for $dateStr!')),
+          SnackBar(content: Text(isStashed ? 'Resolved conflict and scheduled!' : 'Successfully scheduled!')),
         );
       }
-    } catch (e, stackTrace) {
-      debugPrint('=== start ===');
+    } catch (e) {
       debugPrint('[Schedule Error] Failed to update time chunk: $e');
-      debugPrint('$stackTrace');
-      debugPrint('===  end  ===');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Theme.of(context).colorScheme.error),
         );
       }
     }
@@ -849,7 +852,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             endTime: '12:00',
                             status: 'backlog',
                             createdAt: DateTime.now().millisecondsSinceEpoch,
-                            isShared: false,
+                            syncStatus: 1, // 1 = dirty
+                            isDeleted: false,
+                            hasEverSynced: false,
                           );
                           return repository.addTimeChunk(newChunk);
                         });

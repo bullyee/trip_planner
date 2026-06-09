@@ -2932,16 +2932,18 @@ class $TimeChunksTable extends TimeChunks
     requiredDuringInsert: false,
     clientDefault: () => DateTime.now().millisecondsSinceEpoch,
   );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
   @override
-  late final GeneratedColumnWithTypeConverter<SyncStatus, int> syncStatus =
-      GeneratedColumn<int>(
-        'sync_status',
-        aliasedName,
-        false,
-        type: DriftSqlType.int,
-        requiredDuringInsert: false,
-        defaultValue: const Constant(0),
-      ).withConverter<SyncStatus>($TimeChunksTable.$convertersyncStatus);
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _isDeletedMeta = const VerificationMeta(
     'isDeleted',
   );
@@ -3128,6 +3130,12 @@ class $TimeChunksTable extends TimeChunks
         createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
       );
     }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
     if (data.containsKey('is_deleted')) {
       context.handle(
         _isDeletedMeta,
@@ -3231,12 +3239,10 @@ class $TimeChunksTable extends TimeChunks
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
       )!,
-      syncStatus: $TimeChunksTable.$convertersyncStatus.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.int,
-          data['${effectivePrefix}sync_status'],
-        )!,
-      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
       isDeleted: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}is_deleted'],
@@ -3264,9 +3270,6 @@ class $TimeChunksTable extends TimeChunks
   $TimeChunksTable createAlias(String alias) {
     return $TimeChunksTable(attachedDatabase, alias);
   }
-
-  static JsonTypeConverter2<SyncStatus, int, int> $convertersyncStatus =
-      const EnumIndexConverter<SyncStatus>(SyncStatus.values);
 }
 
 class TimeChunk extends DataClass implements Insertable<TimeChunk> {
@@ -3283,7 +3286,7 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
   final String authorId;
   final bool isShared;
   final int createdAt;
-  final SyncStatus syncStatus;
+  final int syncStatus;
   final bool isDeleted;
   final bool hasEverSynced;
   final String? originalStartTime;
@@ -3332,11 +3335,7 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     map['author_id'] = Variable<String>(authorId);
     map['is_shared'] = Variable<bool>(isShared);
     map['created_at'] = Variable<int>(createdAt);
-    {
-      map['sync_status'] = Variable<int>(
-        $TimeChunksTable.$convertersyncStatus.toSql(syncStatus),
-      );
-    }
+    map['sync_status'] = Variable<int>(syncStatus);
     map['is_deleted'] = Variable<bool>(isDeleted);
     map['has_ever_synced'] = Variable<bool>(hasEverSynced);
     if (!nullToAbsent || originalStartTime != null) {
@@ -3404,9 +3403,7 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       authorId: serializer.fromJson<String>(json['authorId']),
       isShared: serializer.fromJson<bool>(json['isShared']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
-      syncStatus: $TimeChunksTable.$convertersyncStatus.fromJson(
-        serializer.fromJson<int>(json['syncStatus']),
-      ),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
       isDeleted: serializer.fromJson<bool>(json['isDeleted']),
       hasEverSynced: serializer.fromJson<bool>(json['hasEverSynced']),
       originalStartTime: serializer.fromJson<String?>(
@@ -3433,9 +3430,7 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       'authorId': serializer.toJson<String>(authorId),
       'isShared': serializer.toJson<bool>(isShared),
       'createdAt': serializer.toJson<int>(createdAt),
-      'syncStatus': serializer.toJson<int>(
-        $TimeChunksTable.$convertersyncStatus.toJson(syncStatus),
-      ),
+      'syncStatus': serializer.toJson<int>(syncStatus),
       'isDeleted': serializer.toJson<bool>(isDeleted),
       'hasEverSynced': serializer.toJson<bool>(hasEverSynced),
       'originalStartTime': serializer.toJson<String?>(originalStartTime),
@@ -3458,7 +3453,7 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     String? authorId,
     bool? isShared,
     int? createdAt,
-    SyncStatus? syncStatus,
+    int? syncStatus,
     bool? isDeleted,
     bool? hasEverSynced,
     Value<String?> originalStartTime = const Value.absent(),
@@ -3616,7 +3611,7 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
   final Value<String> authorId;
   final Value<bool> isShared;
   final Value<int> createdAt;
-  final Value<SyncStatus> syncStatus;
+  final Value<int> syncStatus;
   final Value<bool> isDeleted;
   final Value<bool> hasEverSynced;
   final Value<String?> originalStartTime;
@@ -3729,7 +3724,7 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     Value<String>? authorId,
     Value<bool>? isShared,
     Value<int>? createdAt,
-    Value<SyncStatus>? syncStatus,
+    Value<int>? syncStatus,
     Value<bool>? isDeleted,
     Value<bool>? hasEverSynced,
     Value<String?>? originalStartTime,
@@ -3804,9 +3799,7 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
       map['created_at'] = Variable<int>(createdAt.value);
     }
     if (syncStatus.present) {
-      map['sync_status'] = Variable<int>(
-        $TimeChunksTable.$convertersyncStatus.toSql(syncStatus.value),
-      );
+      map['sync_status'] = Variable<int>(syncStatus.value);
     }
     if (isDeleted.present) {
       map['is_deleted'] = Variable<bool>(isDeleted.value);
@@ -7656,7 +7649,7 @@ typedef $$TimeChunksTableCreateCompanionBuilder =
       required String authorId,
       Value<bool> isShared,
       Value<int> createdAt,
-      Value<SyncStatus> syncStatus,
+      Value<int> syncStatus,
       Value<bool> isDeleted,
       Value<bool> hasEverSynced,
       Value<String?> originalStartTime,
@@ -7679,7 +7672,7 @@ typedef $$TimeChunksTableUpdateCompanionBuilder =
       Value<String> authorId,
       Value<bool> isShared,
       Value<int> createdAt,
-      Value<SyncStatus> syncStatus,
+      Value<int> syncStatus,
       Value<bool> isDeleted,
       Value<bool> hasEverSynced,
       Value<String?> originalStartTime,
@@ -7780,11 +7773,10 @@ class $$TimeChunksTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnWithTypeConverterFilters<SyncStatus, SyncStatus, int> get syncStatus =>
-      $composableBuilder(
-        column: $table.syncStatus,
-        builder: (column) => ColumnWithTypeConverterFilters(column),
-      );
+  ColumnFilters<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
 
   ColumnFilters<bool> get isDeleted => $composableBuilder(
     column: $table.isDeleted,
@@ -8007,11 +7999,10 @@ class $$TimeChunksTableAnnotationComposer
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
-  GeneratedColumnWithTypeConverter<SyncStatus, int> get syncStatus =>
-      $composableBuilder(
-        column: $table.syncStatus,
-        builder: (column) => column,
-      );
+  GeneratedColumn<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<bool> get isDeleted =>
       $composableBuilder(column: $table.isDeleted, builder: (column) => column);
@@ -8101,7 +8092,7 @@ class $$TimeChunksTableTableManager
                 Value<String> authorId = const Value.absent(),
                 Value<bool> isShared = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
-                Value<SyncStatus> syncStatus = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
                 Value<bool> isDeleted = const Value.absent(),
                 Value<bool> hasEverSynced = const Value.absent(),
                 Value<String?> originalStartTime = const Value.absent(),
@@ -8145,7 +8136,7 @@ class $$TimeChunksTableTableManager
                 required String authorId,
                 Value<bool> isShared = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
-                Value<SyncStatus> syncStatus = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
                 Value<bool> isDeleted = const Value.absent(),
                 Value<bool> hasEverSynced = const Value.absent(),
                 Value<String?> originalStartTime = const Value.absent(),
