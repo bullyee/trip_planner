@@ -213,13 +213,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                 buildDefaultDragHandles: false,
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                                 itemCount: sorted.length,
-                                onReorder: (oldIndex, newIndex) async {
+                                // onReorderItem (Flutter 3.44+) adjusts newIndex
+                                // for the removed item, so no manual -1 is needed.
+                                onReorderItem: (oldIndex, newIndex) async {
                                   if (_isScheduleSelectionMode) return;
-
-                                  // ReorderableListView reports newIndex in the
-                                  // pre-removal coordinate space; adjust when
-                                  // dragging an item downward.
-                                  if (newIndex > oldIndex) newIndex -= 1;
 
                                   if (oldIndex == newIndex) return;
 
