@@ -23,7 +23,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -45,13 +45,10 @@ class AppDatabase extends _$AppDatabase {
             await _migrateToSyncSchema(m);
           }
           if (from < 7) {
+            // Time-chunk sequencing columns (sortOrder/duration/transit/fixed).
             await m.addColumn(timeChunks, timeChunks.sortOrder);
             await m.addColumn(timeChunks, timeChunks.duration);
-          }
-          if (from < 8) {
             await m.addColumn(timeChunks, timeChunks.transitDuration);
-          }
-          if (from < 9) {
             await m.addColumn(timeChunks, timeChunks.isFixedTime);
           }
         },
