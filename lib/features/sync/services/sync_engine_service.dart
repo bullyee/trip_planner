@@ -8,6 +8,7 @@ import '../../../../core/database/database.dart';
 import '../../../../core/database/tables.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../../core/providers/database_provider.dart';
+import '../providers/firestore_sync_provider.dart';
 import 'firestore_sync_service.dart';
 
 class SyncEngineService {

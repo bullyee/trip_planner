@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class FirestoreSyncService {
   final FirebaseFirestore _db;
@@ -106,6 +105,3 @@ class FirestoreSyncService {
   }
 }
 
-final firestoreSyncServiceProvider = Provider<FirestoreSyncService>((ref) {
-  return FirestoreSyncService(FirebaseFirestore.instance);
-});

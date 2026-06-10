@@ -2,6 +2,7 @@ import 'dart:ui'; // Added for PlatformDispatcher
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:trip_planner/core/providers/sync_provider.dart';
 import 'firebase_options.dart';
 
 import 'core/router/app_router.dart';
@@ -9,6 +10,7 @@ import 'shared/theme/app_theme.dart';
 // Added for custom error monitoring
 import 'core/utils/app_logger.dart';
 import 'core/providers/app_provider_observer.dart';
+
 
 void main() async {
   // Ensure bindings are initialized before calling native code (e.g., Firebase)
@@ -55,6 +57,7 @@ class TripPlannerApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final goRouter = ref.watch(routerProvider);
+    ref.watch(syncEngineProvider);
 
     return MaterialApp.router(
       title: 'Trip Planner',

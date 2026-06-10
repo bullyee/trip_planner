@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../sync/providers/firestore_sync_provider.dart';
 import '../controllers/roi_controller.dart';
 import '../../../core/utils/app_result.dart';
 import '../models/roi_model.dart';
 import '../repositories/roi_repository.dart';
-import '../../sync/services/firestore_sync_service.dart'; // REQUIRED for Cloud Upgrade
 import '../../auth/providers/auth_provider.dart';        // REQUIRED for Auth Check
 
 class RoiEditScreen extends ConsumerStatefulWidget {
