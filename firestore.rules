@@ -69,7 +69,10 @@ service cloud.firestore {
         && request.resource.data.authorId == request.auth.uid
         && (request.auth.uid in request.resource.data.members);
 
-      allow read: if isAuthenticated() && isTripMember(tripId);
+      // Allow reading a non-existent trip doc (resource == null) so the client
+      // can check existence (tripExists) and the self-heal can recreate a
+      // deleted trip. Existing trips stay gated to members.
+      allow read: if isAuthenticated() && (resource == null || isTripMember(tripId));
       allow delete: if isAuthenticated() && isTripMember(tripId);
 
       allow update: if isAuthenticated() && isTripMember(tripId) && (
