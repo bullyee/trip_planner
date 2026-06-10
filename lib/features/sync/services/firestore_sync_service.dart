@@ -44,6 +44,11 @@ class FirestoreSyncService {
     return (doc.data()?['cloudVersion'] as int?) ?? 0;
   }
 
+  Future<bool> tripExists(String roiId) async {
+    final doc = await _db.collection('trips').doc(roiId).get();
+    return doc.exists;
+  }
+
   WriteBatch createBatch() => _db.batch();
 
   void buildBatchOperations(WriteBatch batch, dynamic chunk, String roiId) {
@@ -67,6 +72,34 @@ class FirestoreSyncService {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }
+  }
+
+  /// POIs are pushed as a full snapshot (set+merge) rather than dirty-tracked,
+  /// so this always writes the current local state. `localCoverImagePath` is
+  /// intentionally omitted — it's a device-local file path, meaningless to
+  /// other devices; only the remote URL is shared.
+  void buildPoiBatchOperations(WriteBatch batch, dynamic poi, String roiId) {
+    final docRef = _db.collection('trips').doc(roiId).collection('pois').doc(poi.id);
+    batch.set(docRef, {
+      'id': poi.id,
+      'roiId': roiId,
+      'authorId': poi.authorId,
+      'name': poi.name,
+      'description': poi.description,
+      'address': poi.address,
+      'lat': poi.lat,
+      'lng': poi.lng,
+      'businessHours': poi.businessHours,
+      'contactInfo': poi.contactInfo,
+      'remoteCoverImageUrl': poi.remoteCoverImageUrl,
+      'sortOrder': poi.sortOrder,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<List<Map<String, dynamic>>> fetchTripPois(String roiId) async {
+    final snapshot = await _db.collection('trips').doc(roiId).collection('pois').get();
+    return snapshot.docs.map((d) => d.data()).toList();
   }
 
   void appendVersionBumpAndLockRelease(WriteBatch batch, String roiId, int newVersion) {
@@ -99,7 +132,8 @@ class FirestoreSyncService {
       'name': tripName, // Optional metadata for cloud listing
       'authorId': userId,
       'members': [userId], // Critical for Firestore Security Rules
-      'cloudVersion': 1,   // Start at version 1
+      'cloudVersion': 0,   // Start at 0 so the first local push (local==0) is
+                           // not rejected as obsolete; that push bumps it to 1.
       'createdAt': FieldValue.serverTimestamp(),
     });
   }

@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart'; 
+import 'package:drift/drift.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' show WriteBatch;
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/database/database.dart';
@@ -83,6 +84,17 @@ class SyncEngineService {
   }
 
   Future<void> executePush(String roiId) async {
+    // Self-heal: if the cloud trip is missing (never initialized, or deleted
+    // out-of-band), re-create it and re-arm this trip's local data for a full
+    // re-push. Without this, a deleted trip can never be re-uploaded because
+    // the chunks are already marked 'synced' and acquireLock fails on a doc
+    // that no longer exists.
+    if (!await firestoreSync.tripExists(roiId)) {
+      final roi = await localDb.getRoiById(roiId);
+      await firestoreSync.initializeCloudTrip(roiId, currentUserId, roi.name);
+      await _resetRoiForFullResync(roiId);
+    }
+
     final lockAcquired = await firestoreSync.acquireLock(roiId, currentUserId);
     if (!lockAcquired) throw Exception('Resource locked.');
 
@@ -90,22 +102,34 @@ class SyncEngineService {
       final cloudVersion = await firestoreSync.fetchTripVersion(roiId);
       final roiRecord = await localDb.getRoiById(roiId);
       final localVersion = roiRecord.cloudVersion;
-      
+
       if (cloudVersion > localVersion) throw Exception('Local version obsolete.');
 
       final dirtyData = await _fetchDirtyRecords(roiId);
-      if (dirtyData.isEmpty) {
+      final pois = await localDb.getPoisByRoi(roiId);
+
+      // Combined op list: full POI snapshot + dirty time-chunk ops, split into
+      // Firestore-batch-sized groups. Only the final batch bumps the version
+      // and releases the lock so the whole push commits atomically per batch.
+      final ops = <void Function(WriteBatch)>[
+        for (final poi in pois)
+          (b) => firestoreSync.buildPoiBatchOperations(b, poi, roiId),
+        for (final chunk in dirtyData)
+          (b) => firestoreSync.buildBatchOperations(b, chunk, roiId),
+      ];
+
+      if (ops.isEmpty) {
         await firestoreSync.releaseLock(roiId);
         return;
       }
 
-      final chunks = _splitIntoBatches(dirtyData, 490);
-      for (int i = 0; i < chunks.length; i++) {
+      final batches = _splitIntoBatches(ops, 490);
+      for (int i = 0; i < batches.length; i++) {
         final batch = firestoreSync.createBatch();
-        for (final item in chunks[i]) {
-          firestoreSync.buildBatchOperations(batch, item, roiId);
+        for (final op in batches[i]) {
+          op(batch);
         }
-        if (i == chunks.length - 1) {
+        if (i == batches.length - 1) {
           firestoreSync.appendVersionBumpAndLockRelease(batch, roiId, cloudVersion + 1);
         }
         await firestoreSync.commitBatch(batch);
@@ -113,6 +137,12 @@ class SyncEngineService {
 
       await _postPushLocalCleanup(roiId, dirtyData, cloudVersion + 1);
     } catch (e) {
+      // We bailed before the final batch released the lock server-side, so the
+      // lock would otherwise linger until its TTL expires. Best-effort release
+      // (don't let a release failure mask the original error).
+      try {
+        await firestoreSync.releaseLock(roiId);
+      } catch (_) {}
       debugPrint('[SyncEngine] Push failed: $e');
       rethrow;
     }
@@ -126,7 +156,8 @@ class SyncEngineService {
       if (roiRecord.cloudVersion == cloudVersion) return;
 
       final cloudData = await firestoreSync.fetchTripData(roiId);
-      
+      final cloudPois = await firestoreSync.fetchTripPois(roiId);
+
       await localDb.transaction(() async {
         for (final remoteChunk in cloudData) {
           final chunkId = remoteChunk['id'] as String;
@@ -157,6 +188,10 @@ class SyncEngineService {
             }
           }
         }
+        for (final remotePoi in cloudPois) {
+          await _upsertCloudPoi(roiId, remotePoi);
+        }
+
         await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
           RoisCompanion(cloudVersion: Value(cloudVersion)),
         );
@@ -165,6 +200,42 @@ class SyncEngineService {
       debugPrint('[SyncEngine] Pull failed: $e');
       rethrow;
     }
+  }
+
+  /// Upserts a POI pulled from the cloud. `localCoverImagePath`/`createdAt` are
+  /// left absent so a local-only cover path and original timestamp survive.
+  Future<void> _upsertCloudPoi(String roiId, Map<String, dynamic> data) async {
+    await localDb.into(localDb.pois).insertOnConflictUpdate(PoisCompanion(
+          id: Value(data['id'] as String),
+          roiId: Value(roiId),
+          authorId: Value(data['authorId'] as String? ?? currentUserId),
+          name: Value(data['name'] as String? ?? 'Unnamed'),
+          description: Value(data['description'] as String?),
+          address: Value(data['address'] as String?),
+          lat: Value((data['lat'] as num?)?.toDouble() ?? 0),
+          lng: Value((data['lng'] as num?)?.toDouble() ?? 0),
+          businessHours: Value(data['businessHours'] as String?),
+          contactInfo: Value(data['contactInfo'] as String?),
+          remoteCoverImageUrl: Value(data['remoteCoverImageUrl'] as String?),
+          sortOrder: Value((data['sortOrder'] as num?)?.toInt() ?? 0),
+          isShared: const Value(true),
+        ));
+  }
+
+  /// Re-arms a trip for a full re-upload after its cloud doc was recreated:
+  /// reset the local version to 0 and mark every live chunk dirty so the next
+  /// push re-sends them (POIs are always snapshot-pushed, so they need no flag).
+  Future<void> _resetRoiForFullResync(String roiId) async {
+    await localDb.transaction(() async {
+      await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId)))
+          .write(const RoisCompanion(cloudVersion: Value(0)));
+
+      final poiIds = (await localDb.getPoisByRoi(roiId)).map((p) => p.id).toList();
+      if (poiIds.isEmpty) return;
+      await (localDb.update(localDb.timeChunks)
+            ..where((t) => t.poiId.isIn(poiIds) & t.isDeleted.equals(false)))
+          .write(TimeChunksCompanion(syncStatus: Value(SyncStatus.dirty.index)));
+    });
   }
 
   List<List<T>> _splitIntoBatches<T>(List<T> list, int batchSize) {

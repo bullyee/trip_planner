@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../sync/providers/firestore_sync_provider.dart';
+import '../../../core/providers/sync_provider.dart';
 import '../controllers/roi_controller.dart';
 import '../../../core/utils/app_result.dart';
 import '../models/roi_model.dart';
@@ -193,6 +194,15 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
 
         // Tell Local Repository to mark this ROI as shared
         await ref.read(roiRepositoryProvider).enableCloudSyncForRoi(widget.roiId);
+
+        // Kick off the initial push immediately so POIs + chunks upload now,
+        // rather than waiting for (or depending on) the background dirty-chunk
+        // watcher. Best-effort: a transient push failure shouldn't fail the save.
+        try {
+          await ref.read(syncEngineProvider)?.executePush(widget.roiId);
+        } catch (e) {
+          debugPrint('Initial cloud push failed: $e');
+        }
       }
 
       // 2. Perform normal ROI update (Name/Description)
