@@ -25,7 +25,6 @@ Everything lives on your phone. **No account is required and you can use it full
 - 🗺️ **See everything on a map**, color-coded by region.
 - 🗓️ **Build a day-by-day itinerary** with drag-and-drop scheduling, visit durations, travel time between stops, and progress tracking.
 - 📸 **Recreate scenes with the Anime Camera**, overlaying the original screenshot on your live camera so you can match the angle exactly.
-- 🎟️ **Keep tickets and booking QR codes** attached to the places they belong to.
 
 ---
 
@@ -40,8 +39,6 @@ When you open the app you land on the **home screen**, your hub for everything. 
 | **My Trips** | Your regions — each one is a trip area like "Kyoto" or "Hakone" |
 | **Trip Calendar** | Schedule visits and plan each day |
 | **Anime Camera** | Recreate scenes with a screenshot overlay *(phone only)* |
-| **Tickets** | Your saved QR codes and bookings |
-| **Export / Import** | Back up and transfer your data *(coming soon — see below)* |
 
 > **A quick word on names:** every place you save is called a **POI** (point of interest), and a **Region** is a trip area that groups POIs together. The **My Trips** card opens your list of Regions.
 
@@ -128,21 +125,17 @@ This is the heart of the app. *Available on Android and iOS.*
 
 **Polish it afterward:** your photo opens in the editor, where you can fine-tune brightness and sharpness and even color-match it to the reference screenshot. Saved photos are kept with the place, alongside the original — your edits never overwrite it.
 
-## 7. Tickets & QR codes
+## 7. Sign in & cloud sync *(coming soon)*
 
-Tap **Tickets** from the home screen to see all your saved booking QR codes in one place. To add one, open the relevant place (POI) and save a photo of the ticket or QR code to its media — it'll show up in your Tickets list, ready to scan at the gate.
-
-## 8. Sign in & back up *(coming soon)*
-
-- **Sign In** (top-right of the home screen) signs you in with Google. It's **completely optional** — every feature above works without it. It exists to power **cloud sync** for shared trips, which is still in development.
-- **Export / Import** and cloud backup are **not finished yet**. The screen is in place, but your data currently lives only on your device, so hold onto it for now. Until backup ships, treat your phone as the only copy of your trip.
+- **Sign In** (top-right of the home screen) signs you in with Google. It's **completely optional** — every feature above works without it.
+- It exists to power **cloud sync**, which will back up your trips and keep them in step across your devices. Cloud sync is still in development, so for now your data lives only on your device — treat your phone as the only copy of your trip.
 
 ---
 
 ## Good to know
 
 - **It's yours and it's offline.** Your trips, photos, and notes are stored on your device. No account, no connection needed.
-- **One copy for now.** Because backup and sync aren't finished, your data isn't yet duplicated anywhere else — keep that in mind before switching phones or clearing app data.
+- **One copy for now.** Cloud sync isn't finished yet, so your data isn't duplicated anywhere else — keep that in mind before switching phones or clearing app data.
 - **Where features work:**
 
   | Feature | Android | iOS | Desktop |
@@ -170,7 +163,7 @@ dart run build_runner build --delete-conflicting-outputs
 flutter run
 ```
 
-Source is organized feature-first under `lib/features/` (`roi`, `poi`, `calendar`, `camera`, `anime`, `tag`, `tickets`, `home`), with shared infrastructure under `lib/core/` (`database`, `router`, `providers`). See `CLAUDE.md` for the full architecture and conventions.
+Source is organized feature-first under `lib/features/` (`anime`, `auth`, `calendar`, `camera`, `home`, `poi`, `roi`, `sync`, `tag`), with shared infrastructure under `lib/core/` (`database`, `router`, `providers`). See `CLAUDE.md` for the full architecture and conventions.
 
 </details>
 
