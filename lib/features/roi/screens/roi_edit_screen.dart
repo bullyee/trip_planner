@@ -26,6 +26,7 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
   
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isSyncing = false;
   RoiModel? _existing;
 
   bool _enableCloudSync = false;
@@ -145,6 +146,21 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
                                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                           ),
+                          if (isAlreadySynced) ...[
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: OutlinedButton.icon(
+                                onPressed: _isSyncing ? null : _syncNow,
+                                icon: _isSyncing
+                                    ? const SizedBox(
+                                        width: 16, height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2))
+                                    : const Icon(Icons.cloud_upload_outlined),
+                                label: Text(_isSyncing ? 'Syncing...' : 'Sync to Cloud now'),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -164,9 +180,44 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
     );
   }
 
+  /// Manually (re)push this shared trip to the cloud. `executePush` self-heals
+  /// a trip whose cloud doc was deleted out-of-band — it re-creates the doc and
+  /// re-arms a full re-upload — which is how a "synced" trip with no dirty rows
+  /// (so the background watcher never fires) gets back to the cloud.
+  Future<void> _syncNow() async {
+    final engine = ref.read(syncEngineProvider);
+    if (engine == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign in to sync to the cloud.')),
+      );
+      return;
+    }
+
+    setState(() => _isSyncing = true);
+    try {
+      await engine.executePush(widget.roiId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Synced to cloud.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sync failed: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_existing == null) return; 
+    if (_existing == null) return;
 
     setState(() => _isSaving = true);
 
