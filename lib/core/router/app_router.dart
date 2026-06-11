@@ -20,8 +20,6 @@ import '../../features/anime/screens/bangumi_search_screen.dart';
 import '../../features/tag/screens/tag_edit_screen.dart';
 import '../../features/calendar/screens/calendar_screen.dart';
 import '../../features/camera/screens/camera_screen.dart';
-import '../../features/poi/screens/ticket_screen.dart';
-import '../../features/home/screens/sync_screen.dart';
 
 part 'app_router.g.dart';
 
@@ -45,8 +43,7 @@ GoRouter router(RouterRef ref) {
       final isLoggedIn = authState.valueOrNull != null;
 
       // 3. Define explicit cloud-only routes that require authentication.
-      final isCloudRoute = state.uri.path.startsWith('/sync') || 
-                           state.uri.path.startsWith('/cloud-share');
+      final isCloudRoute = state.uri.path.startsWith('/cloud-share');
 
       // 4. Gatekeeper: Unauthenticated users trying to access cloud routes.
       if (!isLoggedIn && isCloudRoute) {
@@ -178,14 +175,6 @@ GoRouter router(RouterRef ref) {
         builder: (context, state) => CameraScreen(
           poiId: state.uri.queryParameters['poiId'],
         ),
-      ),
-      GoRoute(
-        path: '/tickets',
-        builder: (context, state) => const TicketScreen(),
-      ),
-      GoRoute(
-        path: '/sync',
-        builder: (context, state) => const SyncScreen(),
       ),
       GoRoute(
         path: '/map',
