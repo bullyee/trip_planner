@@ -1,27 +1,28 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'database_provider.dart';
+part of 'firestore_sync_provider.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$databaseHash() => r'397e5c893a29d7b17310deb6724df71242a8ab08';
+String _$firestoreSyncServiceHash() =>
+    r'c09478d56b1ab0d64983e4426bac0910519b383d';
 
-/// See also [database].
-@ProviderFor(database)
-final databaseProvider = Provider<AppDatabase>.internal(
-  database,
-  name: r'databaseProvider',
+/// See also [firestoreSyncService].
+@ProviderFor(firestoreSyncService)
+final firestoreSyncServiceProvider = Provider<FirestoreSyncService>.internal(
+  firestoreSyncService,
+  name: r'firestoreSyncServiceProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
       ? null
-      : _$databaseHash,
+      : _$firestoreSyncServiceHash,
   dependencies: null,
   allTransitiveDependencies: null,
 );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef DatabaseRef = ProviderRef<AppDatabase>;
+typedef FirestoreSyncServiceRef = ProviderRef<FirestoreSyncService>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

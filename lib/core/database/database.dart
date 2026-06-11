@@ -23,7 +23,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -51,11 +51,38 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(timeChunks, timeChunks.transitDuration);
             await m.addColumn(timeChunks, timeChunks.isFixedTime);
           }
+          if (from < 8) {
+            await _migrateToAdvancedSyncSchema(m);
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
         },
       );
+
+  Future<void> _migrateToAdvancedSyncSchema(Migrator m) async {
+    await m.addColumn(rois, rois.cloudVersion);
+    await m.addColumn(rois, rois.syncLockExpiresAt);
+
+    // ignore: experimental_member_use
+    await m.alterTable(TableMigration(
+      timeChunks,
+      newColumns: [
+        timeChunks.syncStatus,
+        timeChunks.isDeleted,
+        timeChunks.hasEverSynced,
+        timeChunks.originalStartTime,
+        timeChunks.originalEndTime,
+        timeChunks.lastModifiedAt,
+      ],
+      columnTransformer: {
+        timeChunks.syncStatus: const CustomExpression<int>(
+            'CASE WHEN is_shared = 1 THEN 0 ELSE 1 END'),
+        timeChunks.hasEverSynced: const CustomExpression<bool>('is_shared'),
+      },
+    ));
+    
+  }
 
   Future<void> _migrateToEntityTables(Migrator m) async {
     // Step 1: create the four new tables.
@@ -151,6 +178,7 @@ class AppDatabase extends _$AppDatabase {
   ///   * `local_uri` renamed to `local_path` on media_assets and
   ///     reference_images.
   ///
+  // ignore: experimental_member_use
   /// Each affected table is rebuilt with [TableMigration] so existing rows are
   /// preserved. New non-nullable columns are backfilled — `author_id` to the
   /// offline guest id (the same placeholder the running app uses before sign-in,
@@ -561,8 +589,24 @@ class AppDatabase extends _$AppDatabase {
         ..orderBy([(t) => OrderingTerm.asc(t.date)]))
       .watch();
 
-  Future<int> deleteTimeChunk(String id) =>
-      (delete(timeChunks)..where((t) => t.id.equals(id))).go();
+  Future<void> executeLocalDelete(String chunkId) async {
+    await transaction(() async {
+      final node = await (select(timeChunks)..where((t) => t.id.equals(chunkId))).getSingleOrNull();
+      if (node == null) return;
+
+      if (node.hasEverSynced) {
+        await (update(timeChunks)..where((t) => t.id.equals(chunkId))).write(
+          TimeChunksCompanion(
+            isDeleted: const Value(true),
+            syncStatus: Value(SyncStatus.dirty.index), 
+            lastModifiedAt: Value(DateTime.now()),
+          ),
+        );
+      } else {
+        await (delete(timeChunks)..where((t) => t.id.equals(chunkId))).go();
+      }
+    });
+  }
 
   // --- MediaAsset Queries ---
   Future<List<MediaAsset>> getMediaAssetsByPoi(String poiId) =>

@@ -25,8 +25,33 @@ class RoiDetailScreen extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.go('/pois?tab=region'),
         ),
+        // ====== 狀態指示器加入標題列 ======
         title: roiAsync.when(
-          data: (roi) => Text(roi?.name ?? 'Unknown'),
+          data: (roi) {
+            if (roi == null) return const Text('Unknown');
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    roi.name,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (roi.isShared) ...[
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Cloud Collaborative Workspace Active',
+                    child: Icon(
+                      Icons.cloud_done_rounded, 
+                      size: 20, 
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
           loading: () => const Text('Loading...'),
           error: (_, _) => const Text('Error'),
         ),
@@ -67,7 +92,9 @@ class RoiDetailScreen extends ConsumerWidget {
                 },
                 itemBuilder: (_) => [
                   const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  const PopupMenuItem(
+                      value: 'delete', 
+                      child: Text('Delete', style: TextStyle(color: Colors.red))),
                 ],
               );
             },
@@ -188,7 +215,6 @@ class _BatchAddBottomSheetState extends ConsumerState<_BatchAddBottomSheet> {
 
                 return Column(
                   children: [
-                    // Sticky Select All Checkbox
                     CheckboxListTile(
                       title: const Text('Select All', style: TextStyle(fontWeight: FontWeight.bold)),
                       value: isAllSelected,
@@ -196,17 +222,14 @@ class _BatchAddBottomSheetState extends ConsumerState<_BatchAddBottomSheet> {
                       onChanged: (val) {
                         setState(() {
                           if (val == true) {
-                            // Add all draft IDs to the set
                             _selectedIds.addAll(draftPois.map((p) => p.id));
                           } else {
-                            // Clear all selections
                             _selectedIds.clear();
                           }
                         });
                       },
                     ),
                     const Divider(height: 1),
-                    // 景點列表 (List of POIs)
                     Expanded(
                       child: ListView.builder(
                         itemCount: draftPois.length,
@@ -236,7 +259,6 @@ class _BatchAddBottomSheetState extends ConsumerState<_BatchAddBottomSheet> {
             ),
           ),
 
-          // 底部確認按鈕 (Keep as is)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: FilledButton.icon(

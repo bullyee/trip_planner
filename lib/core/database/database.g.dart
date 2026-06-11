@@ -87,6 +87,29 @@ class $RoisTable extends Rois with TableInfo<$RoisTable, Roi> {
     requiredDuringInsert: false,
     clientDefault: () => DateTime.now().millisecondsSinceEpoch,
   );
+  static const VerificationMeta _cloudVersionMeta = const VerificationMeta(
+    'cloudVersion',
+  );
+  @override
+  late final GeneratedColumn<int> cloudVersion = GeneratedColumn<int>(
+    'cloud_version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _syncLockExpiresAtMeta = const VerificationMeta(
+    'syncLockExpiresAt',
+  );
+  @override
+  late final GeneratedColumn<int> syncLockExpiresAt = GeneratedColumn<int>(
+    'sync_lock_expires_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -96,6 +119,8 @@ class $RoisTable extends Rois with TableInfo<$RoisTable, Roi> {
     isShared,
     isOfflineCached,
     createdAt,
+    cloudVersion,
+    syncLockExpiresAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -160,6 +185,24 @@ class $RoisTable extends Rois with TableInfo<$RoisTable, Roi> {
         createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
       );
     }
+    if (data.containsKey('cloud_version')) {
+      context.handle(
+        _cloudVersionMeta,
+        cloudVersion.isAcceptableOrUnknown(
+          data['cloud_version']!,
+          _cloudVersionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sync_lock_expires_at')) {
+      context.handle(
+        _syncLockExpiresAtMeta,
+        syncLockExpiresAt.isAcceptableOrUnknown(
+          data['sync_lock_expires_at']!,
+          _syncLockExpiresAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -197,6 +240,14 @@ class $RoisTable extends Rois with TableInfo<$RoisTable, Roi> {
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
       )!,
+      cloudVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cloud_version'],
+      )!,
+      syncLockExpiresAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_lock_expires_at'],
+      ),
     );
   }
 
@@ -214,6 +265,8 @@ class Roi extends DataClass implements Insertable<Roi> {
   final bool isShared;
   final int isOfflineCached;
   final int createdAt;
+  final int cloudVersion;
+  final int? syncLockExpiresAt;
   const Roi({
     required this.id,
     required this.name,
@@ -222,6 +275,8 @@ class Roi extends DataClass implements Insertable<Roi> {
     required this.isShared,
     required this.isOfflineCached,
     required this.createdAt,
+    required this.cloudVersion,
+    this.syncLockExpiresAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -235,6 +290,10 @@ class Roi extends DataClass implements Insertable<Roi> {
     map['is_shared'] = Variable<bool>(isShared);
     map['is_offline_cached'] = Variable<int>(isOfflineCached);
     map['created_at'] = Variable<int>(createdAt);
+    map['cloud_version'] = Variable<int>(cloudVersion);
+    if (!nullToAbsent || syncLockExpiresAt != null) {
+      map['sync_lock_expires_at'] = Variable<int>(syncLockExpiresAt);
+    }
     return map;
   }
 
@@ -249,6 +308,10 @@ class Roi extends DataClass implements Insertable<Roi> {
       isShared: Value(isShared),
       isOfflineCached: Value(isOfflineCached),
       createdAt: Value(createdAt),
+      cloudVersion: Value(cloudVersion),
+      syncLockExpiresAt: syncLockExpiresAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(syncLockExpiresAt),
     );
   }
 
@@ -265,6 +328,8 @@ class Roi extends DataClass implements Insertable<Roi> {
       isShared: serializer.fromJson<bool>(json['isShared']),
       isOfflineCached: serializer.fromJson<int>(json['isOfflineCached']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
+      cloudVersion: serializer.fromJson<int>(json['cloudVersion']),
+      syncLockExpiresAt: serializer.fromJson<int?>(json['syncLockExpiresAt']),
     );
   }
   @override
@@ -278,6 +343,8 @@ class Roi extends DataClass implements Insertable<Roi> {
       'isShared': serializer.toJson<bool>(isShared),
       'isOfflineCached': serializer.toJson<int>(isOfflineCached),
       'createdAt': serializer.toJson<int>(createdAt),
+      'cloudVersion': serializer.toJson<int>(cloudVersion),
+      'syncLockExpiresAt': serializer.toJson<int?>(syncLockExpiresAt),
     };
   }
 
@@ -289,6 +356,8 @@ class Roi extends DataClass implements Insertable<Roi> {
     bool? isShared,
     int? isOfflineCached,
     int? createdAt,
+    int? cloudVersion,
+    Value<int?> syncLockExpiresAt = const Value.absent(),
   }) => Roi(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -297,6 +366,10 @@ class Roi extends DataClass implements Insertable<Roi> {
     isShared: isShared ?? this.isShared,
     isOfflineCached: isOfflineCached ?? this.isOfflineCached,
     createdAt: createdAt ?? this.createdAt,
+    cloudVersion: cloudVersion ?? this.cloudVersion,
+    syncLockExpiresAt: syncLockExpiresAt.present
+        ? syncLockExpiresAt.value
+        : this.syncLockExpiresAt,
   );
   Roi copyWithCompanion(RoisCompanion data) {
     return Roi(
@@ -311,6 +384,12 @@ class Roi extends DataClass implements Insertable<Roi> {
           ? data.isOfflineCached.value
           : this.isOfflineCached,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      cloudVersion: data.cloudVersion.present
+          ? data.cloudVersion.value
+          : this.cloudVersion,
+      syncLockExpiresAt: data.syncLockExpiresAt.present
+          ? data.syncLockExpiresAt.value
+          : this.syncLockExpiresAt,
     );
   }
 
@@ -323,7 +402,9 @@ class Roi extends DataClass implements Insertable<Roi> {
           ..write('authorId: $authorId, ')
           ..write('isShared: $isShared, ')
           ..write('isOfflineCached: $isOfflineCached, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('cloudVersion: $cloudVersion, ')
+          ..write('syncLockExpiresAt: $syncLockExpiresAt')
           ..write(')'))
         .toString();
   }
@@ -337,6 +418,8 @@ class Roi extends DataClass implements Insertable<Roi> {
     isShared,
     isOfflineCached,
     createdAt,
+    cloudVersion,
+    syncLockExpiresAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -348,7 +431,9 @@ class Roi extends DataClass implements Insertable<Roi> {
           other.authorId == this.authorId &&
           other.isShared == this.isShared &&
           other.isOfflineCached == this.isOfflineCached &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.cloudVersion == this.cloudVersion &&
+          other.syncLockExpiresAt == this.syncLockExpiresAt);
 }
 
 class RoisCompanion extends UpdateCompanion<Roi> {
@@ -359,6 +444,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
   final Value<bool> isShared;
   final Value<int> isOfflineCached;
   final Value<int> createdAt;
+  final Value<int> cloudVersion;
+  final Value<int?> syncLockExpiresAt;
   final Value<int> rowid;
   const RoisCompanion({
     this.id = const Value.absent(),
@@ -368,6 +455,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
     this.isShared = const Value.absent(),
     this.isOfflineCached = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.cloudVersion = const Value.absent(),
+    this.syncLockExpiresAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   RoisCompanion.insert({
@@ -378,6 +467,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
     this.isShared = const Value.absent(),
     this.isOfflineCached = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.cloudVersion = const Value.absent(),
+    this.syncLockExpiresAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -390,6 +481,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
     Expression<bool>? isShared,
     Expression<int>? isOfflineCached,
     Expression<int>? createdAt,
+    Expression<int>? cloudVersion,
+    Expression<int>? syncLockExpiresAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -400,6 +493,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
       if (isShared != null) 'is_shared': isShared,
       if (isOfflineCached != null) 'is_offline_cached': isOfflineCached,
       if (createdAt != null) 'created_at': createdAt,
+      if (cloudVersion != null) 'cloud_version': cloudVersion,
+      if (syncLockExpiresAt != null) 'sync_lock_expires_at': syncLockExpiresAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -412,6 +507,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
     Value<bool>? isShared,
     Value<int>? isOfflineCached,
     Value<int>? createdAt,
+    Value<int>? cloudVersion,
+    Value<int?>? syncLockExpiresAt,
     Value<int>? rowid,
   }) {
     return RoisCompanion(
@@ -422,6 +519,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
       isShared: isShared ?? this.isShared,
       isOfflineCached: isOfflineCached ?? this.isOfflineCached,
       createdAt: createdAt ?? this.createdAt,
+      cloudVersion: cloudVersion ?? this.cloudVersion,
+      syncLockExpiresAt: syncLockExpiresAt ?? this.syncLockExpiresAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -450,6 +549,12 @@ class RoisCompanion extends UpdateCompanion<Roi> {
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
+    if (cloudVersion.present) {
+      map['cloud_version'] = Variable<int>(cloudVersion.value);
+    }
+    if (syncLockExpiresAt.present) {
+      map['sync_lock_expires_at'] = Variable<int>(syncLockExpiresAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -466,6 +571,8 @@ class RoisCompanion extends UpdateCompanion<Roi> {
           ..write('isShared: $isShared, ')
           ..write('isOfflineCached: $isOfflineCached, ')
           ..write('createdAt: $createdAt, ')
+          ..write('cloudVersion: $cloudVersion, ')
+          ..write('syncLockExpiresAt: $syncLockExpiresAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2825,6 +2932,83 @@ class $TimeChunksTable extends TimeChunks
     requiredDuringInsert: false,
     clientDefault: () => DateTime.now().millisecondsSinceEpoch,
   );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _isDeletedMeta = const VerificationMeta(
+    'isDeleted',
+  );
+  @override
+  late final GeneratedColumn<bool> isDeleted = GeneratedColumn<bool>(
+    'is_deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_deleted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _hasEverSyncedMeta = const VerificationMeta(
+    'hasEverSynced',
+  );
+  @override
+  late final GeneratedColumn<bool> hasEverSynced = GeneratedColumn<bool>(
+    'has_ever_synced',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("has_ever_synced" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _originalStartTimeMeta = const VerificationMeta(
+    'originalStartTime',
+  );
+  @override
+  late final GeneratedColumn<String> originalStartTime =
+      GeneratedColumn<String>(
+        'original_start_time',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _originalEndTimeMeta = const VerificationMeta(
+    'originalEndTime',
+  );
+  @override
+  late final GeneratedColumn<String> originalEndTime = GeneratedColumn<String>(
+    'original_end_time',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastModifiedAtMeta = const VerificationMeta(
+    'lastModifiedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastModifiedAt =
+      GeneratedColumn<DateTime>(
+        'last_modified_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2840,6 +3024,12 @@ class $TimeChunksTable extends TimeChunks
     authorId,
     isShared,
     createdAt,
+    syncStatus,
+    isDeleted,
+    hasEverSynced,
+    originalStartTime,
+    originalEndTime,
+    lastModifiedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2940,6 +3130,54 @@ class $TimeChunksTable extends TimeChunks
         createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
       );
     }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('is_deleted')) {
+      context.handle(
+        _isDeletedMeta,
+        isDeleted.isAcceptableOrUnknown(data['is_deleted']!, _isDeletedMeta),
+      );
+    }
+    if (data.containsKey('has_ever_synced')) {
+      context.handle(
+        _hasEverSyncedMeta,
+        hasEverSynced.isAcceptableOrUnknown(
+          data['has_ever_synced']!,
+          _hasEverSyncedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('original_start_time')) {
+      context.handle(
+        _originalStartTimeMeta,
+        originalStartTime.isAcceptableOrUnknown(
+          data['original_start_time']!,
+          _originalStartTimeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('original_end_time')) {
+      context.handle(
+        _originalEndTimeMeta,
+        originalEndTime.isAcceptableOrUnknown(
+          data['original_end_time']!,
+          _originalEndTimeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_modified_at')) {
+      context.handle(
+        _lastModifiedAtMeta,
+        lastModifiedAt.isAcceptableOrUnknown(
+          data['last_modified_at']!,
+          _lastModifiedAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -3001,6 +3239,30 @@ class $TimeChunksTable extends TimeChunks
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
       )!,
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      isDeleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_deleted'],
+      )!,
+      hasEverSynced: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}has_ever_synced'],
+      )!,
+      originalStartTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_start_time'],
+      ),
+      originalEndTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_end_time'],
+      ),
+      lastModifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_modified_at'],
+      ),
     );
   }
 
@@ -3024,6 +3286,12 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
   final String authorId;
   final bool isShared;
   final int createdAt;
+  final int syncStatus;
+  final bool isDeleted;
+  final bool hasEverSynced;
+  final String? originalStartTime;
+  final String? originalEndTime;
+  final DateTime? lastModifiedAt;
   const TimeChunk({
     required this.id,
     required this.poiId,
@@ -3038,6 +3306,12 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     required this.authorId,
     required this.isShared,
     required this.createdAt,
+    required this.syncStatus,
+    required this.isDeleted,
+    required this.hasEverSynced,
+    this.originalStartTime,
+    this.originalEndTime,
+    this.lastModifiedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3061,6 +3335,18 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     map['author_id'] = Variable<String>(authorId);
     map['is_shared'] = Variable<bool>(isShared);
     map['created_at'] = Variable<int>(createdAt);
+    map['sync_status'] = Variable<int>(syncStatus);
+    map['is_deleted'] = Variable<bool>(isDeleted);
+    map['has_ever_synced'] = Variable<bool>(hasEverSynced);
+    if (!nullToAbsent || originalStartTime != null) {
+      map['original_start_time'] = Variable<String>(originalStartTime);
+    }
+    if (!nullToAbsent || originalEndTime != null) {
+      map['original_end_time'] = Variable<String>(originalEndTime);
+    }
+    if (!nullToAbsent || lastModifiedAt != null) {
+      map['last_modified_at'] = Variable<DateTime>(lastModifiedAt);
+    }
     return map;
   }
 
@@ -3083,6 +3369,18 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       authorId: Value(authorId),
       isShared: Value(isShared),
       createdAt: Value(createdAt),
+      syncStatus: Value(syncStatus),
+      isDeleted: Value(isDeleted),
+      hasEverSynced: Value(hasEverSynced),
+      originalStartTime: originalStartTime == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalStartTime),
+      originalEndTime: originalEndTime == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalEndTime),
+      lastModifiedAt: lastModifiedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastModifiedAt),
     );
   }
 
@@ -3105,6 +3403,14 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       authorId: serializer.fromJson<String>(json['authorId']),
       isShared: serializer.fromJson<bool>(json['isShared']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
+      isDeleted: serializer.fromJson<bool>(json['isDeleted']),
+      hasEverSynced: serializer.fromJson<bool>(json['hasEverSynced']),
+      originalStartTime: serializer.fromJson<String?>(
+        json['originalStartTime'],
+      ),
+      originalEndTime: serializer.fromJson<String?>(json['originalEndTime']),
+      lastModifiedAt: serializer.fromJson<DateTime?>(json['lastModifiedAt']),
     );
   }
   @override
@@ -3124,6 +3430,12 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       'authorId': serializer.toJson<String>(authorId),
       'isShared': serializer.toJson<bool>(isShared),
       'createdAt': serializer.toJson<int>(createdAt),
+      'syncStatus': serializer.toJson<int>(syncStatus),
+      'isDeleted': serializer.toJson<bool>(isDeleted),
+      'hasEverSynced': serializer.toJson<bool>(hasEverSynced),
+      'originalStartTime': serializer.toJson<String?>(originalStartTime),
+      'originalEndTime': serializer.toJson<String?>(originalEndTime),
+      'lastModifiedAt': serializer.toJson<DateTime?>(lastModifiedAt),
     };
   }
 
@@ -3141,6 +3453,12 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     String? authorId,
     bool? isShared,
     int? createdAt,
+    int? syncStatus,
+    bool? isDeleted,
+    bool? hasEverSynced,
+    Value<String?> originalStartTime = const Value.absent(),
+    Value<String?> originalEndTime = const Value.absent(),
+    Value<DateTime?> lastModifiedAt = const Value.absent(),
   }) => TimeChunk(
     id: id ?? this.id,
     poiId: poiId ?? this.poiId,
@@ -3155,6 +3473,18 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     authorId: authorId ?? this.authorId,
     isShared: isShared ?? this.isShared,
     createdAt: createdAt ?? this.createdAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+    isDeleted: isDeleted ?? this.isDeleted,
+    hasEverSynced: hasEverSynced ?? this.hasEverSynced,
+    originalStartTime: originalStartTime.present
+        ? originalStartTime.value
+        : this.originalStartTime,
+    originalEndTime: originalEndTime.present
+        ? originalEndTime.value
+        : this.originalEndTime,
+    lastModifiedAt: lastModifiedAt.present
+        ? lastModifiedAt.value
+        : this.lastModifiedAt,
   );
   TimeChunk copyWithCompanion(TimeChunksCompanion data) {
     return TimeChunk(
@@ -3175,6 +3505,22 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
       authorId: data.authorId.present ? data.authorId.value : this.authorId,
       isShared: data.isShared.present ? data.isShared.value : this.isShared,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      isDeleted: data.isDeleted.present ? data.isDeleted.value : this.isDeleted,
+      hasEverSynced: data.hasEverSynced.present
+          ? data.hasEverSynced.value
+          : this.hasEverSynced,
+      originalStartTime: data.originalStartTime.present
+          ? data.originalStartTime.value
+          : this.originalStartTime,
+      originalEndTime: data.originalEndTime.present
+          ? data.originalEndTime.value
+          : this.originalEndTime,
+      lastModifiedAt: data.lastModifiedAt.present
+          ? data.lastModifiedAt.value
+          : this.lastModifiedAt,
     );
   }
 
@@ -3193,7 +3539,13 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
           ..write('isFixedTime: $isFixedTime, ')
           ..write('authorId: $authorId, ')
           ..write('isShared: $isShared, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('isDeleted: $isDeleted, ')
+          ..write('hasEverSynced: $hasEverSynced, ')
+          ..write('originalStartTime: $originalStartTime, ')
+          ..write('originalEndTime: $originalEndTime, ')
+          ..write('lastModifiedAt: $lastModifiedAt')
           ..write(')'))
         .toString();
   }
@@ -3213,6 +3565,12 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
     authorId,
     isShared,
     createdAt,
+    syncStatus,
+    isDeleted,
+    hasEverSynced,
+    originalStartTime,
+    originalEndTime,
+    lastModifiedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -3230,7 +3588,13 @@ class TimeChunk extends DataClass implements Insertable<TimeChunk> {
           other.isFixedTime == this.isFixedTime &&
           other.authorId == this.authorId &&
           other.isShared == this.isShared &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.syncStatus == this.syncStatus &&
+          other.isDeleted == this.isDeleted &&
+          other.hasEverSynced == this.hasEverSynced &&
+          other.originalStartTime == this.originalStartTime &&
+          other.originalEndTime == this.originalEndTime &&
+          other.lastModifiedAt == this.lastModifiedAt);
 }
 
 class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
@@ -3247,6 +3611,12 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
   final Value<String> authorId;
   final Value<bool> isShared;
   final Value<int> createdAt;
+  final Value<int> syncStatus;
+  final Value<bool> isDeleted;
+  final Value<bool> hasEverSynced;
+  final Value<String?> originalStartTime;
+  final Value<String?> originalEndTime;
+  final Value<DateTime?> lastModifiedAt;
   final Value<int> rowid;
   const TimeChunksCompanion({
     this.id = const Value.absent(),
@@ -3262,6 +3632,12 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     this.authorId = const Value.absent(),
     this.isShared = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.isDeleted = const Value.absent(),
+    this.hasEverSynced = const Value.absent(),
+    this.originalStartTime = const Value.absent(),
+    this.originalEndTime = const Value.absent(),
+    this.lastModifiedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TimeChunksCompanion.insert({
@@ -3278,6 +3654,12 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     required String authorId,
     this.isShared = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.isDeleted = const Value.absent(),
+    this.hasEverSynced = const Value.absent(),
+    this.originalStartTime = const Value.absent(),
+    this.originalEndTime = const Value.absent(),
+    this.lastModifiedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        poiId = Value(poiId),
@@ -3296,6 +3678,12 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     Expression<String>? authorId,
     Expression<bool>? isShared,
     Expression<int>? createdAt,
+    Expression<int>? syncStatus,
+    Expression<bool>? isDeleted,
+    Expression<bool>? hasEverSynced,
+    Expression<String>? originalStartTime,
+    Expression<String>? originalEndTime,
+    Expression<DateTime>? lastModifiedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3312,6 +3700,12 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
       if (authorId != null) 'author_id': authorId,
       if (isShared != null) 'is_shared': isShared,
       if (createdAt != null) 'created_at': createdAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (isDeleted != null) 'is_deleted': isDeleted,
+      if (hasEverSynced != null) 'has_ever_synced': hasEverSynced,
+      if (originalStartTime != null) 'original_start_time': originalStartTime,
+      if (originalEndTime != null) 'original_end_time': originalEndTime,
+      if (lastModifiedAt != null) 'last_modified_at': lastModifiedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3330,6 +3724,12 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     Value<String>? authorId,
     Value<bool>? isShared,
     Value<int>? createdAt,
+    Value<int>? syncStatus,
+    Value<bool>? isDeleted,
+    Value<bool>? hasEverSynced,
+    Value<String?>? originalStartTime,
+    Value<String?>? originalEndTime,
+    Value<DateTime?>? lastModifiedAt,
     Value<int>? rowid,
   }) {
     return TimeChunksCompanion(
@@ -3346,6 +3746,12 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
       authorId: authorId ?? this.authorId,
       isShared: isShared ?? this.isShared,
       createdAt: createdAt ?? this.createdAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      isDeleted: isDeleted ?? this.isDeleted,
+      hasEverSynced: hasEverSynced ?? this.hasEverSynced,
+      originalStartTime: originalStartTime ?? this.originalStartTime,
+      originalEndTime: originalEndTime ?? this.originalEndTime,
+      lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3392,6 +3798,24 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(syncStatus.value);
+    }
+    if (isDeleted.present) {
+      map['is_deleted'] = Variable<bool>(isDeleted.value);
+    }
+    if (hasEverSynced.present) {
+      map['has_ever_synced'] = Variable<bool>(hasEverSynced.value);
+    }
+    if (originalStartTime.present) {
+      map['original_start_time'] = Variable<String>(originalStartTime.value);
+    }
+    if (originalEndTime.present) {
+      map['original_end_time'] = Variable<String>(originalEndTime.value);
+    }
+    if (lastModifiedAt.present) {
+      map['last_modified_at'] = Variable<DateTime>(lastModifiedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3414,6 +3838,12 @@ class TimeChunksCompanion extends UpdateCompanion<TimeChunk> {
           ..write('authorId: $authorId, ')
           ..write('isShared: $isShared, ')
           ..write('createdAt: $createdAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('isDeleted: $isDeleted, ')
+          ..write('hasEverSynced: $hasEverSynced, ')
+          ..write('originalStartTime: $originalStartTime, ')
+          ..write('originalEndTime: $originalEndTime, ')
+          ..write('lastModifiedAt: $lastModifiedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4542,6 +4972,8 @@ typedef $$RoisTableCreateCompanionBuilder =
       Value<bool> isShared,
       Value<int> isOfflineCached,
       Value<int> createdAt,
+      Value<int> cloudVersion,
+      Value<int?> syncLockExpiresAt,
       Value<int> rowid,
     });
 typedef $$RoisTableUpdateCompanionBuilder =
@@ -4553,6 +4985,8 @@ typedef $$RoisTableUpdateCompanionBuilder =
       Value<bool> isShared,
       Value<int> isOfflineCached,
       Value<int> createdAt,
+      Value<int> cloudVersion,
+      Value<int?> syncLockExpiresAt,
       Value<int> rowid,
     });
 
@@ -4620,6 +5054,16 @@ class $$RoisTableFilterComposer extends Composer<_$AppDatabase, $RoisTable> {
 
   ColumnFilters<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get cloudVersion => $composableBuilder(
+    column: $table.cloudVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get syncLockExpiresAt => $composableBuilder(
+    column: $table.syncLockExpiresAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4691,6 +5135,16 @@ class $$RoisTableOrderingComposer extends Composer<_$AppDatabase, $RoisTable> {
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get cloudVersion => $composableBuilder(
+    column: $table.cloudVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncLockExpiresAt => $composableBuilder(
+    column: $table.syncLockExpiresAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$RoisTableAnnotationComposer
@@ -4726,6 +5180,16 @@ class $$RoisTableAnnotationComposer
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get cloudVersion => $composableBuilder(
+    column: $table.cloudVersion,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get syncLockExpiresAt => $composableBuilder(
+    column: $table.syncLockExpiresAt,
+    builder: (column) => column,
+  );
 
   Expression<T> poisRefs<T extends Object>(
     Expression<T> Function($$PoisTableAnnotationComposer a) f,
@@ -4788,6 +5252,8 @@ class $$RoisTableTableManager
                 Value<bool> isShared = const Value.absent(),
                 Value<int> isOfflineCached = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
+                Value<int> cloudVersion = const Value.absent(),
+                Value<int?> syncLockExpiresAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RoisCompanion(
                 id: id,
@@ -4797,6 +5263,8 @@ class $$RoisTableTableManager
                 isShared: isShared,
                 isOfflineCached: isOfflineCached,
                 createdAt: createdAt,
+                cloudVersion: cloudVersion,
+                syncLockExpiresAt: syncLockExpiresAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4808,6 +5276,8 @@ class $$RoisTableTableManager
                 Value<bool> isShared = const Value.absent(),
                 Value<int> isOfflineCached = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
+                Value<int> cloudVersion = const Value.absent(),
+                Value<int?> syncLockExpiresAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RoisCompanion.insert(
                 id: id,
@@ -4817,6 +5287,8 @@ class $$RoisTableTableManager
                 isShared: isShared,
                 isOfflineCached: isOfflineCached,
                 createdAt: createdAt,
+                cloudVersion: cloudVersion,
+                syncLockExpiresAt: syncLockExpiresAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -7177,6 +7649,12 @@ typedef $$TimeChunksTableCreateCompanionBuilder =
       required String authorId,
       Value<bool> isShared,
       Value<int> createdAt,
+      Value<int> syncStatus,
+      Value<bool> isDeleted,
+      Value<bool> hasEverSynced,
+      Value<String?> originalStartTime,
+      Value<String?> originalEndTime,
+      Value<DateTime?> lastModifiedAt,
       Value<int> rowid,
     });
 typedef $$TimeChunksTableUpdateCompanionBuilder =
@@ -7194,6 +7672,12 @@ typedef $$TimeChunksTableUpdateCompanionBuilder =
       Value<String> authorId,
       Value<bool> isShared,
       Value<int> createdAt,
+      Value<int> syncStatus,
+      Value<bool> isDeleted,
+      Value<bool> hasEverSynced,
+      Value<String?> originalStartTime,
+      Value<String?> originalEndTime,
+      Value<DateTime?> lastModifiedAt,
       Value<int> rowid,
     });
 
@@ -7286,6 +7770,36 @@ class $$TimeChunksTableFilterComposer
 
   ColumnFilters<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isDeleted => $composableBuilder(
+    column: $table.isDeleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get hasEverSynced => $composableBuilder(
+    column: $table.hasEverSynced,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originalStartTime => $composableBuilder(
+    column: $table.originalStartTime,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originalEndTime => $composableBuilder(
+    column: $table.originalEndTime,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastModifiedAt => $composableBuilder(
+    column: $table.lastModifiedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7382,6 +7896,36 @@ class $$TimeChunksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isDeleted => $composableBuilder(
+    column: $table.isDeleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get hasEverSynced => $composableBuilder(
+    column: $table.hasEverSynced,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originalStartTime => $composableBuilder(
+    column: $table.originalStartTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originalEndTime => $composableBuilder(
+    column: $table.originalEndTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastModifiedAt => $composableBuilder(
+    column: $table.lastModifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$PoisTableOrderingComposer get poiId {
     final $$PoisTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -7455,6 +7999,34 @@ class $$TimeChunksTableAnnotationComposer
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
+  GeneratedColumn<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isDeleted =>
+      $composableBuilder(column: $table.isDeleted, builder: (column) => column);
+
+  GeneratedColumn<bool> get hasEverSynced => $composableBuilder(
+    column: $table.hasEverSynced,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get originalStartTime => $composableBuilder(
+    column: $table.originalStartTime,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get originalEndTime => $composableBuilder(
+    column: $table.originalEndTime,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get lastModifiedAt => $composableBuilder(
+    column: $table.lastModifiedAt,
+    builder: (column) => column,
+  );
+
   $$PoisTableAnnotationComposer get poiId {
     final $$PoisTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -7520,6 +8092,12 @@ class $$TimeChunksTableTableManager
                 Value<String> authorId = const Value.absent(),
                 Value<bool> isShared = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<bool> isDeleted = const Value.absent(),
+                Value<bool> hasEverSynced = const Value.absent(),
+                Value<String?> originalStartTime = const Value.absent(),
+                Value<String?> originalEndTime = const Value.absent(),
+                Value<DateTime?> lastModifiedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TimeChunksCompanion(
                 id: id,
@@ -7535,6 +8113,12 @@ class $$TimeChunksTableTableManager
                 authorId: authorId,
                 isShared: isShared,
                 createdAt: createdAt,
+                syncStatus: syncStatus,
+                isDeleted: isDeleted,
+                hasEverSynced: hasEverSynced,
+                originalStartTime: originalStartTime,
+                originalEndTime: originalEndTime,
+                lastModifiedAt: lastModifiedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -7552,6 +8136,12 @@ class $$TimeChunksTableTableManager
                 required String authorId,
                 Value<bool> isShared = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<bool> isDeleted = const Value.absent(),
+                Value<bool> hasEverSynced = const Value.absent(),
+                Value<String?> originalStartTime = const Value.absent(),
+                Value<String?> originalEndTime = const Value.absent(),
+                Value<DateTime?> lastModifiedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TimeChunksCompanion.insert(
                 id: id,
@@ -7567,6 +8157,12 @@ class $$TimeChunksTableTableManager
                 authorId: authorId,
                 isShared: isShared,
                 createdAt: createdAt,
+                syncStatus: syncStatus,
+                isDeleted: isDeleted,
+                hasEverSynced: hasEverSynced,
+                originalStartTime: originalStartTime,
+                originalEndTime: originalEndTime,
+                lastModifiedAt: lastModifiedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

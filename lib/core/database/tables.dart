@@ -1,5 +1,11 @@
 import 'package:drift/drift.dart';
 
+enum SyncStatus {
+  synced,
+  dirty,
+  stashed
+}
+
 class Rois extends Table {
   TextColumn get id => text()();
   TextColumn get name => text()();
@@ -11,6 +17,9 @@ class Rois extends Table {
   
   IntColumn get isOfflineCached => integer().withDefault(const Constant(0))();
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
+
+  IntColumn get cloudVersion => integer().withDefault(const Constant(0))();
+  IntColumn get syncLockExpiresAt => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -108,6 +117,14 @@ class TimeChunks extends Table {
   TextColumn get authorId => text()();
   BoolColumn get isShared => boolean().withDefault(const Constant(false))();
   IntColumn get createdAt => integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
+
+  IntColumn get syncStatus => integer().withDefault(const Constant(0))();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
+  BoolColumn get hasEverSynced => boolean().withDefault(const Constant(false))();
+
+  TextColumn get originalStartTime => text().nullable()();
+  TextColumn get originalEndTime => text().nullable()();
+  DateTimeColumn get lastModifiedAt => dateTime().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

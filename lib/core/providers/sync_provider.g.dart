@@ -1,27 +1,27 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'database_provider.dart';
+part of 'sync_provider.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$databaseHash() => r'397e5c893a29d7b17310deb6724df71242a8ab08';
+String _$syncEngineHash() => r'898769262b9a4de251e0265a4c958c4912d94196';
 
-/// See also [database].
-@ProviderFor(database)
-final databaseProvider = Provider<AppDatabase>.internal(
-  database,
-  name: r'databaseProvider',
+/// See also [syncEngine].
+@ProviderFor(syncEngine)
+final syncEngineProvider = Provider<SyncEngineService?>.internal(
+  syncEngine,
+  name: r'syncEngineProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
       ? null
-      : _$databaseHash,
+      : _$syncEngineHash,
   dependencies: null,
   allTransitiveDependencies: null,
 );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef DatabaseRef = ProviderRef<AppDatabase>;
+typedef SyncEngineRef = ProviderRef<SyncEngineService?>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

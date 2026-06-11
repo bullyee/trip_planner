@@ -18,6 +18,9 @@ abstract class RoiRepository {
   Future<RoiModel> getRoiById(String id);
   Stream<List<RoiModel>> watchAllRois();
   Stream<RoiModel?> watchRoiById(String id);
+  
+  // ADDED: 開啟特定行程的雲端同步狀態
+  Future<void> enableCloudSyncForRoi(String roiId);
 }
 
 class LocalRoiRepository implements RoiRepository {
@@ -51,25 +54,23 @@ class LocalRoiRepository implements RoiRepository {
         id: roi.id,
         name: roi.name,
         description: Value(roi.description),
-        createdAt: Value(roi.createdAt), // Extract directly from model
+        createdAt: Value(roi.createdAt), 
         authorId: currentUserId,
+        isShared: const Value(false),
       ),
     );
   }
 
   @override
   Future<RoiModel> getRoiById(String id) async {
-    // 1. Fetch the raw Drift entity
     final driftRoi = await localDb.getRoiById(id);
-    
-    // 2. Map it to the pure Domain Model
     return RoiModel(
       id: driftRoi.id,
       name: driftRoi.name,
       description: driftRoi.description,
-      createdAt: driftRoi.createdAt, // Assumes Drift has this column
+      createdAt: driftRoi.createdAt, 
       isOfflineCached: driftRoi.isOfflineCached == 1,
-      isShared: false, // Set default or map from Drift if you have a column for it
+      isShared: driftRoi.isShared,
       authorId: driftRoi.authorId,
     );
   }
@@ -89,7 +90,7 @@ class LocalRoiRepository implements RoiRepository {
         createdAt: row.createdAt, 
         isOfflineCached: row.isOfflineCached == 1,
         authorId: row.authorId,
-        isShared: false,
+        isShared: row.isShared,
       )).toList();
     });
   }
@@ -105,9 +106,18 @@ class LocalRoiRepository implements RoiRepository {
         createdAt: row.createdAt,
         isOfflineCached: row.isOfflineCached == 1,
         authorId: row.authorId,
-        isShared: false,
+        isShared: row.isShared,
       );
     });
+  }
+
+  @override
+  Future<void> enableCloudSyncForRoi(String roiId) async {
+    await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
+      const RoisCompanion(
+        isShared: Value(true),
+      ),
+    );
   }
 }
 
