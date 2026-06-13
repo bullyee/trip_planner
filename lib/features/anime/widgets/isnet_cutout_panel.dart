@@ -69,10 +69,56 @@ class _IsnetCutoutPanelState extends State<IsnetCutoutPanel> {
   bool _processing = false;
   String? _status;
 
+  // Model is fetched on first use (~176 MB), not bundled. Gate the cutout flow
+  // on it being present; offer an explicit download so we never pull a large
+  // file over cellular without consent.
+  bool _modelReady = false;
+  bool _checkingModel = true;
+  bool _downloading = false;
+  double? _downloadProgress; // 0..1, or null when total size is unknown
+  String? _downloadError;
+
   @override
   void initState() {
     super.initState();
     _decode();
+    _checkModel();
+  }
+
+  Future<void> _checkModel() async {
+    final ready = await _service.store.isReady();
+    if (!mounted) return;
+    setState(() {
+      _modelReady = ready;
+      _checkingModel = false;
+    });
+  }
+
+  Future<void> _downloadModel() async {
+    setState(() {
+      _downloading = true;
+      _downloadError = null;
+      _downloadProgress = null;
+    });
+    try {
+      await _service.store.ensure(onProgress: (received, total) {
+        if (!mounted || total == null || total <= 0) return;
+        setState(() => _downloadProgress = received / total);
+      });
+      if (!mounted) return;
+      setState(() {
+        _downloading = false;
+        _modelReady = true;
+        _status = 'Model ready. Optionally box the object, then "Cut out".';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _downloading = false;
+        _downloadError =
+            'Download failed: $e\nCheck your connection, or switch to the ML Kit engine (no download needed).';
+      });
+    }
   }
 
   @override
@@ -376,6 +422,75 @@ class _IsnetCutoutPanelState extends State<IsnetCutoutPanel> {
     );
   }
 
+  /// The action area shown while the Box tool is active: either the model
+  /// download prompt/progress, or the normal "Cut out" button once ready.
+  Widget _boxActions() {
+    if (_checkingModel) {
+      return const Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: SizedBox(
+              width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+      );
+    }
+    if (!_modelReady) {
+      if (_downloading) {
+        final pct = _downloadProgress;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                pct == null
+                    ? 'Downloading AI model…'
+                    : 'Downloading AI model… ${(pct * 100).round()}%',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(value: pct),
+            ],
+          ),
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: _downloadModel,
+              icon: const Icon(Icons.download),
+              label: const Text('Download AI model (~176 MB)'),
+            ),
+          ),
+          Text(
+            'One-time download for the isnet engine. Or use the ML Kit engine — no download needed.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (_downloadError != null) ...[
+            const SizedBox(height: 6),
+            Text(_downloadError!,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Theme.of(context).colorScheme.error)),
+          ],
+        ],
+      );
+    }
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: FilledButton.icon(
+        onPressed: _processing ? null : _cutout,
+        icon: const Icon(Icons.content_cut),
+        label: const Text('Cut out'),
+      ),
+    );
+  }
+
   Widget _toolBar() {
     final hasResult = _resultPng != null;
     return Padding(
@@ -417,14 +532,7 @@ class _IsnetCutoutPanelState extends State<IsnetCutoutPanel> {
             ],
           ),
           if (_tool == _Tool.box)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
-                onPressed: _processing ? null : _cutout,
-                icon: const Icon(Icons.content_cut),
-                label: const Text('Cut out'),
-              ),
-            )
+            _boxActions()
           else
             Row(
               children: [

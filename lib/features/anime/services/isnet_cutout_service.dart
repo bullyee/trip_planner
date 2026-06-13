@@ -1,9 +1,10 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:image/image.dart' as img;
 import 'package:onnxruntime/onnxruntime.dart';
+
+import 'isnet_model_store.dart';
 
 /// SPIKE — isnet-anime (rembg) on-device cutout via ONNX Runtime.
 ///
@@ -12,9 +13,10 @@ import 'package:onnxruntime/onnxruntime.dart';
 /// keep inference (slow, ~1–2 s) separate from edge refinement (fast) so the
 /// "修毛邊" sliders can re-composite without re-running the model.
 ///
-/// Model: assets/models/isnet-anime.onnx (176 MB, gitignored — re-download from
-/// the rembg v0.0.0 release). Input NCHW [1,3,1024,1024], RGB, value = x/255-0.5.
-/// Output [1,1,1024,1024] soft logits → min-max normalized to a 0..1 mask.
+/// Model: isnet-anime.onnx (~176 MB), fetched on first use by [IsnetModelStore]
+/// and cached in app storage — never bundled or committed. Input NCHW
+/// [1,3,1024,1024], RGB, value = x/255-0.5. Output [1,1,1024,1024] soft logits
+/// → min-max normalized to a 0..1 mask.
 class IsnetMask {
   /// Soft foreground mask, [res]×[res], row-major, 0..1.
   final Float32List mask;
@@ -33,7 +35,13 @@ class IsnetMask {
 }
 
 class IsnetCutoutService {
-  static const _assetPath = 'assets/models/isnet-anime.onnx';
+  IsnetCutoutService({IsnetModelStore? store})
+      : store = store ?? IsnetModelStore();
+
+  /// Resolves/downloads/caches the model file. Exposed so UI can check
+  /// readiness and drive the download with progress before the first cut.
+  final IsnetModelStore store;
+
   static const int inputRes = 1024;
 
   static bool _envReady = false;
@@ -45,9 +53,11 @@ class IsnetCutoutService {
       OrtEnv.instance.init();
       _envReady = true;
     }
-    final raw = await rootBundle.load(_assetPath);
-    final bytes = raw.buffer.asUint8List(raw.offsetInBytes, raw.lengthInBytes);
-    _session = OrtSession.fromBuffer(bytes, OrtSessionOptions());
+    // ensure() returns immediately if the model is already cached; the panel
+    // downloads it (with progress) before getting here, so this is normally
+    // just a disk lookup.
+    final modelFile = await store.ensure();
+    _session = OrtSession.fromFile(modelFile, OrtSessionOptions());
   }
 
   /// Runs isnet on [original], returning a soft mask + guide at 1024² so the
