@@ -101,13 +101,10 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  #assets:
-    # isnet-anime cutout model (spike). Gitignored (176 MB) — re-download via:
-    # curl -L https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-anime.onnx -o assets/models/isnet-anime.onnx
-    # Removed the ONNX model from assets. 
-    # Dynamic models must not be bundled at compile time to avoid build failures and bloated app sizes.
-    # assets:
-    #   - assets/models/isnet-anime.onnx
+  # The isnet-anime cutout model (~176 MB) is NOT bundled as an asset — it is
+  # fetched on first use and cached on-device by IsnetModelStore
+  # (lib/features/anime/services/isnet_model_store.dart). Bundling it would bloat
+  # every build and break the GitHub 100 MB file limit.
 
   # To add assets to your application, add an assets section, like this:
   # assets:
