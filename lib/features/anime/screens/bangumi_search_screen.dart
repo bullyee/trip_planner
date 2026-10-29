@@ -29,14 +29,6 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
   String? _importing; // bangumi subject id currently being imported
 
   @override
-  void initState() {
-    super.initState();
-    // Pay the session's first DNS + TLS cost up front so the first import
-    // isn't the one that eats it (and times out). Fire-and-forget.
-    AnitabiApiService.prewarmConnection();
-  }
-
-  @override
   void dispose() {
     _debounce?.cancel();
     _queryController.dispose();
@@ -115,14 +107,31 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
         authorId: authorId,
         fallbackName: subject.name,
       );
-    } on AnitabiUnavailableException {
+    } on AnitabiUnavailableException catch (e) {
       if (!mounted) return;
       setState(() => _importing = null);
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            "Couldn't reach Anitabi for \"${subject.nameCn ?? subject.name}\". "
-            'Check your connection and tap Import again.',
+            e.blocked
+                ? 'Anitabi is temporarily refusing requests from this '
+                    'network. Wait a while before trying again.'
+                : "Couldn't reach Anitabi for "
+                    '"${subject.nameCn ?? subject.name}". '
+                    'Check your connection and tap Import again.',
+          ),
+        ),
+      );
+      return;
+    } on AnitabiNoCoordinatesException catch (e) {
+      if (!mounted) return;
+      setState(() => _importing = null);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Anitabi lists ${e.spotCount} spots for '
+            '"${subject.nameCn ?? subject.name}", but none have map '
+            'coordinates, so nothing was imported.',
           ),
         ),
       );
@@ -160,6 +169,9 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
       return;
     }
 
+    final missingMsg = result.poisWithoutCoordinates == 0
+        ? ''
+        : ' Skipped ${result.poisWithoutCoordinates} without map coordinates.';
     final coversMsg = result.coversPending == 0
         ? ''
         : ' Downloading ${result.coversPending} cover'
@@ -168,7 +180,7 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
       SnackBar(
         content: Text(
           'Imported ${result.poisImported} POIs for "${result.animeName}".'
-          '$coversMsg',
+          '$missingMsg$coversMsg',
         ),
       ),
     );
