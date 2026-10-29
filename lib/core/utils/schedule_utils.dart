@@ -18,20 +18,11 @@ Future<void> handleTimeChunkAction(BuildContext context, WidgetRef ref, String a
     case 'scheduled':
     case 'completed':
     case 'skipped':
-      final updatedChunk = TimeChunkModel(
-        id: chunk.id,
-        poiId: chunk.poiId,
-        authorId: chunk.authorId,
-        date: chunk.date,
-        startTime: chunk.startTime,
-        endTime: chunk.endTime,
-        status: action,
-        createdAt: chunk.createdAt,
-        isShared: chunk.isShared,
-      );
+      final updatedChunk = chunk.copyWith(status: action);
       await ref.read(timeChunkRepositoryProvider).updateTimeChunk(updatedChunk);
       break;
     case 'backlog':
+      final oldDate = chunk.date;
       final backlogChunk = TimeChunkModel(
         id: chunk.id,
         poiId: chunk.poiId,
@@ -42,8 +33,21 @@ Future<void> handleTimeChunkAction(BuildContext context, WidgetRef ref, String a
         status: action,
         createdAt: chunk.createdAt,
         isShared: chunk.isShared,
+        duration: chunk.duration,
+        transitDuration: chunk.transitDuration,
+        isFixedTime: false,
+        syncStatus: chunk.syncStatus,
+        isDeleted: chunk.isDeleted,
+        hasEverSynced: chunk.hasEverSynced,
       );
       await ref.read(timeChunkRepositoryProvider).updateTimeChunk(backlogChunk);
+      if (oldDate != null) {
+        final remaining = await ref
+            .read(timeChunkRepositoryProvider)
+            .watchTimeChunksByDate(oldDate)
+            .first;
+        await ref.read(scheduleEngineProvider).recalculateDaySchedule(remaining);
+      }
       break;
   }
 }
@@ -213,7 +217,15 @@ Future<void> confirmDeleteTimeChunkAndRemove(
 }
 
 Future<void> _deleteChunk(WidgetRef ref, TimeChunkModel chunk) async {
+  final oldDate = chunk.date;
   await ref.read(timeChunkRepositoryProvider).deleteTimeChunk(chunk.id);
+  if (oldDate != null) {
+    final remaining = await ref
+        .read(timeChunkRepositoryProvider)
+        .watchTimeChunksByDate(oldDate)
+        .first;
+    await ref.read(scheduleEngineProvider).recalculateDaySchedule(remaining);
+  }
 }
 
 class MonthCalendarPicker extends ConsumerStatefulWidget {
