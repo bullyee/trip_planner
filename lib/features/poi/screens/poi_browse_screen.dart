@@ -122,6 +122,12 @@ class _ByRegionTab extends ConsumerWidget {
             final roi = rois[index];
             return Card(
               child: ListTile(
+                leading: Icon(
+                  roi.isOfflineCached ? Icons.cloud_done : Icons.cloud_outlined,
+                  color: roi.isOfflineCached
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).disabledColor,
+                ),
                 title: Text(roi.name),
                 subtitle: roi.description != null
                     ? Text(roi.description!, maxLines: 2)
@@ -241,33 +247,33 @@ class _AllPoisTab extends ConsumerWidget {
           return const Center(child: Text('No POIs yet.'));
         }
         return ListView.builder(
-  padding: const EdgeInsets.all(16),
-  itemCount: pois.length,
-  itemBuilder: (context, index) {
-    final poi = pois[index];
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.location_on),
-        title: Text(poi.name),
-        subtitle: Consumer(
-          builder: (context, ref, _) {
-            final animesAsync = ref.watch(animesForPoiProvider(poi.id));
-            final firstAnime = animesAsync.maybeWhen(
-              data: (animes) =>
-                  animes.isNotEmpty ? animes.first.name : null,
-              orElse: () => null,
+          padding: const EdgeInsets.all(16),
+          itemCount: pois.length,
+          itemBuilder: (context, index) {
+            final poi = pois[index];
+            return Card(
+              child: ListTile(
+                leading: const Icon(Icons.location_on),
+                title: Text(poi.name),
+                subtitle: Consumer(
+                  builder: (context, ref, _) {
+                    final animesAsync = ref.watch(animesForPoiProvider(poi.id));
+                    final firstAnime = animesAsync.maybeWhen(
+                      data: (animes) =>
+                          animes.isNotEmpty ? animes.first.name : null,
+                      orElse: () => null,
+                    );
+                    final subtitle = firstAnime ?? poi.address;
+                    return subtitle != null
+                        ? Text(subtitle)
+                        : const SizedBox.shrink();
+                  },
+                ),
+                onTap: () => context.push('/pois/${poi.id}'),
+              ),
             );
-            final subtitle = firstAnime ?? poi.address;
-            return subtitle != null
-                ? Text(subtitle)
-                : const SizedBox.shrink();
           },
-        ),        
-        onTap: () => context.push('/pois/${poi.id}'),
-      ),
-    );
-  },
-);
+        );
       },
     );
   }

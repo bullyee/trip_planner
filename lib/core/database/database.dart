@@ -333,8 +333,8 @@ class AppDatabase extends _$AppDatabase {
   Future<Poi> getPoiById(String id) =>
       (select(pois)..where((p) => p.id.equals(id))).getSingle();
 
-  Stream<Poi> watchPoiById(String id) =>
-      (select(pois)..where((p) => p.id.equals(id))).watchSingle();
+  Stream<Poi?> watchPoiById(String id) =>
+      (select(pois)..where((p) => p.id.equals(id))).watchSingleOrNull();
 
   Stream<List<Poi>> watchAllPois() => select(pois).watch();
 

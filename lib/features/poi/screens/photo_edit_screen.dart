@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../auth/providers/auth_provider.dart';
 import '../../camera/services/reinhard_match_service.dart';
@@ -763,17 +765,21 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     final mediaRepo = ref.read(mediaRepositoryProvider);
 
     setState(() => _saving = true);
+    File? tempFile;
     try {
-      // Write the edited bytes over the source so persistMediaAsset's 
-      // copy-into-storage step picks them up, then record the MediaAsset row.
       final bytesToWrite = await _resolveBytesForSave();
+      File fileToPersist = _sourceFile;
       if (bytesToWrite != null) {
-        await _sourceFile.writeAsBytes(bytesToWrite, flush: true);
+        final tempDir = await getTemporaryDirectory();
+        final tempPath = p.join(tempDir.path, 'edited_${const Uuid().v4()}.jpg');
+        tempFile = File(tempPath);
+        await tempFile.writeAsBytes(bytesToWrite, flush: true);
+        fileToPersist = tempFile;
       }
       final currentUserId = ref.read(currentUserIdProvider);
       final ok = await persistMediaAsset(
         mediaRepo: mediaRepo,
-        source: _sourceFile,
+        source: fileToPersist,
         poiId: widget.poiId,
         type: widget.wasUpload ? 'uploaded_image' : 'user_photo',
         referenceImageId: _referenceImageId,
@@ -785,6 +791,11 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       );
       if (ok) Navigator.of(context).pop();
     } finally {
+      if (tempFile != null && await tempFile.exists()) {
+        try {
+          await tempFile.delete();
+        } catch (_) {}
+      }
       if (mounted) setState(() => _saving = false);
     }
   }
