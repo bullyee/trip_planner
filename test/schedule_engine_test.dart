@@ -179,7 +179,7 @@ void main() {
       expect(updated[2].endTime, '12:40');
     });
 
-    test('Issue #51: Fixed-time chunk with earlier time keeps locked time and does not regress cursor', () async {
+    test('Issue #51: Fixed-time chunk with earlier time orders chronologically without cursor regression', () async {
       // Repro from Issue #51:
       // Chunk A is flexible, starts at 10:00, ends at 11:00 (transit 10m -> 11:10).
       // Chunk B is locked to 09:00 (duration 30m, transit 10m -> ends 09:40).
@@ -212,20 +212,32 @@ void main() {
       final updated = repository.lastUpdatedChunks;
       expect(updated.length, 3);
 
-      // Chunk A starts at 10:00 and ends at 11:00 (not pulled back to 09:00)
-      expect(updated[0].id, 'chunk_a');
-      expect(updated[0].startTime, '10:00');
-      expect(updated[0].endTime, '11:00');
+      // Chronological normalization orders chunk_b (09:00) before chunk_a (10:00)
+      expect(updated[0].id, 'chunk_b');
+      expect(updated[0].startTime, '09:00');
+      expect(updated[0].endTime, '09:30');
+      expect(updated[0].sortOrder, 1024);
 
-      // Chunk B preserves its pinned 09:00 time
-      expect(updated[1].id, 'chunk_b');
-      expect(updated[1].startTime, '09:00');
-      expect(updated[1].endTime, '09:30');
+      // Chunk A starts at 10:00 and ends at 11:00
+      expect(updated[1].id, 'chunk_a');
+      expect(updated[1].startTime, '10:00');
+      expect(updated[1].endTime, '11:00');
+      expect(updated[1].sortOrder, 2048);
 
-      // Chunk C does NOT jump backwards to 09:40; it continues forward from Chunk A's 11:10 cursor
+      // Chunk C continues forward after chunk_a + transit at 11:10
       expect(updated[2].id, 'chunk_c');
       expect(updated[2].startTime, '11:10');
       expect(updated[2].endTime, '12:10');
+      expect(updated[2].sortOrder, 3072);
+
+      // Verify gap calculation matches
+      final gapBA = calculateScheduleGap(updated[0], updated[1]);
+      expect(gapBA?.isConflict, isFalse);
+      expect(gapBA?.freeTimeMinutes, 20); // 09:40 arrival to 10:00 start
+
+      final gapAC = calculateScheduleGap(updated[1], updated[2]);
+      expect(gapAC?.isConflict, isFalse);
+      expect(gapAC?.freeTimeMinutes, 0); // starts right on time at 11:10
     });
 
     test('Fixed-time chunk overlapping earlier chunk but ending later advances cursor', () async {
@@ -271,6 +283,128 @@ void main() {
       // Chunk C: advances to 11:45 (11:30 + 15m transit)
       expect(updated[2].startTime, '11:45');
       expect(updated[2].endTime, '12:15');
+
+      // Gap between A and B is a conflict of 40 minutes (11:10 arrival vs 10:30 start)
+      final gap = calculateScheduleGap(updated[0], updated[1]);
+      expect(gap?.isConflict, isTrue);
+      expect(gap?.conflictMinutes, 40);
+    });
+
+    test('Midnight wrap-around: Fixed chunk at 00:00 advances cursor across midnight into 01:00', () async {
+      // Test case from bullyee review:
+      // A locked 22:00 d60 t30 (ends 23:30)
+      // F locked 00:00 d60 (ends 01:00 next day)
+      // R flex d60 -> must land at 01:00, not 23:30!
+      final chunks = [
+        createChunk(
+          id: 'chunk_a',
+          sortOrder: 1,
+          startTime: '22:00',
+          isFixedTime: true,
+          duration: 60,
+          transitDuration: 30,
+        ),
+        createChunk(
+          id: 'chunk_f',
+          sortOrder: 2,
+          startTime: '00:00',
+          isFixedTime: true,
+          duration: 60,
+          transitDuration: 0,
+        ),
+        createChunk(
+          id: 'chunk_r',
+          sortOrder: 3,
+          duration: 60,
+          transitDuration: 0,
+        ),
+      ];
+
+      await engine.recalculateDaySchedule(chunks);
+
+      final updated = repository.lastUpdatedChunks;
+      expect(updated.length, 3);
+
+      // A: 22:00 - 23:00, arrival 23:30
+      expect(updated[0].id, 'chunk_a');
+      expect(updated[0].startTime, '22:00');
+      expect(updated[0].endTime, '23:00');
+
+      // F: 00:00 - 01:00
+      expect(updated[1].id, 'chunk_f');
+      expect(updated[1].startTime, '00:00');
+      expect(updated[1].endTime, '01:00');
+
+      // R: starts at 01:00 - 02:00 (not overlapping F!)
+      expect(updated[2].id, 'chunk_r');
+      expect(updated[2].startTime, '01:00');
+      expect(updated[2].endTime, '02:00');
+
+      // Gap between A and F: Free time 30 min (23:30 arrival to 00:00 midnight), NOT Conflict: 1440 min
+      final gapAF = calculateScheduleGap(updated[0], updated[1]);
+      expect(gapAF?.isConflict, isFalse);
+      expect(gapAF?.freeTimeMinutes, 30);
+
+      // Gap between F and R: starts right on time at 01:00
+      final gapFR = calculateScheduleGap(updated[1], updated[2]);
+      expect(gapFR?.isConflict, isFalse);
+      expect(gapFR?.freeTimeMinutes, 0);
+    });
+
+    test('Reordering flexible chunk below locked chunk and back above preserves morning start without backwards jump', () async {
+      // Test case from bullyee review:
+      // Start: [A flex 09:00 d60, L locked 13:00 d60]
+      // Drag A below L -> [L 13:00-14:00, A 14:00-15:00]
+      final initialChunks = [
+        createChunk(
+          id: 'chunk_l',
+          sortOrder: 1,
+          startTime: '13:00',
+          isFixedTime: true,
+          duration: 60,
+          transitDuration: 0,
+        ),
+        createChunk(
+          id: 'chunk_a',
+          sortOrder: 2,
+          startTime: '09:00',
+          duration: 60,
+          transitDuration: 0,
+        ),
+      ];
+
+      // After dragging A below L
+      await engine.recalculateDaySchedule(initialChunks);
+      final afterFirstDrag = repository.lastUpdatedChunks;
+      expect(afterFirstDrag[0].id, 'chunk_l');
+      expect(afterFirstDrag[0].startTime, '13:00');
+      expect(afterFirstDrag[1].id, 'chunk_a');
+      expect(afterFirstDrag[1].startTime, '14:00');
+
+      // Now drag A back to the top above L
+      final dragBackChunks = [
+        afterFirstDrag[1].copyWith(sortOrder: 0), // chunk_a at top
+        afterFirstDrag[0].copyWith(sortOrder: 1), // chunk_l second
+      ];
+
+      await engine.recalculateDaySchedule(dragBackChunks);
+      final afterDragBack = repository.lastUpdatedChunks;
+      expect(afterDragBack.length, 2);
+
+      // chunk_a resets back to morning (09:00 - 10:00) instead of being stuck at 14:00
+      expect(afterDragBack[0].id, 'chunk_a');
+      expect(afterDragBack[0].startTime, '09:00');
+      expect(afterDragBack[0].endTime, '10:00');
+
+      // chunk_l remains pinned at 13:00 - 14:00
+      expect(afterDragBack[1].id, 'chunk_l');
+      expect(afterDragBack[1].startTime, '13:00');
+      expect(afterDragBack[1].endTime, '14:00');
+
+      // Gap between A and L is free time (180 min)
+      final gap = calculateScheduleGap(afterDragBack[0], afterDragBack[1]);
+      expect(gap?.isConflict, isFalse);
+      expect(gap?.freeTimeMinutes, 180);
     });
 
     test('Reordering flexible chunks preserves earliest schedule start time', () async {
@@ -336,6 +470,119 @@ void main() {
 
       expect(updated[1].startTime, '14:40');
       expect(updated[1].endTime, '15:10');
+    });
+  });
+
+  group('calculateScheduleGap conflict and free time pill calculations', () {
+    test('Calculates positive free time when there is a gap', () {
+      final prev = createChunk(
+        id: 'p1',
+        sortOrder: 1,
+        startTime: '09:00',
+        endTime: '10:00',
+        transitDuration: 15,
+      );
+      final curr = createChunk(
+        id: 'p2',
+        sortOrder: 2,
+        startTime: '10:45',
+        endTime: '11:45',
+      );
+
+      final gap = calculateScheduleGap(prev, curr);
+      expect(gap, isNotNull);
+      expect(gap!.isConflict, isFalse);
+      expect(gap.freeTimeMinutes, 30); // 10:15 arrival to 10:45 start = 30m
+      expect(gap.conflictMinutes, 0);
+    });
+
+    test('Calculates exact overlap conflict when chunks collide', () {
+      final prev = createChunk(
+        id: 'p1',
+        sortOrder: 1,
+        startTime: '10:00',
+        endTime: '11:00',
+        transitDuration: 10,
+      );
+      final curr = createChunk(
+        id: 'p2',
+        sortOrder: 2,
+        startTime: '10:40',
+        endTime: '11:40',
+      );
+
+      final gap = calculateScheduleGap(prev, curr);
+      expect(gap, isNotNull);
+      expect(gap!.isConflict, isTrue);
+      expect(gap.conflictMinutes, 30); // 11:10 arrival vs 10:40 start = 30m overlap
+      expect(gap.freeTimeMinutes, 0);
+    });
+
+    test('Calculates zero gap when arrival exactly matches next start', () {
+      final prev = createChunk(
+        id: 'p1',
+        sortOrder: 1,
+        startTime: '09:00',
+        endTime: '10:00',
+        transitDuration: 20,
+      );
+      final curr = createChunk(
+        id: 'p2',
+        sortOrder: 2,
+        startTime: '10:20',
+        endTime: '11:20',
+      );
+
+      final gap = calculateScheduleGap(prev, curr);
+      expect(gap, isNotNull);
+      expect(gap!.isConflict, isFalse);
+      expect(gap.gapMinutes, 0);
+      expect(gap.freeTimeMinutes, 0);
+      expect(gap.conflictMinutes, 0);
+    });
+
+    test('Midnight transit wrap-around calculates correctly without 1440m false conflict', () {
+      final prev = createChunk(
+        id: 'p1',
+        sortOrder: 1,
+        startTime: '23:00',
+        endTime: '23:30',
+        transitDuration: 30, // arrival is 24:00 (00:00)
+      );
+      final curr = createChunk(
+        id: 'p2',
+        sortOrder: 2,
+        startTime: '00:00',
+        endTime: '01:00',
+      );
+
+      final gap = calculateScheduleGap(prev, curr);
+      expect(gap, isNotNull);
+      expect(gap!.isConflict, isFalse);
+      expect(gap.gapMinutes, 0);
+      expect(gap.conflictMinutes, 0);
+    });
+
+    test('Midnight crossing with real conflict calculates overlap correctly', () {
+      final prev = createChunk(
+        id: 'p1',
+        sortOrder: 1,
+        startTime: '23:00',
+        endTime: '23:45',
+        transitDuration: 30, // arrival is 00:15 next day
+      );
+      final curr = createChunk(
+        id: 'p2',
+        sortOrder: 2,
+        startTime: '00:00',
+        endTime: '01:00',
+      );
+
+      final gap = calculateScheduleGap(prev, curr);
+      expect(gap, isNotNull);
+      expect(gap!.isConflict, isTrue);
+      expect(gap.conflictMinutes, 15); // 00:15 arrival vs 00:00 start = 15m conflict
+      expect(gap.freeTimeMinutes, 0);
     });
   });
 }
