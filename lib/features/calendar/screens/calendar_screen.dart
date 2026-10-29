@@ -727,7 +727,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       }
 
                       final saved = dialogRef.read(lastSelectedBacklogRoiProvider);
-                      selectedRoiId ??= saved ?? rois.first.id;
+                      final validSaved = (saved != null && rois.any((r) => r.id == saved))
+                          ? saved
+                          : null;
+                      if (selectedRoiId == null || !rois.any((r) => r.id == selectedRoiId)) {
+                        selectedRoiId = validSaved ?? rois.first.id;
+                      }
 
                       final poisAsync = dialogRef.watch(poisByRoiProvider(selectedRoiId!));
                       
@@ -947,7 +952,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   ),
                   const SizedBox(height: 16),
                   Slider(
-                    value: selectedDuration.toDouble(),
+                    value: selectedDuration.clamp(5, 300).toDouble(),
                     min: 5,
                     max: 300,
                     divisions: 59,
@@ -1049,7 +1054,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   ),
                   const SizedBox(height: 16),
                   Slider(
-                    value: selectedTransit.toDouble(),
+                    value: selectedTransit.clamp(0, 180).toDouble(),
                     min: 0,
                     max: 180, // Max 3 hours for transit
                     divisions: 36, // 5-minute increments

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../poi/models/poi_model.dart';
 import '../../poi/repositories/poi_repository.dart';
 import '../providers/roi_provider.dart';
 import '../../poi/providers/poi_provider.dart';
@@ -282,20 +281,7 @@ class _BatchAddBottomSheetState extends ConsumerState<_BatchAddBottomSheet> {
       for (final id in _selectedIds) {
         final poi = poisMap[id];
         if (poi != null) {
-          final updatedPoi = PoiModel(
-            id: poi.id,
-            name: poi.name,
-            roiId: widget.roiId,
-            authorId: poi.authorId,
-            description: poi.description,
-            address: poi.address,
-            lat: poi.lat,
-            lng: poi.lng,
-            businessHours: poi.businessHours,
-            contactInfo: poi.contactInfo,
-            createdAt: poi.createdAt,
-            isShared: poi.isShared,
-          );
+          final updatedPoi = poi.copyWith(roiId: widget.roiId);
           await ref.read(poiRepositoryProvider).updatePoi(updatedPoi);
         }
       }
