@@ -34,33 +34,47 @@ class ScheduleEngine {
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
     String currentTimeCursor = '09:00';
-    final validTimes = dayChunks
-        .map((c) => c.startTime)
-        .where((t) => t != null && t != '--:--')
-        .cast<String>()
-        .toList();
-
-    if (validTimes.isNotEmpty) {
-      currentTimeCursor = validTimes.reduce((a, b) => a.compareTo(b) < 0 ? a : b);
+    if (sortedChunks.first.isFixedTime &&
+        sortedChunks.first.startTime != null &&
+        sortedChunks.first.startTime != '--:--') {
+      currentTimeCursor = sortedChunks.first.startTime!;
+    } else {
+      final flexibleTimes = sortedChunks
+          .where((c) => !c.isFixedTime && c.startTime != null && c.startTime != '--:--')
+          .map((c) => c.startTime!)
+          .toList();
+      if (flexibleTimes.isNotEmpty) {
+        currentTimeCursor = flexibleTimes.reduce((a, b) => a.compareTo(b) < 0 ? a : b);
+      } else {
+        final anyValidTimes = sortedChunks
+            .map((c) => c.startTime)
+            .where((t) => t != null && t != '--:--')
+            .cast<String>()
+            .toList();
+        if (anyValidTimes.isNotEmpty) {
+          currentTimeCursor = anyValidTimes.first;
+        }
+      }
     }
 
     final List<TimeChunkModel> chunksToUpdate = [];
     int currentNormalizedOrder = 1024;
 
-    // 2. Cascade down the list
+    // Cascade down the list
     for (final chunk in sortedChunks) {
       String calculatedStartTime;
+      int cursorMins = _timeToMinutes(currentTimeCursor);
 
-      // Feature C: Fixed time collision detection
+      // Fixed time collision detection
       if (chunk.isFixedTime && chunk.startTime != null && chunk.startTime != '--:--') {
         calculatedStartTime = chunk.startTime!; // Force lock time
         
-        int cursorMins = _timeToMinutes(currentTimeCursor);
         int fixedMins = _timeToMinutes(calculatedStartTime);
         
         // If the calculated cursor is earlier than the fixed time, align to the fixed time.
         if (fixedMins > cursorMins) {
-           currentTimeCursor = calculatedStartTime;
+          currentTimeCursor = calculatedStartTime;
+          cursorMins = fixedMins;
         }
       } else {
         // Normal cascading
@@ -68,9 +82,18 @@ class ScheduleEngine {
       }
 
       final String calculatedEndTime = _addMinutes(calculatedStartTime, chunk.duration);
-      currentTimeCursor = _addMinutes(calculatedEndTime, chunk.transitDuration);
+      int endMins = _timeToMinutes(calculatedEndTime);
+      if (endMins < _timeToMinutes(calculatedStartTime)) {
+        endMins += 1440;
+      }
+      final int endWithTransitMins = endMins + chunk.transitDuration;
 
-      // CRITICAL FIX: Update both time and sortOrder simultaneously
+      // Only advance cursor forward; never jump backwards into the past.
+      if (endWithTransitMins > cursorMins) {
+        currentTimeCursor = _addMinutes(calculatedEndTime, chunk.transitDuration);
+      }
+
+      // Update both time and sortOrder simultaneously
       chunksToUpdate.add(
         chunk.copyWith(
           startTime: calculatedStartTime,

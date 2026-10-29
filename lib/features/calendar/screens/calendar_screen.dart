@@ -254,37 +254,67 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                   Widget gapWidget = const SizedBox.shrink();
                                   if (index > 0) {
                                     final prevChunk = sorted[index - 1];
-                                    final prevEndTime = prevChunk.endTime ?? '00:00';
-                                    
-                                    int prevEndMins = (int.tryParse(prevEndTime.split(':')[0]) ?? 0) * 60 + 
-                                                      (int.tryParse(prevEndTime.split(':')[1]) ?? 0);
-                                    int arrivalMins = prevEndMins + prevChunk.transitDuration;
-                                    
-                                    final currStartTime = chunk.startTime ?? '00:00';
-                                    int currStartMins = (int.tryParse(currStartTime.split(':')[0]) ?? 0) * 60 + 
-                                                        (int.tryParse(currStartTime.split(':')[1]) ?? 0);
-                                    
-                                    int gap = currStartMins - arrivalMins;
-                                    if (gap > 0) {
-                                      gapWidget = Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                                        child: Center(
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                                              borderRadius: BorderRadius.circular(16),
-                                            ),
-                                            child: Text(
-                                              'Free Time: $gap min',
-                                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                                color: Theme.of(context).colorScheme.onSecondaryContainer,
-                                                fontWeight: FontWeight.w600,
+                                    final prevEndTime = prevChunk.endTime;
+                                    final currStartTime = chunk.startTime;
+
+                                    if (prevEndTime != null &&
+                                        prevEndTime != '--:--' &&
+                                        currStartTime != null &&
+                                        currStartTime != '--:--') {
+                                      final prevParts = prevEndTime.split(':');
+                                      final currParts = currStartTime.split(':');
+                                      if (prevParts.length == 2 && currParts.length == 2) {
+                                        final int prevEndMins = (int.tryParse(prevParts[0]) ?? 0) * 60 +
+                                            (int.tryParse(prevParts[1]) ?? 0);
+                                        final int arrivalMins = prevEndMins + prevChunk.transitDuration;
+
+                                        final int currStartMins = (int.tryParse(currParts[0]) ?? 0) * 60 +
+                                            (int.tryParse(currParts[1]) ?? 0);
+
+                                        final int gap = currStartMins - arrivalMins;
+                                        if (gap > 0) {
+                                          gapWidget = Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                            child: Center(
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                                                  borderRadius: BorderRadius.circular(16),
+                                                ),
+                                                child: Text(
+                                                  'Free Time: $gap min',
+                                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                                    color: Theme.of(context).colorScheme.onSecondaryContainer,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                        ),
-                                      );
+                                          );
+                                        } else if (gap < 0) {
+                                          final int conflictMins = -gap;
+                                          gapWidget = Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                            child: Center(
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.5),
+                                                  borderRadius: BorderRadius.circular(16),
+                                                ),
+                                                child: Text(
+                                                  'Conflict: $conflictMins min',
+                                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                                    color: Theme.of(context).colorScheme.onErrorContainer,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      }
                                     }
                                   }
 
