@@ -215,7 +215,7 @@ class AnitabiApiService {
         pending: pendingDownloads,
         httpClient: httpClient,
         closeClientWhenDone: ownsClient,
-        authorId: animeId,
+        authorId: authorId,
       );
       handedOff = true;
 

@@ -185,7 +185,10 @@ final endController = TextEditingController(text: chunk.endTime ?? '12:00');
         ],
       ),
     ),
-  );
+  ).whenComplete(() {
+    startController.dispose();
+    endController.dispose();
+  });
 }
 
 Future<void> confirmDeleteTimeChunkAndRemove(
@@ -389,8 +392,9 @@ class _MonthCalendarPickerState extends ConsumerState<MonthCalendarPicker> {
       days.add(DateTime(monthYear.year, monthYear.month, i));
     }
     // Add trailing empty days to complete grid
+    var trailingDay = 1;
     while (days.length % 7 != 0) {
-      days.add(DateTime(monthYear.year, monthYear.month + 1, days.length - 28));
+      days.add(DateTime(monthYear.year, monthYear.month + 1, trailingDay++));
     }
 
     return GridView.builder(
