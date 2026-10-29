@@ -42,7 +42,7 @@ class HomeScreen extends ConsumerWidget {
                   label: const Text('Sign In'),
                   onPressed: () => context.push('/login'),
                   style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.onPrimary,
+                    foregroundColor: theme.colorScheme.primary,
                   ),
                 );
               }

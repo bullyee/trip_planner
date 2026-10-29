@@ -544,19 +544,56 @@ class PoiDetailScreen extends ConsumerWidget {
             FilledButton(
               onPressed: () async {
                 try {
+                  if (status == 'scheduled' && selectedDate == null) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Please select a date first.')),
+                    );
+                    return;
+                  }
+
+                  int timeToMins(String? t) {
+                    if (t == null || t == '--:--') return 0;
+                    final parts = t.split(':');
+                    if (parts.length != 2) return 0;
+                    return (int.tryParse(parts[0]) ?? 0) * 60 +
+                        (int.tryParse(parts[1]) ?? 0);
+                  }
+
+                  final startStr = status == 'scheduled' ? startController.text.trim() : null;
+                  final endStr = status == 'scheduled' ? endController.text.trim() : null;
+                  int duration = 60;
+                  if (status == 'scheduled' && startStr != null && endStr != null) {
+                    duration = timeToMins(endStr) - timeToMins(startStr);
+                    if (duration < 0) duration += 24 * 60;
+                    if (duration <= 0) duration = 60;
+                  }
+
+                  final targetDateStr = (status == 'scheduled' && selectedDate != null)
+                      ? DateFormat('yyyy-MM-dd').format(selectedDate!)
+                      : null;
+
                   final newChunk = TimeChunkModel(
                     id: const Uuid().v4(),
                     poiId: poiId,
                     authorId: ref.read(currentUserIdProvider),
-                    date: selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : null,
-                    startTime: status == 'scheduled' ? startController.text.trim() : null,
-                    endTime: status == 'scheduled' ? endController.text.trim() : null,
+                    date: targetDateStr,
+                    startTime: startStr,
+                    endTime: endStr,
+                    duration: duration,
+                    isFixedTime: status == 'scheduled',
                     status: status,
                     createdAt: DateTime.now().millisecondsSinceEpoch,
                     isShared: false,
                   );
 
                   await ref.read(timeChunkRepositoryProvider).addTimeChunk(newChunk);
+                  if (targetDateStr != null) {
+                    final dayChunks = await ref
+                        .read(timeChunkRepositoryProvider)
+                        .watchTimeChunksByDate(targetDateStr)
+                        .first;
+                    await ref.read(scheduleEngineProvider).recalculateDaySchedule(dayChunks);
+                  }
                   
                   if (ctx.mounted) {
                     Navigator.pop(ctx);
@@ -617,8 +654,19 @@ class PoiDetailScreen extends ConsumerWidget {
     WidgetRef ref,
     MediaAssetModel asset,
   ) async {
-    final oldFile = File(asset.localPath!);
-    final currentName = p.basenameWithoutExtension(asset.localPath!);
+    // 1. Guard clause: Prevent physical file operations on cloud-only assets
+    if (asset.localPath == null || asset.localPath!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot rename a cloud-only image. Please download it first.'),
+        ),
+      );
+      return;
+    }
+
+    final currentLocalPath = asset.localPath!;
+    final oldFile = File(currentLocalPath);
+    final currentName = p.basenameWithoutExtension(currentLocalPath);
 
     final newName = await showDialog<String>(
       context: context,
@@ -642,23 +690,12 @@ class PoiDetailScreen extends ConsumerWidget {
     if (!await oldFile.exists()) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Image file not found: ${asset.localPath}')),
+        SnackBar(content: Text('Image file not found: $currentLocalPath')),
       );
       return;
     }
 
-    // 1. Guard clause: Prevent physical file operations on cloud-only assets
-    if (asset.localPath == null || asset.localPath!.isEmpty) {
-      // If you only want to rename the metadata title in the database, you can do it here.
-      // But physical file renaming is impossible. Abort the operation.
-      debugPrint('Rename failed: Target is a cloud-only asset without a local file.');
-      return; 
-    }
-
-    // 2. Safe assignment: Store the guaranteed non-null path
-    final currentLocalPath = asset.localPath!;
-
-    // 3. Perform path operations safely
+    // Perform path operations safely
     final extension = p.extension(currentLocalPath).isEmpty
         ? '.jpg'
         : p.extension(currentLocalPath);
@@ -667,7 +704,7 @@ class PoiDetailScreen extends ConsumerWidget {
       p.dirname(currentLocalPath),
       sanitizedName,
       extension,
-      currentLocalPath, // Use the non-null variable here
+      currentLocalPath,
     );
 
     try {

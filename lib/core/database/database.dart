@@ -344,8 +344,16 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<Poi>> getAllPois() => select(pois).get();
 
-  Future<int> deletePoi(String id) =>
-      (delete(pois)..where((p) => p.id.equals(id))).go();
+  Future<int> deletePoi(String id) {
+    return transaction(() async {
+      await (delete(mediaAssets)..where((m) => m.poiId.equals(id))).go();
+      await (delete(referenceImages)..where((r) => r.poiId.equals(id))).go();
+      await (delete(timeChunks)..where((t) => t.poiId.equals(id))).go();
+      await (delete(poiAnimes)..where((pa) => pa.poiId.equals(id))).go();
+      await (delete(poiTags)..where((pt) => pt.poiId.equals(id))).go();
+      return (delete(pois)..where((p) => p.id.equals(id))).go();
+    });
+  }
 
   // --- Anime Queries ---
   Future<List<Anime>> getAllAnimes() => select(animes).get();

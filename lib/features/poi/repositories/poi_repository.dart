@@ -52,6 +52,9 @@ class LocalPoiRepository implements PoiRepository {
       lng: Value(poi.lng),
       businessHours: Value(poi.businessHours),
       contactInfo: Value(poi.contactInfo),
+      localCoverImagePath: Value(poi.localCoverImagePath),
+      remoteCoverImageUrl: Value(poi.remoteCoverImageUrl),
+      sortOrder: Value(poi.sortOrder),
       createdAt: Value(poi.createdAt),
       isShared: Value(poi.isShared),
     );
@@ -83,6 +86,7 @@ class LocalPoiRepository implements PoiRepository {
           contactInfo: Value(poi.contactInfo),
           localCoverImagePath: Value(poi.localCoverImagePath),
           remoteCoverImageUrl: Value(poi.remoteCoverImageUrl),
+          sortOrder: Value(currentPoi.sortOrder),
           createdAt: Value(poi.createdAt),
           
           // CRITICAL: Preserve original ownership and sync status during an update
@@ -132,23 +136,7 @@ class LocalPoiRepository implements PoiRepository {
   @override
   Future<PoiModel> getPoiById(String id) async {
     final driftPoi = await localDb.getPoiById(id);
-    
-    return PoiModel(
-      id: driftPoi.id,
-      roiId: driftPoi.roiId,
-      authorId: driftPoi.authorId,
-      name: driftPoi.name,
-      description: driftPoi.description,
-      address: driftPoi.address,
-      lat: driftPoi.lat,
-      lng: driftPoi.lng,
-      businessHours: driftPoi.businessHours,
-      contactInfo: driftPoi.contactInfo,
-      localCoverImagePath: driftPoi.localCoverImagePath,
-      remoteCoverImageUrl: driftPoi.remoteCoverImageUrl,
-      createdAt: driftPoi.createdAt, // FIXED: driftRow -> driftPoi
-      isShared: driftPoi.isShared,
-    );
+    return _mapPoi(driftPoi);
   }
 
   PoiModel _mapPoi(dynamic driftPoi) {
@@ -165,6 +153,7 @@ class LocalPoiRepository implements PoiRepository {
       contactInfo: driftPoi.contactInfo,
       localCoverImagePath: driftPoi.localCoverImagePath,
       remoteCoverImageUrl: driftPoi.remoteCoverImageUrl,
+      sortOrder: driftPoi.sortOrder,
       createdAt: driftPoi.createdAt,
       isShared: driftPoi.isShared,
     );

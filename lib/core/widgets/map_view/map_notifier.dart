@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // Import the Repository and Model instead of the raw database
@@ -13,9 +15,28 @@ final mapNotifierProvider =
 
 class MapNotifier extends StateNotifier<MapState> {
   final PoiRepository _poiRepo;
+  StreamSubscription<Map<String, PoiModel>>? _poisSub;
 
   MapNotifier(this._poiRepo) : super(const MapState()) {
     loadPois();
+    _poisSub = _poiRepo.watchAllPois().listen((_) {
+      _refreshCurrentFilter();
+    });
+  }
+
+  Future<void> _refreshCurrentFilter() async {
+    if (!mounted) return;
+    if (state.selectedDate != null) {
+      await loadPoisByDate(state.selectedDate);
+    } else {
+      await loadPois(roiId: state.selectedRoiId);
+    }
+  }
+
+  @override
+  void dispose() {
+    _poisSub?.cancel();
+    super.dispose();
   }
 
   Future<void> loadPois({String? roiId}) async {
