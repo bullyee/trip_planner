@@ -13,7 +13,7 @@ void main() {
 
   setUp(() {
     db = AppDatabase.forTesting(NativeDatabase.memory());
-    const mockUserId = 'test_mock_user_id';
+    const mockUserId = 'test_user_id';
     poiRepository = LocalPoiRepository(db, mockUserId);
     timeChunkRepository = LocalTimeChunkRepository(db);
   });
@@ -26,11 +26,11 @@ void main() {
     test('second upsert with same bangumi_id returns same anime row', () async {
       final id1 = await db.upsertAnimeByBangumiId(
         bangumiId: '1424',
-        name: 'K-On!', authorId: 'test_mock_user_id',
+        name: 'K-On!', authorId: 'test_user_id',
       );
       final id2 = await db.upsertAnimeByBangumiId(
         bangumiId: '1424',
-        name: 'けいおん！', authorId: 'test_mock_user_id',
+        name: 'けいおん！', authorId: 'test_user_id',
       );
 
       expect(id1, equals(id2));
@@ -43,8 +43,8 @@ void main() {
     });
 
     test('different bangumi_ids create independent rows', () async {
-      await db.upsertAnimeByBangumiId(bangumiId: '1424', name: 'K-On!', authorId: 'test_mock_user_id');
-      await db.upsertAnimeByBangumiId(bangumiId: '17288', name: 'Hibike!', authorId: 'test_mock_user_id');
+      await db.upsertAnimeByBangumiId(bangumiId: '1424', name: 'K-On!', authorId: 'test_user_id');
+      await db.upsertAnimeByBangumiId(bangumiId: '17288', name: 'Hibike!', authorId: 'test_user_id');
 
       final all = await db.getAllAnimes();
       expect(all.length, 2);
@@ -64,14 +64,14 @@ void main() {
       // 1. Arrange: Seed the database with linked data
       final animeId = await db.upsertAnimeByBangumiId(
         bangumiId: '9999', 
-        name: 'Integration Test Anime', authorId: 'test_mock_user_id'
+        name: 'Integration Test Anime', authorId: 'test_user_id'
       );
 
       await db.insertRoi(RoisCompanion.insert(
       id: 'test-roi-1',
       name: 'Test ROI',
       createdAt: const Value(1),
-      authorId: 'test_user', // ADDED: Mock user for testing
+      authorId: 'test_user_id', // ADDED: Mock user for testing
     ));
 
       // Fixed: Added the required 'authorId' field to comply with new schema
@@ -113,7 +113,7 @@ void main() {
     test('deletePoi cascades child ReferenceImages, MediaAssets, and TimeChunks without FK failure', () async {
       await db.insertPoi(PoisCompanion.insert(
         id: 'poi-with-children',
-        authorId: 'test_mock_user_id',
+        authorId: 'test_user_id',
         name: 'Shrine Spot',
         lat: 35.0,
         lng: 135.0,
@@ -122,14 +122,14 @@ void main() {
       await db.insertReferenceImage(ReferenceImagesCompanion.insert(
         id: 'ref-1',
         poiId: 'poi-with-children',
-        authorId: 'test_mock_user_id',
+        authorId: 'test_user_id',
         localPath: const Value('/tmp/ref.jpg'),
       ));
 
       await db.insertMediaAsset(MediaAssetsCompanion.insert(
         id: 'media-1',
         poiId: 'poi-with-children',
-        authorId: 'test_mock_user_id',
+        authorId: 'test_user_id',
         type: 'user_photo',
         referenceImageId: const Value('ref-1'),
       ));
@@ -137,7 +137,7 @@ void main() {
       await db.insertTimeChunk(TimeChunksCompanion.insert(
         id: 'chunk-1',
         poiId: 'poi-with-children',
-        authorId: 'test_mock_user_id',
+        authorId: 'test_user_id',
       ));
 
       await poiRepository.deletePoi('poi-with-children');
@@ -152,12 +152,12 @@ void main() {
       await db.insertRoi(RoisCompanion.insert(
         id: 'roi-kyoto',
         name: 'Kyoto',
-        authorId: 'test_mock_user_id',
+        authorId: 'test_user_id',
       ));
 
       await db.insertPoi(PoisCompanion.insert(
         id: 'poi-cover',
-        authorId: 'test_mock_user_id',
+        authorId: 'test_user_id',
         name: 'Uji Bridge',
         lat: 34.89,
         lng: 135.80,
@@ -180,7 +180,7 @@ void main() {
     test('TimeChunkRepository updateTimeChunk and batchUpdateTimeChunks preserve transitDuration and hasEverSynced', () async {
       await db.insertPoi(PoisCompanion.insert(
         id: 'poi-sync-chunk',
-        authorId: 'test_mock_user_id',
+        authorId: 'test_user_id',
         name: 'Station',
         lat: 35.0,
         lng: 135.0,
@@ -189,7 +189,7 @@ void main() {
       await db.insertTimeChunk(TimeChunksCompanion.insert(
         id: 'chunk-sync-1',
         poiId: 'poi-sync-chunk',
-        authorId: 'test_mock_user_id',
+        authorId: 'test_user_id',
         date: const Value('2026-10-30'),
         startTime: const Value('09:00'),
         endTime: const Value('10:00'),
@@ -232,7 +232,7 @@ void main() {
     test('updateTimeChunk persists transitDuration', () async {
       await db.insertPoi(PoisCompanion.insert(
         id: 'chunk-poi-1',
-        authorId: 'test_user',
+        authorId: 'test_user_id',
         name: 'Test POI',
         lat: 35.0,
         lng: 135.0,
@@ -242,7 +242,7 @@ void main() {
       final initialChunk = TimeChunkModel(
         id: 'test-chunk-1',
         poiId: 'chunk-poi-1',
-        authorId: 'test_user',
+        authorId: 'test_user_id',
         duration: 60,
         transitDuration: 15,
         status: 'scheduled',

@@ -29,6 +29,20 @@ class LocalRoiRepository implements RoiRepository {
   
   LocalRoiRepository(this.localDb, this.currentUserId);
 
+  RoiModel _mapRoi(Roi row) {
+    return RoiModel(
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      createdAt: row.createdAt,
+      isOfflineCached: row.isOfflineCached == 1,
+      authorId: row.authorId,
+      isShared: row.isShared,
+      cloudVersion: row.cloudVersion,
+      syncLockExpiresAt: row.syncLockExpiresAt,
+    );
+  }
+
   @override
   Future<void> updateRoi(
     RoiModel roi, {
@@ -39,10 +53,12 @@ class LocalRoiRepository implements RoiRepository {
         id: Value(roi.id),
         name: Value(roi.name),
         description: Value(roi.description),
-        isOfflineCached: Value(existingIsOfflineCached ?? 0),
+        isOfflineCached: Value(existingIsOfflineCached ?? (roi.isOfflineCached ? 1 : 0)),
         createdAt: Value(roi.createdAt),
         authorId: Value(roi.authorId), 
         isShared: Value(roi.isShared),
+        cloudVersion: Value(roi.cloudVersion),
+        syncLockExpiresAt: Value(roi.syncLockExpiresAt),
       ),
     );
   }
@@ -64,15 +80,7 @@ class LocalRoiRepository implements RoiRepository {
   @override
   Future<RoiModel> getRoiById(String id) async {
     final driftRoi = await localDb.getRoiById(id);
-    return RoiModel(
-      id: driftRoi.id,
-      name: driftRoi.name,
-      description: driftRoi.description,
-      createdAt: driftRoi.createdAt, 
-      isOfflineCached: driftRoi.isOfflineCached == 1,
-      isShared: driftRoi.isShared,
-      authorId: driftRoi.authorId,
-    );
+    return _mapRoi(driftRoi);
   }
   
   @override
@@ -82,33 +90,12 @@ class LocalRoiRepository implements RoiRepository {
 
   @override
   Stream<List<RoiModel>> watchAllRois() {
-    return localDb.watchAllRois().map((rows) {
-      return rows.map((row) => RoiModel(
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        createdAt: row.createdAt, 
-        isOfflineCached: row.isOfflineCached == 1,
-        authorId: row.authorId,
-        isShared: row.isShared,
-      )).toList();
-    });
+    return localDb.watchAllRois().map((rows) => rows.map(_mapRoi).toList());
   }
 
   @override
   Stream<RoiModel?> watchRoiById(String id) {
-    return localDb.watchRoiById(id).map((row) {
-      if (row == null) return null;
-      return RoiModel(
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        createdAt: row.createdAt,
-        isOfflineCached: row.isOfflineCached == 1,
-        authorId: row.authorId,
-        isShared: row.isShared,
-      );
-    });
+    return localDb.watchRoiById(id).map((row) => row == null ? null : _mapRoi(row));
   }
 
   @override

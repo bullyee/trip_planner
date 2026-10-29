@@ -162,14 +162,14 @@ final poisWithoutRoiProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef PoisWithoutRoiRef = AutoDisposeStreamProviderRef<List<PoiModel>>;
-String _$poiByIdHash() => r'd04a2f2651ffbf1a16a4a549c183f63c8f05cb40';
+String _$poiByIdHash() => r'ba0fbd3d15ee9abaaa6b6d52592c90c6dc07cae8';
 
 /// See also [poiById].
 @ProviderFor(poiById)
 const poiByIdProvider = PoiByIdFamily();
 
 /// See also [poiById].
-class PoiByIdFamily extends Family<AsyncValue<PoiModel>> {
+class PoiByIdFamily extends Family<AsyncValue<PoiModel?>> {
   /// See also [poiById].
   const PoiByIdFamily();
 
@@ -199,7 +199,7 @@ class PoiByIdFamily extends Family<AsyncValue<PoiModel>> {
 }
 
 /// See also [poiById].
-class PoiByIdProvider extends AutoDisposeStreamProvider<PoiModel> {
+class PoiByIdProvider extends AutoDisposeStreamProvider<PoiModel?> {
   /// See also [poiById].
   PoiByIdProvider(String id)
     : this._internal(
@@ -227,7 +227,9 @@ class PoiByIdProvider extends AutoDisposeStreamProvider<PoiModel> {
   final String id;
 
   @override
-  Override overrideWith(Stream<PoiModel> Function(PoiByIdRef provider) create) {
+  Override overrideWith(
+    Stream<PoiModel?> Function(PoiByIdRef provider) create,
+  ) {
     return ProviderOverride(
       origin: this,
       override: PoiByIdProvider._internal(
@@ -243,7 +245,7 @@ class PoiByIdProvider extends AutoDisposeStreamProvider<PoiModel> {
   }
 
   @override
-  AutoDisposeStreamProviderElement<PoiModel> createElement() {
+  AutoDisposeStreamProviderElement<PoiModel?> createElement() {
     return _PoiByIdProviderElement(this);
   }
 
@@ -263,12 +265,13 @@ class PoiByIdProvider extends AutoDisposeStreamProvider<PoiModel> {
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-mixin PoiByIdRef on AutoDisposeStreamProviderRef<PoiModel> {
+mixin PoiByIdRef on AutoDisposeStreamProviderRef<PoiModel?> {
   /// The parameter `id` of this provider.
   String get id;
 }
 
-class _PoiByIdProviderElement extends AutoDisposeStreamProviderElement<PoiModel>
+class _PoiByIdProviderElement
+    extends AutoDisposeStreamProviderElement<PoiModel?>
     with PoiByIdRef {
   _PoiByIdProviderElement(super.provider);
 

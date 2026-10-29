@@ -25,7 +25,7 @@ abstract class PoiRepository {
 
   Stream<List<PoiModel>> watchPoisByRoi(String roiId);
   Stream<List<PoiModel>> watchPoisWithoutRoi();
-  Stream<PoiModel> watchPoiById(String id);
+  Stream<PoiModel?> watchPoiById(String id);
   Stream<Map<String, PoiModel>> watchAllPois();
   Stream<List<PoiModel>> watchPoisByAnime(String animeId);
   Stream<int> watchPoiCountForAnime(String animeId);
@@ -139,7 +139,7 @@ class LocalPoiRepository implements PoiRepository {
     return _mapPoi(driftPoi);
   }
 
-  PoiModel _mapPoi(dynamic driftPoi) {
+  PoiModel _mapPoi(Poi driftPoi) {
     return PoiModel(
       id: driftPoi.id,
       roiId: driftPoi.roiId,
@@ -170,8 +170,8 @@ class LocalPoiRepository implements PoiRepository {
   }
 
   @override
-  Stream<PoiModel> watchPoiById(String id) {
-    return localDb.watchPoiById(id).map(_mapPoi);
+  Stream<PoiModel?> watchPoiById(String id) {
+    return localDb.watchPoiById(id).map((p) => p == null ? null : _mapPoi(p));
   }
 
   @override

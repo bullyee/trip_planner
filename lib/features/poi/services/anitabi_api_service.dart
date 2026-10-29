@@ -30,10 +30,9 @@ class AnitabiImportResult {
   final int coversPending;
 
   /// Completes once every queued cover download has either succeeded or
-  /// failed. The Future's int is the number of covers that successfully
-  /// landed on local storage; failures silently leave the original URL
-  /// on the POI. Callers can ignore this if they're happy to let covers
-  /// appear via Drift's reactive streams as each download finishes.
+  /// failed. Failures silently leave the original URL on the POI.
+  /// Callers can ignore this if they're happy to let covers appear
+  /// via Drift's reactive streams as each download finishes.
   final Future<void> coverDownloadCompletion;
 
   const AnitabiImportResult({
@@ -257,39 +256,37 @@ class AnitabiApiService {
     final queue = Queue<_PendingCover>.from(pending);
 
     Future<void> worker(int workerId) async {
-  while (queue.isNotEmpty) {
-    // O(1) operation using dart:collection Queue
-    final next = queue.removeFirst();
+      while (queue.isNotEmpty) {
+        // O(1) operation using dart:collection Queue
+        final next = queue.removeFirst();
 
-    try {
-      final localPath = await downloadCoverImage(
-            next.url,
-            subdir: 'reference_images',
-            client: httpClient,
-          ) ??
-          await _downloadFromImageMirror(next.url, httpClient);
+        try {
+          final localPath = await downloadCoverImage(
+                next.url,
+                subdir: 'reference_images',
+                client: httpClient,
+              ) ??
+              await _downloadFromImageMirror(next.url, httpClient);
 
-      if (localPath != null) {
-        // Fetch or assign the required user ID
-
-        await db.insertReferenceImage(
-          ReferenceImagesCompanion.insert(
-            id: const Uuid().v4(),
-            poiId: next.poiId,
-            authorId: authorId, // CRITICAL: Required for the new model
-            localPath: Value(localPath), // CRITICAL: Wrap in Value for nullable column
-            remoteUrl: Value(next.url),
-            metadata: Value(next.metadata),
-            createdAt: Value(DateTime.now().millisecondsSinceEpoch), // CRITICAL: Missing timestamp
-          ),
-        );
+          if (localPath != null) {
+            await db.insertReferenceImage(
+              ReferenceImagesCompanion.insert(
+                id: const Uuid().v4(),
+                poiId: next.poiId,
+                authorId: authorId,
+                localPath: Value(localPath),
+                remoteUrl: Value(next.url),
+                metadata: Value(next.metadata),
+                createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+              ),
+            );
+          }
+        } catch (e, st) {
+          debugPrint('[Worker $workerId] Failed to process reference image for POI ${next.poiId}: $e');
+          debugPrint(st.toString());
+        }
       }
-    } catch (e, st) {
-      debugPrint('[Worker $workerId] Failed to process reference image for POI ${next.poiId}: $e');
-      debugPrint(st.toString());
     }
-  }
-}
 
     try {
       await Future.wait(

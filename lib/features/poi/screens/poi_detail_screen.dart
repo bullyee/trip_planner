@@ -43,32 +43,36 @@ class PoiDetailScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: poiAsync.when(
-          data: (poi) => Row(
-            mainAxisSize: MainAxisSize.min, // Prevent the Row from expanding infinitely
-            children: [
-              Flexible(
-                // Flexible ensures the text truncates instead of overflowing the AppBar
-                child: Text(
-                  poi.name,
-                  overflow: TextOverflow.ellipsis,
+          data: (poi) => poi == null
+              ? const Text('Spot Not Found')
+              : Row(
+                  mainAxisSize: MainAxisSize.min, // Prevent the Row from expanding infinitely
+                  children: [
+                    Flexible(
+                      // Flexible ensures the text truncates instead of overflowing the AppBar
+                      child: Text(
+                        poi.name,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-            ],
-          ),
           loading: () => const Text('Loading...'),
           error: (_, _) => const Text('Error'),
         ),
         actions: [
           poiAsync.when(
-            data: (poi) => PopupMenuButton<String>(
-              onSelected: (action) =>
-                  _handleAction(context, ref, action, poi),
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                const PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
-            ),
+            data: (poi) => poi == null
+                ? const SizedBox.shrink()
+                : PopupMenuButton<String>(
+                    onSelected: (action) =>
+                        _handleAction(context, ref, action, poi),
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                      const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                    ],
+                  ),
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
           ),
@@ -77,7 +81,25 @@ class PoiDetailScreen extends ConsumerWidget {
       body: poiAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('Error: $err')),
-        data: (poi) => SingleChildScrollView(
+        data: (poi) {
+          if (poi == null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.location_off, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text('Spot not found or has been deleted.'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => context.pop(),
+                    child: const Text('Go Back'),
+                  ),
+                ],
+              ),
+            );
+          }
+          return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -433,10 +455,11 @@ class PoiDetailScreen extends ConsumerWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
+        );
+      },
+    ),
+  );
+}
 
   void _handleAction(
       BuildContext context, WidgetRef ref, String action, PoiModel poi) {

@@ -18,7 +18,7 @@ Stream<List<PoiModel>> poisWithoutRoi(PoisWithoutRoiRef ref) {
 }
 
 @riverpod
-Stream<PoiModel> poiById(PoiByIdRef ref, String id) {
+Stream<PoiModel?> poiById(PoiByIdRef ref, String id) {
   return ref.watch(poiRepositoryProvider).watchPoiById(id);
 }
 

@@ -25,6 +25,16 @@ class LocalAnimeRepository implements AnimeRepository {
 
   LocalAnimeRepository(this.localDb, this.currentUserId);
 
+  AnimeModel _mapAnime(Anime row) {
+    return AnimeModel(
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      bangumiId: row.bangumiId,
+      createdAt: row.createdAt,
+    );
+  }
+
   @override
   Future<void> addAnime(AnimeModel anime) async {
     await localDb.insertAnime(
@@ -37,7 +47,6 @@ class LocalAnimeRepository implements AnimeRepository {
         authorId: currentUserId,
       ),
     );
-    
   }
 
   @override
@@ -51,19 +60,12 @@ class LocalAnimeRepository implements AnimeRepository {
         createdAt: Value(anime.createdAt), // FIXED: Preserve original timestamp
       ),
     );
-    
   }
 
   @override
   Stream<List<AnimeModel>> watchAllAnimes() {
     return localDb.watchAllAnimes().map((rows) {
-      return rows.map((row) => AnimeModel(
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        bangumiId: row.bangumiId, // FIXED: Map bangumiId from DB
-        createdAt: row.createdAt,
-      )).toList();
+      return rows.map(_mapAnime).toList();
     });
   }
 
@@ -71,26 +73,14 @@ class LocalAnimeRepository implements AnimeRepository {
   Stream<AnimeModel?> watchAnimeById(String id) {
     return localDb.watchAnimeById(id).map((row) {
       if (row == null) return null;
-      return AnimeModel(
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        bangumiId: row.bangumiId, // FIXED: Map bangumiId from DB
-        createdAt: row.createdAt,
-      );
+      return _mapAnime(row);
     });
   }
 
   @override
   Stream<List<AnimeModel>> watchAnimesForPoi(String poiId) {
     return localDb.watchAnimesForPoi(poiId).map((rows) {
-      return rows.map((row) => AnimeModel(
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        bangumiId: row.bangumiId, // FIXED: Map bangumiId from DB
-        createdAt: row.createdAt,
-      )).toList();
+      return rows.map(_mapAnime).toList();
     });
   }
 
@@ -98,13 +88,7 @@ class LocalAnimeRepository implements AnimeRepository {
   Future<AnimeModel?> getAnimeById(String id) async {
     final row = await localDb.getAnimeById(id);
     if (row == null) return null;
-    return AnimeModel(
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      bangumiId: row.bangumiId, // FIXED: Map bangumiId from DB
-      createdAt: row.createdAt,
-    );
+    return _mapAnime(row);
   }
 
   @override
@@ -115,8 +99,7 @@ class LocalAnimeRepository implements AnimeRepository {
 
 @riverpod
 AnimeRepository animeRepository(AnimeRepositoryRef ref) {
-  // Use watch instead of read for best practices in providers
-  final db = ref.watch(databaseProvider); 
+  final db = ref.watch(databaseProvider);
   final currentUserId = ref.watch(currentUserIdProvider);
   return LocalAnimeRepository(db, currentUserId);
 }

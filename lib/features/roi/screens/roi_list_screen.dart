@@ -33,6 +33,12 @@ class RoiListScreen extends ConsumerWidget {
               final roi = rois[index];
               return Card(
                 child: ListTile(
+                  leading: Icon(
+                    roi.isOfflineCached ? Icons.cloud_done : Icons.cloud_outlined,
+                    color: roi.isOfflineCached
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).disabledColor,
+                  ),
                   title: Text(roi.name),
                   subtitle: roi.description != null
                       ? Text(roi.description!, maxLines: 2)
