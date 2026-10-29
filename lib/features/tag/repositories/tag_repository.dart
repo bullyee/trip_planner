@@ -24,6 +24,15 @@ class LocalTagRepository implements TagRepository {
 
   LocalTagRepository(this.localDb, this.currentUserId);
 
+  TagModel _mapTag(Tag row) {
+    return TagModel(
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      createdAt: row.createdAt,
+    );
+  }
+
   @override
   Future<void> addTag(TagModel tag) async {
     await localDb.insertTag(
@@ -52,24 +61,14 @@ class LocalTagRepository implements TagRepository {
   @override
   Stream<List<TagModel>> watchTagsForPoi(String poiId) {
     return localDb.watchTagsForPoi(poiId).map((rows) {
-      return rows.map((row) => TagModel(
-        id: row.id,
-        name: row.name,
-        description: row.description, 
-        createdAt: row.createdAt,
-      )).toList();
+      return rows.map(_mapTag).toList();
     });
   }
 
   @override
   Stream<List<TagModel>> watchAllTags() {
     return localDb.watchAllTags().map((rows) {
-      return rows.map((row) => TagModel(
-        id: row.id,
-        name: row.name,
-        description: row.description, 
-        createdAt: row.createdAt,
-      )).toList();
+      return rows.map(_mapTag).toList();
     });
   }
 
@@ -77,12 +76,7 @@ class LocalTagRepository implements TagRepository {
   Stream<TagModel?> watchTagById(String id) {
     return localDb.watchTagById(id).map((row) {
       if (row == null) return null;
-      return TagModel(
-        id: row.id,
-        name: row.name,
-        description: row.description, 
-        createdAt: row.createdAt,
-      );
+      return _mapTag(row);
     });
   }
 
@@ -90,12 +84,7 @@ class LocalTagRepository implements TagRepository {
   Future<TagModel?> getTagById(String id) async {
     final row = await localDb.getTagById(id);
     if (row == null) return null;
-    return TagModel(
-      id: row.id,
-      name: row.name,
-      description: row.description, 
-      createdAt: row.createdAt,
-    );
+    return _mapTag(row);
   }
 
   @override

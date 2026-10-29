@@ -12,6 +12,8 @@ import '../../../core/widgets/map_view/map_notifier.dart';
 import '../models/poi_model.dart';
 import '../widgets/poi_bottom_sheet.dart';
 import '../../roi/widgets/roi_filter_bar.dart';
+import '../../../core/widgets/add_speed_dial.dart';
+import 'poi_browse_screen.dart';
 
 class PoiMapScreen extends ConsumerWidget {
   const PoiMapScreen({super.key});
@@ -54,7 +56,6 @@ class PoiMapScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('POI Map'),
-        // You can add your AddSpeedDial or other actions here if needed
       ),
       body: Column(
         children: [
@@ -95,6 +96,11 @@ class PoiMapScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+      floatingActionButton: Builder(
+        builder: (ctx) => AddSpeedDial(
+          actions: buildDefaultAddActions(ctx),
+        ),
       ),
     );
   }

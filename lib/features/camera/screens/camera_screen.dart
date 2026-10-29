@@ -102,14 +102,18 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
-
     if (state == AppLifecycleState.inactive) {
+      final controller = _controller;
+      _controller = null;
       if (mounted) setState(() => _isCameraReady = false);
-      controller.dispose();
+      controller?.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      _initializeCamera(_cameras[_cameraIndex]);
+      if (!mounted) return;
+      if (_cameras.isNotEmpty) {
+        _initializeCamera(_cameras[_cameraIndex]);
+      } else {
+        _initializeCameras();
+      }
     }
   }
 

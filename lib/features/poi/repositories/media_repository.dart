@@ -29,14 +29,42 @@ class LocalMediaRepository implements MediaRepository {
   final AppDatabase localDb;
   LocalMediaRepository(this.localDb);
 
+  MediaAssetModel _mapMediaAsset(MediaAsset asset) {
+    return MediaAssetModel(
+      id: asset.id,
+      poiId: asset.poiId,
+      authorId: asset.authorId,
+      localPath: asset.localPath,
+      type: asset.type,
+      remoteUrl: asset.remoteUrl,
+      metadata: asset.metadata,
+      referenceImageId: asset.referenceImageId,
+      createdAt: asset.createdAt,
+      isShared: false,
+    );
+  }
+
+  ReferenceImageModel _mapReferenceImage(ReferenceImage img) {
+    return ReferenceImageModel(
+      id: img.id,
+      poiId: img.poiId,
+      authorId: img.authorId,
+      localPath: img.localPath,
+      remoteUrl: img.remoteUrl,
+      metadata: img.metadata,
+      createdAt: img.createdAt,
+      isShared: false,
+    );
+  }
+
   @override
   Future<void> addMediaAsset(MediaAssetModel asset) async {
     await localDb.insertMediaAsset(
       MediaAssetsCompanion.insert(
         id: asset.id,
         poiId: asset.poiId,
-        authorId: asset.authorId, // Must be added to Drift table
-        localPath: Value(asset.localPath), // Changed from localUri, wrapped in Value for nullable
+        authorId: asset.authorId,
+        localPath: Value(asset.localPath),
         type: asset.type ?? 'unknown', 
         remoteUrl: Value(asset.remoteUrl), 
         metadata: Value(asset.metadata),   
@@ -57,8 +85,8 @@ class LocalMediaRepository implements MediaRepository {
       ReferenceImagesCompanion.insert(
         id: image.id,
         poiId: image.poiId,
-        authorId: image.authorId, // Assumed addition to ReferenceImageModel
-        localPath: Value(image.localPath), // Changed from localUri
+        authorId: image.authorId,
+        localPath: Value(image.localPath),
         remoteUrl: Value(image.remoteUrl), 
         metadata: Value(image.metadata),   
         createdAt: Value(image.createdAt),
@@ -74,46 +102,24 @@ class LocalMediaRepository implements MediaRepository {
   @override
   Stream<List<MediaAssetModel>> watchMediaAssetsByPoi(String poiId) {
     return localDb.watchMediaAssetsByPoi(poiId).map((list) {
-      return list.map((asset) => MediaAssetModel(
-        id: asset.id,
-        poiId: asset.poiId,
-        authorId: asset.authorId, // Mapped from Drift
-        localPath: asset.localPath, // Mapped from Drift
-        type: asset.type, 
-        remoteUrl: asset.remoteUrl, 
-        metadata: asset.metadata,   
-        referenceImageId: asset.referenceImageId,
-        createdAt: asset.createdAt,
-        isShared: false,
-      )).toList();
+      return list.map(_mapMediaAsset).toList();
     });
   }
 
   @override
   Stream<List<ReferenceImageModel>> watchReferenceImagesByPoi(String poiId) {
     return localDb.watchReferenceImagesByPoi(poiId).map((list) {
-      return list.map((img) => ReferenceImageModel(
-        id: img.id,
-        poiId: img.poiId,
-        authorId: img.authorId, // Assumed mapped from Drift
-        localPath: img.localPath, // Mapped from Drift
-        remoteUrl: img.remoteUrl, 
-        metadata: img.metadata,   
-        createdAt: img.createdAt,
-        isShared: false,
-      )).toList();
+      return list.map(_mapReferenceImage).toList();
     });
   }
 
   @override
   Future<void> updateMediaAssetLocalPath(String id, String? newPath) async {
-    // Requires implementation update in localDb
     await localDb.updateMediaAssetLocalPath(id, newPath);
   }
 
   @override
   Future<void> updateReferenceImageLocalPath(String id, String? newPath) async {
-    // Requires implementation update in localDb
     await localDb.updateReferenceImageLocalPath(id, newPath);
   }
 
@@ -124,17 +130,7 @@ class LocalMediaRepository implements MediaRepository {
           ..orderBy([(m) => OrderingTerm.desc(m.id)]))
         .watch()
         .map((rows) {
-          return rows.map((row) => MediaAssetModel(
-            id: row.id,
-            poiId: row.poiId,
-            authorId: row.authorId, // Mapped from Drift
-            type: row.type,
-            localPath: row.localPath, // Mapped from Drift
-            remoteUrl: row.remoteUrl,
-            referenceImageId: row.referenceImageId,
-            metadata: row.metadata,
-            createdAt: row.createdAt,
-          )).toList();
+          return rows.map(_mapMediaAsset).toList();
         });
   }
 }
