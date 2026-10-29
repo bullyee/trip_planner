@@ -38,9 +38,18 @@ void main() async {
     return true; 
   };
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e, st) {
+    AppLogger.error(
+      'Firebase initialization failed — running in local-only mode',
+      error: e,
+      stackTrace: st,
+      name: 'FirebaseInit',
+    );
+  }
 
   // 3. Inject AppProviderObserver into ProviderScope to monitor Riverpod state
   runApp(

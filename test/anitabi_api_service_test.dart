@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -265,6 +264,7 @@ void main() {
 
       final images = await db.select(db.referenceImages).get();
       expect(images, hasLength(1));
+      expect(images.single.authorId, 'user-1');
       expect(images.single.remoteUrl,
           'https://image.anitabi.cn/points/1424/a.jpg?plan=h360');
       expect(File(images.single.localPath!).existsSync(), isTrue);

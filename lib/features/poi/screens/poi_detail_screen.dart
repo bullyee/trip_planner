@@ -578,7 +578,10 @@ class PoiDetailScreen extends ConsumerWidget {
           ],
         ),
       ),
-    );
+    ).whenComplete(() {
+      startController.dispose();
+      endController.dispose();
+    });
   }
 
   Widget _statusIcon(String status) {

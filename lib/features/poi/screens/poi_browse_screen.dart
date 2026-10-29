@@ -335,5 +335,8 @@ void showCreateRoiDialog(BuildContext context) {
         ],
       ),
     ),
-  );
+  ).whenComplete(() {
+    nameController.dispose();
+    descController.dispose();
+  });
 }

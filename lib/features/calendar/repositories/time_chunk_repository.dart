@@ -101,6 +101,7 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
       status: Value(chunk.status ?? 'backlog'),
       sortOrder: Value(chunk.sortOrder),
       duration: Value(chunk.duration),
+      transitDuration: Value(chunk.transitDuration),
       isFixedTime: Value(chunk.isFixedTime),
       syncStatus: Value(SyncStatus.dirty.index),
       lastModifiedAt: Value(DateTime.now()),

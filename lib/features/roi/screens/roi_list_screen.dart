@@ -106,6 +106,9 @@ class RoiListScreen extends ConsumerWidget {
           ),
         ],
       ),
-    );
+    ).whenComplete(() {
+      nameController.dispose();
+      descController.dispose();
+    });
   }
 }
