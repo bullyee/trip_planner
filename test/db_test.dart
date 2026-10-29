@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trip_planner/core/database/database.dart';
+import 'package:trip_planner/features/calendar/models/time_chunk_model.dart';
 import 'package:trip_planner/features/calendar/repositories/time_chunk_repository.dart';
 import 'package:trip_planner/features/poi/repositories/poi_repository.dart';
 
@@ -224,6 +225,42 @@ void main() {
       expect(afterBatchUpdate.transitDuration, 25);
       expect(afterBatchUpdate.hasEverSynced, isTrue);
       expect(afterBatchUpdate.createdAt, 123456789);
+    });
+  });
+
+  group('LocalTimeChunkRepository (#50)', () {
+    test('updateTimeChunk persists transitDuration', () async {
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'chunk-poi-1',
+        authorId: 'test_user',
+        name: 'Test POI',
+        lat: 35.0,
+        lng: 135.0,
+      ));
+
+      final repo = LocalTimeChunkRepository(db);
+      final initialChunk = TimeChunkModel(
+        id: 'test-chunk-1',
+        poiId: 'chunk-poi-1',
+        authorId: 'test_user',
+        duration: 60,
+        transitDuration: 15,
+        status: 'scheduled',
+        isFixedTime: false,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      );
+
+      await repo.addTimeChunk(initialChunk);
+
+      final updatedChunk = initialChunk.copyWith(
+        transitDuration: 45,
+        duration: 90,
+      );
+      await repo.updateTimeChunk(updatedChunk);
+
+      final row = await (db.select(db.timeChunks)..where((t) => t.id.equals('test-chunk-1'))).getSingle();
+      expect(row.transitDuration, 45, reason: 'updateTimeChunk must not drop transitDuration');
+      expect(row.duration, 90);
     });
   });
 }
