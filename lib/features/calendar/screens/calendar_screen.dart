@@ -255,7 +255,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                    Widget gapWidget = const SizedBox.shrink();
                                    if (index > 0) {
                                      final prevChunk = sorted[index - 1];
-                                     final gapInfo = calculateScheduleGap(prevChunk, chunk);
+                                     final gapInfo = calculateScheduleGap(prevChunk, chunk, priorChunks: sorted.sublist(0, index));
                                      if (gapInfo != null) {
                                        if (gapInfo.isConflict) {
                                          gapWidget = Padding(

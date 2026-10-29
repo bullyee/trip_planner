@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import '../../features/calendar/models/time_chunk_model.dart';
 import '../../features/calendar/repositories/time_chunk_repository.dart';
 
@@ -18,18 +19,25 @@ String minutesToTimeString(int totalMinutes) {
 }
 
 /// Converts a "HH:mm" time string into continuous timeline minutes relative to a reference
-/// point, properly handling crossings past midnight.
+/// point (or day start), properly handling crossings past midnight.
 int toContinuousMinutes(String timeString, int referenceMinutes) {
-  int mins = timeStringToMinutes(timeString);
+  final int mins = timeStringToMinutes(timeString);
   final int dayOffset = (referenceMinutes ~/ 1440) * 1440;
-  mins += dayOffset;
-  if (mins < referenceMinutes && (referenceMinutes - mins) > 720) {
-    mins += 1440;
+  int candidate = mins + dayOffset;
+  if (candidate < referenceMinutes) {
+    final int hour = mins ~/ 60;
+    final int refHour = (referenceMinutes % 1440) ~/ 60;
+    // Crosses midnight if the time represents late-night/early-morning hours (00:00 - 05:59)
+    // and reference point is already in the evening/night (>= 18:00),
+    // or if the timeline reference itself is already past midnight (>= 1440).
+    if ((hour < 6 && refHour >= 18) || (referenceMinutes >= 1440)) {
+      candidate += 1440;
+    }
   }
-  return mins;
+  return candidate;
 }
 
-/// Represents the gap or conflict between two consecutive scheduled chunks.
+/// Represents the gap or conflict between two scheduled chunks.
 class ScheduleGapInfo {
   final int gapMinutes;
   final bool isConflict;
@@ -44,24 +52,49 @@ class ScheduleGapInfo {
   });
 }
 
-/// Calculates the gap or conflict between two scheduled chunks, taking transit and
-/// midnight wrap-around into account.
-ScheduleGapInfo? calculateScheduleGap(TimeChunkModel prevChunk, TimeChunkModel currChunk) {
-  final prevEnd = prevChunk.endTime;
+/// Calculates the gap or conflict before [currChunk], optionally taking all [priorChunks]
+/// into account to accurately reflect nested overlaps and multi-card timelines.
+ScheduleGapInfo? calculateScheduleGap(
+  TimeChunkModel prevChunk,
+  TimeChunkModel currChunk, {
+  List<TimeChunkModel>? priorChunks,
+}) {
   final currStart = currChunk.startTime;
-  if (prevEnd == null || prevEnd == '--:--' || currStart == null || currStart == '--:--') {
+  if (currStart == null || currStart == '--:--') {
     return null;
   }
 
-  final int prevStartMinutes = timeStringToMinutes(prevChunk.startTime ?? '00:00');
-  int prevEndMinutes = timeStringToMinutes(prevEnd);
-  if (prevEndMinutes < prevStartMinutes) {
-    prevEndMinutes += 1440;
-  }
-  final int arrivalMinutes = prevEndMinutes + prevChunk.transitDuration;
+  // Determine timeline reference start point
+  final baseList = (priorChunks != null && priorChunks.isNotEmpty)
+      ? priorChunks
+      : [prevChunk];
 
-  final int currStartMinutes = toContinuousMinutes(currStart, prevStartMinutes);
-  final int diff = currStartMinutes - arrivalMinutes;
+  final String dayRefStr = baseList.first.startTime ?? '00:00';
+  final int dayRefMins = timeStringToMinutes(dayRefStr);
+
+  int maxPriorArrival = -1;
+  for (final p in baseList) {
+    final pEnd = p.endTime;
+    if (pEnd == null || pEnd == '--:--') continue;
+    final int pStartMins = toContinuousMinutes(p.startTime ?? '00:00', dayRefMins);
+    int pEndMins = toContinuousMinutes(pEnd, dayRefMins);
+    if (pEndMins < pStartMins) {
+      pEndMins += 1440;
+    }
+    final int pArrival = pEndMins + p.transitDuration;
+    if (pArrival > maxPriorArrival) {
+      maxPriorArrival = pArrival;
+    }
+  }
+
+  if (maxPriorArrival < 0) return null;
+
+  final int currStartMinutes = toContinuousMinutes(currStart, dayRefMins);
+  final int currDuration = currChunk.duration;
+  final int currEndMinutes = currStartMinutes + currDuration;
+  final int currArrivalMinutes = currEndMinutes + currChunk.transitDuration;
+
+  final int diff = currStartMinutes - maxPriorArrival;
 
   if (diff > 0) {
     return ScheduleGapInfo(
@@ -71,10 +104,12 @@ ScheduleGapInfo? calculateScheduleGap(TimeChunkModel prevChunk, TimeChunkModel c
       freeTimeMinutes: diff,
     );
   } else if (diff < 0) {
+    // Conflict overlap is the overlapping time between curr and the preceding occupied timeline
+    final int overlap = math.max(0, math.min(currArrivalMinutes, maxPriorArrival) - currStartMinutes);
     return ScheduleGapInfo(
       gapMinutes: diff,
       isConflict: true,
-      conflictMinutes: -diff,
+      conflictMinutes: overlap,
       freeTimeMinutes: 0,
     );
   } else {
@@ -116,19 +151,30 @@ class ScheduleEngine {
         firstChunk.startTime != '--:--') {
       currentTimeCursor = firstChunk.startTime!;
     } else {
-      final firstStart = firstChunk.startTime;
+      // Find all valid flexible chunk start times
+      final flexibleTimes = sortedChunks
+          .where((c) => !c.isFixedTime && c.startTime != null && c.startTime != '--:--')
+          .map((c) => c.startTime!)
+          .toList();
+
+      String? earliestFlex;
+      if (flexibleTimes.isNotEmpty) {
+        earliestFlex = flexibleTimes.reduce((a, b) => a.compareTo(b) < 0 ? a : b);
+      }
+
       if (firstLocked != null) {
         final lockedMinutes = timeStringToMinutes(firstLocked.startTime!);
         final neededDuration = firstChunk.duration + firstChunk.transitDuration;
-        if (firstStart != null && firstStart != '--:--') {
-          final firstMins = timeStringToMinutes(firstStart);
-          // If first flexible chunk's stored time was after downstream locked chunk
-          // (e.g. dragged from below afternoon locked chunk to top), reset it to start
-          // in the morning (09:00) only if there is adequate room before the locked chunk.
-          if (firstMins >= lockedMinutes && (lockedMinutes - neededDuration >= 540)) {
+
+        if (earliestFlex != null) {
+          final earliestFlexMins = timeStringToMinutes(earliestFlex);
+          // If earliest flex chunk was after downstream locked chunk
+          // (e.g. dragged from below afternoon locked chunk to top),
+          // reset it to 09:00 only if there is room before the locked chunk.
+          if (earliestFlexMins >= lockedMinutes && (lockedMinutes - neededDuration >= 540)) {
             currentTimeCursor = '09:00';
           } else {
-            currentTimeCursor = firstStart;
+            currentTimeCursor = earliestFlex;
           }
         } else {
           if (lockedMinutes - neededDuration >= 540) {
@@ -138,13 +184,17 @@ class ScheduleEngine {
           }
         }
       } else {
-        final validTimes = sortedChunks
-            .map((c) => c.startTime)
-            .where((t) => t != null && t != '--:--')
-            .cast<String>()
-            .toList();
-        if (validTimes.isNotEmpty) {
-          currentTimeCursor = validTimes.reduce((a, b) => a.compareTo(b) < 0 ? a : b);
+        if (earliestFlex != null) {
+          currentTimeCursor = earliestFlex;
+        } else {
+          final validTimes = sortedChunks
+              .map((c) => c.startTime)
+              .where((t) => t != null && t != '--:--')
+              .cast<String>()
+              .toList();
+          if (validTimes.isNotEmpty) {
+            currentTimeCursor = validTimes.reduce((a, b) => a.compareTo(b) < 0 ? a : b);
+          }
         }
       }
     }
@@ -194,12 +244,15 @@ class ScheduleEngine {
     }
 
     // 3. Chronological normalization:
-    // Sort chunks strictly by continuous start minutes so that both time and sortOrder
-    // are in chronological order. Stable sort preserves relative order for chunks starting at identical time.
+    // Sort chunks strictly by continuous start minutes relative to day's start time
+    // so that both time and sortOrder are in chronological order.
+    // Chunks that crossed midnight belong at the end of the day, not before day start.
     final initialCursorMins = timeStringToMinutes(currentTimeCursor);
     calculatedChunks.sort((a, b) {
-      final aStart = toContinuousMinutes(a.startTime ?? '00:00', initialCursorMins);
-      final bStart = toContinuousMinutes(b.startTime ?? '00:00', initialCursorMins);
+      int aStart = timeStringToMinutes(a.startTime ?? '00:00');
+      int bStart = timeStringToMinutes(b.startTime ?? '00:00');
+      if (aStart < 360 && initialCursorMins >= 360) aStart += 1440;
+      if (bStart < 360 && initialCursorMins >= 360) bStart += 1440;
       if (aStart != bStart) {
         return aStart.compareTo(bStart);
       }

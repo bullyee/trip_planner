@@ -471,6 +471,178 @@ void main() {
       expect(updated[1].startTime, '14:40');
       expect(updated[1].endTime, '15:10');
     });
+
+    test('New Issue 1: Reordering flex cards above a locked card preserves earliest flex start', () async {
+      // Repro from review: [A 09:00, B 10:00, C 11:00, L locked 15:00]
+      // Drag B to top: [B (sortOrder 0), A (sortOrder 1), C (sortOrder 2), L (sortOrder 3)]
+      final chunks = [
+        createChunk(
+          id: 'chunk_b',
+          sortOrder: 0,
+          startTime: '10:00',
+          duration: 60,
+          transitDuration: 0,
+        ),
+        createChunk(
+          id: 'chunk_a',
+          sortOrder: 1,
+          startTime: '09:00',
+          duration: 60,
+          transitDuration: 0,
+        ),
+        createChunk(
+          id: 'chunk_c',
+          sortOrder: 2,
+          startTime: '11:00',
+          duration: 60,
+          transitDuration: 0,
+        ),
+        createChunk(
+          id: 'chunk_l',
+          sortOrder: 3,
+          startTime: '15:00',
+          isFixedTime: true,
+          duration: 60,
+          transitDuration: 0,
+        ),
+      ];
+
+      await engine.recalculateDaySchedule(chunks);
+
+      final updated = repository.lastUpdatedChunks;
+      expect(updated.length, 4);
+
+      // B gets 09:00 (earliest flex start), morning 09:00-10:00 is NOT empty
+      expect(updated[0].id, 'chunk_b');
+      expect(updated[0].startTime, '09:00');
+      expect(updated[0].endTime, '10:00');
+
+      // A cascades after B at 10:00
+      expect(updated[1].id, 'chunk_a');
+      expect(updated[1].startTime, '10:00');
+      expect(updated[1].endTime, '11:00');
+
+      // C cascades after A at 11:00
+      expect(updated[2].id, 'chunk_c');
+      expect(updated[2].startTime, '11:00');
+      expect(updated[2].endTime, '12:00');
+
+      // L remains locked at 15:00
+      expect(updated[3].id, 'chunk_l');
+      expect(updated[3].startTime, '15:00');
+      expect(updated[3].endTime, '16:00');
+    });
+
+    test('New Issue 2: Locked morning card dragged between afternoon cards does not wrap into tomorrow', () async {
+      // Repro from review: [L locked 07:30 d60, A 08:30 d300 t60, B d300 t60, C d60]
+      // Drag L between B and C: [A, B, L, C]
+      final chunks = [
+        createChunk(
+          id: 'chunk_a',
+          sortOrder: 1,
+          startTime: '08:30',
+          duration: 300,
+          transitDuration: 60,
+        ),
+        createChunk(
+          id: 'chunk_b',
+          sortOrder: 2,
+          duration: 300,
+          transitDuration: 60,
+        ),
+        createChunk(
+          id: 'chunk_l',
+          sortOrder: 3,
+          startTime: '07:30',
+          isFixedTime: true,
+          duration: 60,
+          transitDuration: 0,
+        ),
+        createChunk(
+          id: 'chunk_c',
+          sortOrder: 4,
+          duration: 60,
+          transitDuration: 0,
+        ),
+      ];
+
+      await engine.recalculateDaySchedule(chunks);
+
+      final updated = repository.lastUpdatedChunks;
+      expect(updated.length, 4);
+
+      // L (07:30) is sorted chronologically at the top, not wrapped to next day
+      expect(updated[0].id, 'chunk_l');
+      expect(updated[0].startTime, '07:30');
+      expect(updated[0].endTime, '08:30');
+
+      // A starts at 08:30 -> 13:30, arrival 14:30
+      expect(updated[1].id, 'chunk_a');
+      expect(updated[1].startTime, '08:30');
+      expect(updated[1].endTime, '13:30');
+
+      // B starts at 14:30 -> 19:30, arrival 20:30
+      expect(updated[2].id, 'chunk_b');
+      expect(updated[2].startTime, '14:30');
+      expect(updated[2].endTime, '19:30');
+
+      // C cascades after B at 20:30 -> 21:30 (does NOT land on top of A at 08:30)
+      expect(updated[3].id, 'chunk_c');
+      expect(updated[3].startTime, '20:30');
+      expect(updated[3].endTime, '21:30');
+    });
+
+    test('Partly Resolved 2: Day starting before noon and running past midnight keeps 00:00 chunk at end', () async {
+      // Repro from review: [A 09:00 d300 t60, B d300 t60, C d180, D d60]
+      final chunks = [
+        createChunk(
+          id: 'chunk_a',
+          sortOrder: 1,
+          startTime: '09:00',
+          duration: 300,
+          transitDuration: 60, // 09:00 -> 14:00, arrival 15:00
+        ),
+        createChunk(
+          id: 'chunk_b',
+          sortOrder: 2,
+          duration: 300,
+          transitDuration: 60, // 15:00 -> 20:00, arrival 21:00
+        ),
+        createChunk(
+          id: 'chunk_c',
+          sortOrder: 3,
+          duration: 180,
+          transitDuration: 0, // 21:00 -> 24:00 (00:00)
+        ),
+        createChunk(
+          id: 'chunk_d',
+          sortOrder: 4,
+          duration: 60,
+          transitDuration: 0, // 00:00 -> 01:00
+        ),
+      ];
+
+      await engine.recalculateDaySchedule(chunks);
+
+      final updated = repository.lastUpdatedChunks;
+      expect(updated.length, 4);
+
+      // A stays at the top
+      expect(updated[0].id, 'chunk_a');
+      expect(updated[0].startTime, '09:00');
+
+      expect(updated[1].id, 'chunk_b');
+      expect(updated[1].startTime, '15:00');
+
+      expect(updated[2].id, 'chunk_c');
+      expect(updated[2].startTime, '21:00');
+      expect(updated[2].endTime, '00:00');
+
+      // D (00:00 - 01:00) remains at the end of the day, not sorted before A
+      expect(updated[3].id, 'chunk_d');
+      expect(updated[3].startTime, '00:00');
+      expect(updated[3].endTime, '01:00');
+    });
   });
 
   group('calculateScheduleGap conflict and free time pill calculations', () {
@@ -583,6 +755,50 @@ void main() {
       expect(gap!.isConflict, isTrue);
       expect(gap.conflictMinutes, 15); // 00:15 arrival vs 00:00 start = 15m conflict
       expect(gap.freeTimeMinutes, 0);
+    });
+
+    test('Partly Resolved 1: Multi-card timeline calculates exact nested overlap and free time', () {
+      // Repro from review: [A flex 09:00 d180, L locked 10:00 d30, B flex 12:00 d60]
+      final chunkA = createChunk(
+        id: 'chunk_a',
+        sortOrder: 1,
+        startTime: '09:00',
+        endTime: '12:00',
+        duration: 180,
+        transitDuration: 0,
+      );
+      final chunkL = createChunk(
+        id: 'chunk_l',
+        sortOrder: 2,
+        startTime: '10:00',
+        endTime: '10:30',
+        duration: 30,
+        transitDuration: 0,
+        isFixedTime: true,
+      );
+      final chunkB = createChunk(
+        id: 'chunk_b',
+        sortOrder: 3,
+        startTime: '12:00',
+        endTime: '13:00',
+        duration: 60,
+        transitDuration: 0,
+      );
+
+      // Above L: prior is [A], overlap with A [09:00-12:00] is exactly 30m (not 120m)
+      final gapL = calculateScheduleGap(chunkA, chunkL, priorChunks: [chunkA]);
+      expect(gapL, isNotNull);
+      expect(gapL!.isConflict, isTrue);
+      expect(gapL.conflictMinutes, 30);
+      expect(gapL.freeTimeMinutes, 0);
+
+      // Above B: prior is [A, L], timeline is occupied until 12:00 by A, so B starts right on time
+      final gapB = calculateScheduleGap(chunkL, chunkB, priorChunks: [chunkA, chunkL]);
+      expect(gapB, isNotNull);
+      expect(gapB!.isConflict, isFalse);
+      expect(gapB.gapMinutes, 0);
+      expect(gapB.freeTimeMinutes, 0);
+      expect(gapB.conflictMinutes, 0);
     });
   });
 }
