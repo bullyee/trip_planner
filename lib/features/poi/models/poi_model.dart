@@ -21,6 +21,12 @@ class PoiModel {
   final int createdAt;
   final bool isShared;
 
+  // Dual-track sync & dirty tracking fields (#45)
+  final int syncStatus;
+  final bool isDeleted;
+  final bool hasEverSynced;
+  final DateTime? lastModifiedAt;
+
   PoiModel({
     required this.id,
     this.roiId,
@@ -37,6 +43,10 @@ class PoiModel {
     this.sortOrder = 0, // Default value to prevent mapping errors from older data
     required this.createdAt,
     this.isShared = false,
+    this.syncStatus = 0,
+    this.isDeleted = false,
+    this.hasEverSynced = false,
+    this.lastModifiedAt,
   });
 
   // ADDED: Essential for Optimistic UI updates and state management in Riverpod
@@ -56,6 +66,10 @@ class PoiModel {
     int? sortOrder,
     int? createdAt,
     bool? isShared,
+    int? syncStatus,
+    bool? isDeleted,
+    bool? hasEverSynced,
+    DateTime? lastModifiedAt,
   }) {
     return PoiModel(
       id: id ?? this.id,
@@ -73,6 +87,10 @@ class PoiModel {
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       isShared: isShared ?? this.isShared,
+      syncStatus: syncStatus ?? this.syncStatus,
+      isDeleted: isDeleted ?? this.isDeleted,
+      hasEverSynced: hasEverSynced ?? this.hasEverSynced,
+      lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
     );
   }
 }

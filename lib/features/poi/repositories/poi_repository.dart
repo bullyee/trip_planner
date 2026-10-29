@@ -65,6 +65,10 @@ class LocalPoiRepository implements PoiRepository {
       sortOrder: Value(poi.sortOrder),
       createdAt: Value(poi.createdAt),
       isShared: Value(poi.isShared),
+      syncStatus: const Value(1), // SyncStatus.dirty
+      isDeleted: Value(poi.isDeleted),
+      hasEverSynced: Value(poi.hasEverSynced),
+      lastModifiedAt: Value(DateTime.now()),
     );
     
     await localDb.updatePoi(companion); 
@@ -100,6 +104,10 @@ class LocalPoiRepository implements PoiRepository {
           // CRITICAL: Preserve original ownership and sync status during an update
           authorId: Value(currentPoi.authorId),
           isShared: Value(currentPoi.isShared),
+          syncStatus: const Value(1), // SyncStatus.dirty
+          hasEverSynced: Value(currentPoi.hasEverSynced),
+          isDeleted: Value(currentPoi.isDeleted),
+          lastModifiedAt: Value(DateTime.now()),
         );
         
         await localDb.updatePoi(updateCompanion);
@@ -125,6 +133,10 @@ class LocalPoiRepository implements PoiRepository {
           authorId: currentUserId, 
           // Default to false since it's a local draft until synced
           isShared: const Value(false), 
+          syncStatus: const Value(1), // SyncStatus.dirty
+          isDeleted: const Value(false),
+          hasEverSynced: const Value(false),
+          lastModifiedAt: Value(DateTime.now()),
         );
         
         await localDb.insertPoi(insertCompanion);
@@ -164,6 +176,10 @@ class LocalPoiRepository implements PoiRepository {
       sortOrder: driftPoi.sortOrder,
       createdAt: driftPoi.createdAt,
       isShared: driftPoi.isShared,
+      syncStatus: driftPoi.syncStatus,
+      isDeleted: driftPoi.isDeleted,
+      hasEverSynced: driftPoi.hasEverSynced,
+      lastModifiedAt: driftPoi.lastModifiedAt,
     );
   }
 
@@ -209,24 +225,7 @@ class LocalPoiRepository implements PoiRepository {
 
   @override
   Stream<List<PoiModel>> watchPoisByAnime(String animeId) {
-    return localDb.watchPoisByAnime(animeId).map((rows) {
-      return rows.map((row) => PoiModel(
-        id: row.id,
-        roiId: row.roiId,
-        authorId: row.authorId,
-        name: row.name,
-        description: row.description,
-        address: row.address,
-        lat: row.lat,
-        lng: row.lng,
-        businessHours: row.businessHours,
-        contactInfo: row.contactInfo,
-        localCoverImagePath: row.localCoverImagePath,
-        remoteCoverImageUrl: row.remoteCoverImageUrl,
-        createdAt: row.createdAt, 
-        isShared: false, 
-      )).toList();
-    });
+    return localDb.watchPoisByAnime(animeId).map((rows) => rows.map(_mapPoi).toList());
   }
 
   @override
@@ -236,24 +235,7 @@ class LocalPoiRepository implements PoiRepository {
 
   @override
   Stream<List<PoiModel>> watchPoisByTag(String tagId) {
-    return localDb.watchPoisByTag(tagId).map((rows) {
-      return rows.map((row) => PoiModel(
-        id: row.id,
-        roiId: row.roiId,
-        authorId: row.authorId,
-        name: row.name,
-        description: row.description,
-        address: row.address,
-        lat: row.lat,
-        lng: row.lng,
-        businessHours: row.businessHours,
-        contactInfo: row.contactInfo,
-        localCoverImagePath: row.localCoverImagePath,
-        remoteCoverImageUrl: row.remoteCoverImageUrl,
-        createdAt: row.createdAt,
-        isShared: false,
-      )).toList();
-    });
+    return localDb.watchPoisByTag(tagId).map((rows) => rows.map(_mapPoi).toList());
   }
 
   @override

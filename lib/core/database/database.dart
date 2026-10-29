@@ -23,7 +23,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -53,6 +53,12 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 8) {
             await _migrateToAdvancedSyncSchema(m);
+          }
+          if (from < 9) {
+            await m.addColumn(pois, pois.syncStatus);
+            await m.addColumn(pois, pois.isDeleted);
+            await m.addColumn(pois, pois.hasEverSynced);
+            await m.addColumn(pois, pois.lastModifiedAt);
           }
         },
         beforeOpen: (details) async {
@@ -313,22 +319,24 @@ class AppDatabase extends _$AppDatabase {
   }
   
   Future<List<Poi>> getPoisByRoi(String roiId) =>
-      (select(pois)..where((p) => p.roiId.equals(roiId))).get();
+      (select(pois)..where((p) => p.roiId.equals(roiId) & p.isDeleted.equals(false))).get();
 
   Future<List<Poi>> getPoisByDate(String date) {
     final query = select(pois).join([
       innerJoin(timeChunks, timeChunks.poiId.equalsExp(pois.id)),
     ])
-      ..where(timeChunks.date.equals(date))
+      ..where(timeChunks.date.equals(date) &
+          timeChunks.isDeleted.equals(false) &
+          pois.isDeleted.equals(false))
       ..groupBy([pois.id]);
     return query.map((row) => row.readTable(pois)).get();
   }
 
   Stream<List<Poi>> watchPoisByRoi(String roiId) =>
-      (select(pois)..where((p) => p.roiId.equals(roiId))).watch();
+      (select(pois)..where((p) => p.roiId.equals(roiId) & p.isDeleted.equals(false))).watch();
 
   Stream<List<Poi>> watchPoisWithoutRoi() =>
-      (select(pois)..where((p) => p.roiId.isNull())).watch();
+      (select(pois)..where((p) => p.roiId.isNull() & p.isDeleted.equals(false))).watch();
 
   Future<Poi> getPoiById(String id) =>
       (select(pois)..where((p) => p.id.equals(id))).getSingle();
@@ -336,22 +344,48 @@ class AppDatabase extends _$AppDatabase {
   Stream<Poi?> watchPoiById(String id) =>
       (select(pois)..where((p) => p.id.equals(id))).watchSingleOrNull();
 
-  Stream<List<Poi>> watchAllPois() => select(pois).watch();
+  Stream<List<Poi>> watchAllPois() => (select(pois)..where((p) => p.isDeleted.equals(false))).watch();
 
   Future<int> insertPoi(PoisCompanion poi) => into(pois).insert(poi);
 
   Future<bool> updatePoi(PoisCompanion poi) => update(pois).replace(poi);
 
-  Future<List<Poi>> getAllPois() => select(pois).get();
+  Future<List<Poi>> getAllPois() => (select(pois)..where((p) => p.isDeleted.equals(false))).get();
 
   Future<int> deletePoi(String id) {
     return transaction(() async {
-      await (delete(mediaAssets)..where((m) => m.poiId.equals(id))).go();
-      await (delete(referenceImages)..where((r) => r.poiId.equals(id))).go();
-      await (delete(timeChunks)..where((t) => t.poiId.equals(id))).go();
-      await (delete(poiAnimes)..where((pa) => pa.poiId.equals(id))).go();
-      await (delete(poiTags)..where((pt) => pt.poiId.equals(id))).go();
-      return (delete(pois)..where((p) => p.id.equals(id))).go();
+      final poi = await (select(pois)..where((p) => p.id.equals(id))).getSingleOrNull();
+      if (poi != null && poi.hasEverSynced) {
+        await (update(pois)..where((p) => p.id.equals(id))).write(
+          PoisCompanion(
+            isDeleted: const Value(true),
+            syncStatus: Value(SyncStatus.dirty.index),
+            lastModifiedAt: Value(DateTime.now()),
+          ),
+        );
+        final chunks = await (select(timeChunks)..where((t) => t.poiId.equals(id))).get();
+        for (final c in chunks) {
+          if (c.hasEverSynced) {
+            await (update(timeChunks)..where((t) => t.id.equals(c.id))).write(
+              TimeChunksCompanion(
+                isDeleted: const Value(true),
+                syncStatus: Value(SyncStatus.dirty.index),
+                lastModifiedAt: Value(DateTime.now()),
+              ),
+            );
+          } else {
+            await (delete(timeChunks)..where((t) => t.id.equals(c.id))).go();
+          }
+        }
+        return 1;
+      } else {
+        await (delete(mediaAssets)..where((m) => m.poiId.equals(id))).go();
+        await (delete(referenceImages)..where((r) => r.poiId.equals(id))).go();
+        await (delete(timeChunks)..where((t) => t.poiId.equals(id))).go();
+        await (delete(poiAnimes)..where((pa) => pa.poiId.equals(id))).go();
+        await (delete(poiTags)..where((pt) => pt.poiId.equals(id))).go();
+        return (delete(pois)..where((p) => p.id.equals(id))).go();
+      }
     });
   }
 
@@ -498,7 +532,7 @@ class AppDatabase extends _$AppDatabase {
     final query = select(pois).join([
       innerJoin(poiAnimes, poiAnimes.poiId.equalsExp(pois.id)),
     ])
-      ..where(poiAnimes.animeId.equals(animeId))
+      ..where(poiAnimes.animeId.equals(animeId) & pois.isDeleted.equals(false))
       ..orderBy([OrderingTerm.asc(pois.name)]);
     return query.watch().map(
           (rows) => rows.map((r) => r.readTable(pois)).toList(),
@@ -552,7 +586,7 @@ class AppDatabase extends _$AppDatabase {
     final query = select(pois).join([
       innerJoin(poiTags, poiTags.poiId.equalsExp(pois.id)),
     ])
-      ..where(poiTags.tagId.equals(tagId))
+      ..where(poiTags.tagId.equals(tagId) & pois.isDeleted.equals(false))
       ..orderBy([OrderingTerm.asc(pois.name)]);
     return query.watch().map(
           (rows) => rows.map((r) => r.readTable(pois)).toList(),

@@ -100,11 +100,26 @@ class LocalRoiRepository implements RoiRepository {
 
   @override
   Future<void> enableCloudSyncForRoi(String roiId) async {
-    await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
-      const RoisCompanion(
-        isShared: Value(true),
-      ),
-    );
+    await localDb.transaction(() async {
+      await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
+        const RoisCompanion(
+          isShared: Value(true),
+        ),
+      );
+      await (localDb.update(localDb.pois)..where((p) => p.roiId.equals(roiId) & p.isDeleted.equals(false))).write(
+        const PoisCompanion(
+          syncStatus: Value(1), // SyncStatus.dirty
+        ),
+      );
+      final poiIds = (await localDb.getPoisByRoi(roiId)).map((p) => p.id).toList();
+      if (poiIds.isNotEmpty) {
+        await (localDb.update(localDb.timeChunks)..where((t) => t.poiId.isIn(poiIds) & t.isDeleted.equals(false))).write(
+          const TimeChunksCompanion(
+            syncStatus: Value(1), // SyncStatus.dirty
+          ),
+        );
+      }
+    });
   }
 }
 

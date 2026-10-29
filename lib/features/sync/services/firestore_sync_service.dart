@@ -74,27 +74,27 @@ class FirestoreSyncService {
     }
   }
 
-  /// POIs are pushed as a full snapshot (set+merge) rather than dirty-tracked,
-  /// so this always writes the current local state. `localCoverImagePath` is
-  /// intentionally omitted — it's a device-local file path, meaningless to
-  /// other devices; only the remote URL is shared.
   void buildPoiBatchOperations(WriteBatch batch, dynamic poi, String roiId) {
     final docRef = _db.collection('trips').doc(roiId).collection('pois').doc(poi.id);
-    batch.set(docRef, {
-      'id': poi.id,
-      'roiId': roiId,
-      'authorId': poi.authorId,
-      'name': poi.name,
-      'description': poi.description,
-      'address': poi.address,
-      'lat': poi.lat,
-      'lng': poi.lng,
-      'businessHours': poi.businessHours,
-      'contactInfo': poi.contactInfo,
-      'remoteCoverImageUrl': poi.remoteCoverImageUrl,
-      'sortOrder': poi.sortOrder,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    if (poi.isDeleted == true) {
+      batch.delete(docRef);
+    } else {
+      batch.set(docRef, {
+        'id': poi.id,
+        'roiId': roiId,
+        'authorId': poi.authorId,
+        'name': poi.name,
+        'description': poi.description,
+        'address': poi.address,
+        'lat': poi.lat,
+        'lng': poi.lng,
+        'businessHours': poi.businessHours,
+        'contactInfo': poi.contactInfo,
+        'remoteCoverImageUrl': poi.remoteCoverImageUrl,
+        'sortOrder': poi.sortOrder,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
   }
 
   Future<List<Map<String, dynamic>>> fetchTripPois(String roiId) async {
@@ -122,20 +122,32 @@ class FirestoreSyncService {
     
     final snapshot = await docRef.get();
     if (snapshot.exists) {
-      // Already initialized on the cloud. 
-      // Could happen if another user invited them, but locally it wasn't marked shared yet.
       return; 
     }
 
     await docRef.set({
       'id': roiId,
-      'name': tripName, // Optional metadata for cloud listing
+      'name': tripName,
       'authorId': userId,
-      'members': [userId], // Critical for Firestore Security Rules
-      'cloudVersion': 0,   // Start at 0 so the first local push (local==0) is
-                           // not rejected as obsolete; that push bumps it to 1.
+      'members': [userId],
+      'cloudVersion': 0,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
-}
 
+  Stream<List<Map<String, dynamic>>> watchUserTrips(String userId) {
+    return _db
+        .collection('trips')
+        .where('members', arrayContains: userId)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => doc.data()).toList());
+  }
+
+  Stream<Map<String, dynamic>?> watchTrip(String roiId) {
+    return _db
+        .collection('trips')
+        .doc(roiId)
+        .snapshots()
+        .map((snapshot) => snapshot.data());
+  }
+}

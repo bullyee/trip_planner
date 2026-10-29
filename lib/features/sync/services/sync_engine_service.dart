@@ -1,15 +1,11 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show WriteBatch;
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/database/database.dart';
 import '../../../../core/database/tables.dart';
-import '../../auth/providers/auth_provider.dart';
-import '../../../../core/providers/database_provider.dart';
-import '../providers/firestore_sync_provider.dart';
 import 'firestore_sync_service.dart';
 
 class SyncEngineService {
@@ -17,7 +13,9 @@ class SyncEngineService {
   final FirestoreSyncService firestoreSync;
   final String currentUserId;
 
-  StreamSubscription? _globalSyncSub;
+  StreamSubscription? _globalChunkSyncSub;
+  StreamSubscription? _globalPoiSyncSub;
+  StreamSubscription? _downstreamSub;
   Timer? _debounceTimer;
 
   SyncEngineService({
@@ -27,68 +25,121 @@ class SyncEngineService {
   });
 
   void startSync() {
-    debugPrint('[SyncEngine] Starting global background sync orchestrator...');
-    
-    final query = localDb.select(localDb.timeChunks).join([
+    debugPrint('[SyncEngine] Starting global bidirectional sync orchestrator...');
+
+    // 1. Upstream Chunk Watcher: watches dirty TimeChunks in shared trips
+    final chunkQuery = localDb.select(localDb.timeChunks).join([
       innerJoin(localDb.pois, localDb.pois.id.equalsExp(localDb.timeChunks.poiId)),
       innerJoin(localDb.rois, localDb.rois.id.equalsExp(localDb.pois.roiId)),
     ])
-      ..where(localDb.timeChunks.syncStatus.equals(SyncStatus.dirty.index) & 
+      ..where(localDb.timeChunks.syncStatus.equals(SyncStatus.dirty.index) &
               localDb.rois.isShared.equals(true));
 
-    _globalSyncSub = query.watch().listen((rows) {
+    _globalChunkSyncSub = chunkQuery.watch().listen((rows) {
       if (rows.isEmpty) return;
-
-      if (currentUserId.isEmpty || currentUserId == 'guest_local_user') {
-        return;
-      }
+      if (currentUserId.isEmpty || currentUserId == 'guest_local_user') return;
 
       final dirtyChunks = rows.map((row) => row.readTable(localDb.timeChunks)).toList();
-
-      _debounceTimer?.cancel();
-      _debounceTimer = Timer(const Duration(seconds: 2), () async {
-        await _processGlobalDirtyChunks(dirtyChunks);
-      });
+      _scheduleDebouncedPush(dirtyChunks: dirtyChunks);
     });
+
+    // 2. Upstream POI Watcher: watches dirty POIs in shared trips (#45)
+    final poiQuery = localDb.select(localDb.pois).join([
+      innerJoin(localDb.rois, localDb.rois.id.equalsExp(localDb.pois.roiId)),
+    ])
+      ..where(localDb.pois.syncStatus.equals(SyncStatus.dirty.index) &
+              localDb.rois.isShared.equals(true));
+
+    _globalPoiSyncSub = poiQuery.watch().listen((rows) {
+      if (rows.isEmpty) return;
+      if (currentUserId.isEmpty || currentUserId == 'guest_local_user') return;
+
+      final dirtyPois = rows.map((row) => row.readTable(localDb.pois)).toList();
+      _scheduleDebouncedPush(dirtyPois: dirtyPois);
+    });
+
+    // 3. Downstream Pull Listener: watches Firestore shared trips (#45)
+    if (currentUserId.isNotEmpty && currentUserId != 'guest_local_user') {
+      _downstreamSub = firestoreSync.watchUserTrips(currentUserId).listen((trips) async {
+        for (final remoteTrip in trips) {
+          final roiId = remoteTrip['id'] as String?;
+          if (roiId == null || roiId.isEmpty) continue;
+
+          final remoteVersion = (remoteTrip['cloudVersion'] as num?)?.toInt() ?? 0;
+          try {
+            final localRoi = await (localDb.select(localDb.rois)
+                  ..where((r) => r.id.equals(roiId)))
+                .getSingleOrNull();
+
+            if (localRoi == null) {
+              // Remote trip newly shared with user — create local ROI and pull down
+              await localDb.into(localDb.rois).insert(RoisCompanion(
+                    id: Value(roiId),
+                    name: Value(remoteTrip['name'] as String? ?? 'Shared Trip'),
+                    authorId: Value(remoteTrip['authorId'] as String? ?? currentUserId),
+                    isShared: const Value(true),
+                    cloudVersion: const Value(0),
+                  ));
+              await executePull(roiId);
+            } else if (localRoi.isShared && remoteVersion > localRoi.cloudVersion) {
+              // Remote version bumped by collaborator — trigger downstream pull
+              debugPrint('[SyncEngine] Remote version bump detected ($remoteVersion > ${localRoi.cloudVersion}) for trip $roiId. Pulling...');
+              await executePull(roiId);
+            }
+          } catch (e) {
+            debugPrint('[SyncEngine] Downstream sync error for trip $roiId: $e');
+          }
+        }
+      });
+    }
   }
 
   void stopSync() {
     debugPrint('[SyncEngine] Stopping global sync orchestrator...');
-    _globalSyncSub?.cancel();
+    _globalChunkSyncSub?.cancel();
+    _globalPoiSyncSub?.cancel();
+    _downstreamSub?.cancel();
     _debounceTimer?.cancel();
   }
 
-  Future<void> _processGlobalDirtyChunks(List<TimeChunk> dirtyChunks) async {
-    try {
-      final poiIds = dirtyChunks.map((c) => c.poiId).toSet().toList();
-      if (poiIds.isEmpty) return;
+  void _scheduleDebouncedPush({
+    List<TimeChunk>? dirtyChunks,
+    List<Poi>? dirtyPois,
+  }) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(seconds: 2), () async {
+      final affectedRoiIds = <String>{};
 
-      final affectedPois = await (localDb.select(localDb.pois)
-        ..where((p) => p.id.isIn(poiIds))).get();
-      
-      final affectedRoiIds = affectedPois
-          .map((p) => p.roiId)
-          .whereType<String>()
-          .toSet();
+      if (dirtyChunks != null && dirtyChunks.isNotEmpty) {
+        final poiIds = dirtyChunks.map((c) => c.poiId).toSet().toList();
+        final pois = await (localDb.select(localDb.pois)
+              ..where((p) => p.id.isIn(poiIds)))
+            .get();
+        affectedRoiIds.addAll(pois.map((p) => p.roiId).whereType<String>());
+      }
+
+      if (dirtyPois != null && dirtyPois.isNotEmpty) {
+        affectedRoiIds.addAll(dirtyPois.map((p) => p.roiId).whereType<String>());
+      }
 
       for (final roiId in affectedRoiIds) {
-        final roi = await localDb.getRoiById(roiId);
-        if (roi.isShared) {
-          debugPrint('[SyncEngine] Auto-triggering push for SHARED Trip: $roiId');
-          await executePush(roiId);
+        try {
+          final roi = await localDb.getRoiById(roiId);
+          if (roi.isShared) {
+            debugPrint('[SyncEngine] Auto-triggering push for SHARED Trip: $roiId');
+            await executePush(roiId);
+          }
+        } catch (e) {
+          debugPrint('[SyncEngine] Auto-push failed for trip $roiId: $e');
         }
       }
-    } catch (e) {
-      debugPrint('[SyncEngine] Auto-push failed: $e');
-    }
+    });
   }
 
   Future<void> executePush(String roiId) async {
     // Self-heal: if the cloud trip is missing (never initialized, or deleted
     // out-of-band), re-create it and re-arm this trip's local data for a full
-    // re-push. Without this, a deleted trip can never be re-uploaded because
-    // the chunks are already marked 'synced' and acquireLock fails on a doc
-    // that no longer exists.
+    // re-push.
     if (!await firestoreSync.tripExists(roiId)) {
       final roi = await localDb.getRoiById(roiId);
       await firestoreSync.initializeCloudTrip(roiId, currentUserId, roi.name);
@@ -103,18 +154,20 @@ class SyncEngineService {
       final roiRecord = await localDb.getRoiById(roiId);
       final localVersion = roiRecord.cloudVersion;
 
-      if (cloudVersion > localVersion) throw Exception('Local version obsolete.');
+      // Bidirectional convergence: if remote is ahead, pull remote updates first
+      // so local edits merge on top rather than clobbering remote changes (#45)
+      if (cloudVersion > localVersion) {
+        debugPrint('[SyncEngine] Local version ($localVersion) behind cloud ($cloudVersion). Merging downstream first...');
+        await executePull(roiId);
+      }
 
-      final dirtyData = await _fetchDirtyRecords(roiId);
-      final pois = await localDb.getPoisByRoi(roiId);
+      final dirtyChunks = await _fetchDirtyRecords(roiId);
+      final dirtyPois = await _fetchDirtyPois(roiId);
 
-      // Combined op list: full POI snapshot + dirty time-chunk ops, split into
-      // Firestore-batch-sized groups. Only the final batch bumps the version
-      // and releases the lock so the whole push commits atomically per batch.
       final ops = <void Function(WriteBatch)>[
-        for (final poi in pois)
+        for (final poi in dirtyPois)
           (b) => firestoreSync.buildPoiBatchOperations(b, poi, roiId),
-        for (final chunk in dirtyData)
+        for (final chunk in dirtyChunks)
           (b) => firestoreSync.buildBatchOperations(b, chunk, roiId),
       ];
 
@@ -123,6 +176,9 @@ class SyncEngineService {
         return;
       }
 
+      final currentVersion = await firestoreSync.fetchTripVersion(roiId);
+      final nextVersion = currentVersion + 1;
+
       final batches = _splitIntoBatches(ops, 490);
       for (int i = 0; i < batches.length; i++) {
         final batch = firestoreSync.createBatch();
@@ -130,16 +186,13 @@ class SyncEngineService {
           op(batch);
         }
         if (i == batches.length - 1) {
-          firestoreSync.appendVersionBumpAndLockRelease(batch, roiId, cloudVersion + 1);
+          firestoreSync.appendVersionBumpAndLockRelease(batch, roiId, nextVersion);
         }
         await firestoreSync.commitBatch(batch);
       }
 
-      await _postPushLocalCleanup(roiId, dirtyData, cloudVersion + 1);
+      await _postPushLocalCleanup(roiId, dirtyChunks, dirtyPois, nextVersion);
     } catch (e) {
-      // We bailed before the final batch released the lock server-side, so the
-      // lock would otherwise linger until its TTL expires. Best-effort release
-      // (don't let a release failure mask the original error).
       try {
         await firestoreSync.releaseLock(roiId);
       } catch (_) {}
@@ -152,46 +205,85 @@ class SyncEngineService {
     try {
       final cloudVersion = await firestoreSync.fetchTripVersion(roiId);
       final roiRecord = await localDb.getRoiById(roiId);
-      
-      if (roiRecord.cloudVersion == cloudVersion) return;
+
+      if (roiRecord.cloudVersion >= cloudVersion) return;
 
       final cloudData = await firestoreSync.fetchTripData(roiId);
       final cloudPois = await firestoreSync.fetchTripPois(roiId);
 
       await localDb.transaction(() async {
-        for (final remoteChunk in cloudData) {
-          final chunkId = remoteChunk['id'] as String;
-          final isRemoteDeleted = remoteChunk['isDeleted'] as bool? ?? false;
-          
-          final localChunk = await (localDb.select(localDb.timeChunks)
-            ..where((t) => t.id.equals(chunkId))).getSingleOrNull();
+        // --- 1. Downstream POI Synchronization ---
+        final remotePoiIds = cloudPois.map((p) => p['id'] as String).toSet();
+        final localPois = await (localDb.select(localDb.pois)
+              ..where((p) => p.roiId.equals(roiId)))
+            .get();
 
-          if (localChunk == null) {
-            if (!isRemoteDeleted) await _insertCloudData(remoteChunk);
-            continue;
-          }
-
-          final isLocalDirty = localChunk.syncStatus == SyncStatus.dirty.index;
-
-          if (isRemoteDeleted) {
-            if (isLocalDirty) {
-              await _stashLocalEffort(localChunk);
+        // Detect remote POI deletions (#45)
+        for (final localPoi in localPois) {
+          if (!remotePoiIds.contains(localPoi.id) && localPoi.hasEverSynced) {
+            if (localPoi.syncStatus == SyncStatus.dirty.index) {
+              // Local has unsynced edits: unassign from shared trip to preserve user effort
+              await (localDb.update(localDb.pois)..where((p) => p.id.equals(localPoi.id))).write(
+                const PoisCompanion(roiId: Value(null)),
+              );
             } else {
-              await (localDb.delete(localDb.timeChunks)..where((t) => t.id.equals(chunkId))).go();
-            }
-          } else {
-            if (isLocalDirty) {
-              await _stashLocalEffort(localChunk);
-              await _insertCloudData(remoteChunk);
-            } else {
-              await _updateCloudData(remoteChunk);
+              // Safe to cascade delete locally
+              await localDb.deletePoi(localPoi.id);
             }
           }
         }
+
+        // Upsert remote POIs
         for (final remotePoi in cloudPois) {
           await _upsertCloudPoi(roiId, remotePoi);
         }
 
+        // --- 2. Downstream TimeChunk Synchronization ---
+        final remoteChunkIds = cloudData.map((c) => c['id'] as String).toSet();
+        final currentPois = await (localDb.select(localDb.pois)
+              ..where((p) => p.roiId.equals(roiId)))
+            .get();
+        final currentPoiIds = currentPois.map((p) => p.id).toSet();
+
+        final localChunks = currentPoiIds.isEmpty
+            ? <TimeChunk>[]
+            : await (localDb.select(localDb.timeChunks)
+                  ..where((t) => t.poiId.isIn(currentPoiIds)))
+                .get();
+
+        // Detect remote TimeChunk deletions (#45)
+        for (final localChunk in localChunks) {
+          if (!remoteChunkIds.contains(localChunk.id) && localChunk.hasEverSynced) {
+            if (localChunk.syncStatus == SyncStatus.dirty.index) {
+              await _stashLocalEffort(localChunk);
+            } else {
+              await (localDb.delete(localDb.timeChunks)..where((t) => t.id.equals(localChunk.id))).go();
+            }
+          }
+        }
+
+        // Upsert / update remote TimeChunks
+        for (final remoteChunk in cloudData) {
+          final chunkId = remoteChunk['id'] as String;
+          final localChunk = await (localDb.select(localDb.timeChunks)
+                ..where((t) => t.id.equals(chunkId)))
+              .getSingleOrNull();
+
+          if (localChunk == null) {
+            await _insertCloudData(remoteChunk);
+            continue;
+          }
+
+          final isLocalDirty = localChunk.syncStatus == SyncStatus.dirty.index;
+          if (isLocalDirty) {
+            await _stashLocalEffort(localChunk);
+            await _insertCloudData(remoteChunk);
+          } else {
+            await _updateCloudData(remoteChunk);
+          }
+        }
+
+        // --- 3. Update Local ROI Cloud Version ---
         await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
           RoisCompanion(cloudVersion: Value(cloudVersion)),
         );
@@ -202,11 +294,21 @@ class SyncEngineService {
     }
   }
 
-  /// Upserts a POI pulled from the cloud. `localCoverImagePath`/`createdAt` are
-  /// left absent so a local-only cover path and original timestamp survive.
+  /// Upserts a POI pulled from the cloud.
+  /// Preserves device-local cover image path and does not overwrite local dirty edits.
   Future<void> _upsertCloudPoi(String roiId, Map<String, dynamic> data) async {
+    final poiId = data['id'] as String;
+    final existing = await (localDb.select(localDb.pois)
+          ..where((p) => p.id.equals(poiId)))
+        .getSingleOrNull();
+
+    // If local POI has unpushed edits, let local edits take precedence until pushed
+    if (existing != null && existing.syncStatus == SyncStatus.dirty.index) {
+      return;
+    }
+
     await localDb.into(localDb.pois).insertOnConflictUpdate(PoisCompanion(
-          id: Value(data['id'] as String),
+          id: Value(poiId),
           roiId: Value(roiId),
           authorId: Value(data['authorId'] as String? ?? currentUserId),
           name: Value(data['name'] as String? ?? 'Unnamed'),
@@ -217,18 +319,24 @@ class SyncEngineService {
           businessHours: Value(data['businessHours'] as String?),
           contactInfo: Value(data['contactInfo'] as String?),
           remoteCoverImageUrl: Value(data['remoteCoverImageUrl'] as String?),
+          localCoverImagePath: existing != null ? Value(existing.localCoverImagePath) : const Value(null),
           sortOrder: Value((data['sortOrder'] as num?)?.toInt() ?? 0),
           isShared: const Value(true),
+          hasEverSynced: const Value(true),
+          syncStatus: Value(SyncStatus.synced.index),
+          isDeleted: const Value(false),
         ));
   }
 
-  /// Re-arms a trip for a full re-upload after its cloud doc was recreated:
-  /// reset the local version to 0 and mark every live chunk dirty so the next
-  /// push re-sends them (POIs are always snapshot-pushed, so they need no flag).
+  /// Re-arms a trip for a full re-upload after its cloud doc was recreated.
   Future<void> _resetRoiForFullResync(String roiId) async {
     await localDb.transaction(() async {
       await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId)))
           .write(const RoisCompanion(cloudVersion: Value(0)));
+
+      await (localDb.update(localDb.pois)
+            ..where((p) => p.roiId.equals(roiId) & p.isDeleted.equals(false)))
+          .write(PoisCompanion(syncStatus: Value(SyncStatus.dirty.index)));
 
       final poiIds = (await localDb.getPoisByRoi(roiId)).map((p) => p.id).toList();
       if (poiIds.isEmpty) return;
@@ -251,15 +359,39 @@ class SyncEngineService {
     return await (localDb.select(localDb.timeChunks).join([
       innerJoin(localDb.pois, localDb.pois.id.equalsExp(localDb.timeChunks.poiId))
     ])
-      ..where(localDb.pois.roiId.equals(roiId) & 
+      ..where(localDb.pois.roiId.equals(roiId) &
               localDb.timeChunks.syncStatus.equals(SyncStatus.dirty.index)))
         .map((row) => row.readTable(localDb.timeChunks))
         .get();
   }
 
-  Future<void> _postPushLocalCleanup(String roiId, List<TimeChunk> pushedData, int newVersion) async {
+  Future<List<Poi>> _fetchDirtyPois(String roiId) async {
+    return await (localDb.select(localDb.pois)
+          ..where((p) => p.roiId.equals(roiId) & p.syncStatus.equals(SyncStatus.dirty.index)))
+        .get();
+  }
+
+  Future<void> _postPushLocalCleanup(
+    String roiId,
+    List<TimeChunk> pushedChunks,
+    List<Poi> pushedPois,
+    int newVersion,
+  ) async {
     await localDb.transaction(() async {
-      for (final chunk in pushedData) {
+      for (final poi in pushedPois) {
+        if (poi.isDeleted) {
+          await (localDb.delete(localDb.pois)..where((p) => p.id.equals(poi.id))).go();
+        } else {
+          await (localDb.update(localDb.pois)..where((p) => p.id.equals(poi.id))).write(
+            PoisCompanion(
+              syncStatus: Value(SyncStatus.synced.index),
+              hasEverSynced: const Value(true),
+              isShared: const Value(true),
+            ),
+          );
+        }
+      }
+      for (final chunk in pushedChunks) {
         if (chunk.isDeleted) {
           await (localDb.delete(localDb.timeChunks)..where((t) => t.id.equals(chunk.id))).go();
         } else {
@@ -333,11 +465,3 @@ class SyncEngineService {
     await (localDb.update(localDb.timeChunks)..where((t) => t.id.equals(data['id']))).write(companion);
   }
 }
-
-final syncEngineProvider = Provider<SyncEngineService>((ref) {
-  return SyncEngineService(
-    localDb: ref.watch(databaseProvider),
-    firestoreSync: ref.watch(firestoreSyncServiceProvider),
-    currentUserId: ref.watch(currentUserIdProvider),
-  );
-});

@@ -1,0 +1,503 @@
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart' show WriteBatch;
+import 'package:drift/drift.dart' hide isNull, isNotNull;
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:trip_planner/core/database/database.dart';
+import 'package:trip_planner/core/database/tables.dart';
+import 'package:trip_planner/features/calendar/models/time_chunk_model.dart';
+import 'package:trip_planner/features/calendar/repositories/time_chunk_repository.dart';
+import 'package:trip_planner/features/poi/models/poi_model.dart';
+import 'package:trip_planner/features/poi/repositories/poi_repository.dart';
+import 'package:trip_planner/features/roi/repositories/roi_repository.dart';
+import 'package:trip_planner/features/sync/services/firestore_sync_service.dart';
+import 'package:trip_planner/features/sync/services/sync_engine_service.dart';
+
+/// In-memory fake implementation of FirestoreSyncService for unit tests
+class FakeFirestoreSyncService implements FirestoreSyncService {
+  final Map<String, Map<String, dynamic>> trips = {};
+  final Map<String, Map<String, Map<String, dynamic>>> tripPois = {};
+  final Map<String, Map<String, Map<String, dynamic>>> tripChunks = {};
+  final Map<String, String?> locks = {};
+
+  final StreamController<List<Map<String, dynamic>>> _userTripsController =
+      StreamController<List<Map<String, dynamic>>>.broadcast();
+
+  void emitUserTrips(List<Map<String, dynamic>> data) {
+    _userTripsController.add(data);
+  }
+
+  @override
+  Future<bool> acquireLock(String roiId, String userId) async {
+    final currentLock = locks[roiId];
+    if (currentLock != null && currentLock != userId) {
+      return false;
+    }
+    locks[roiId] = userId;
+    return true;
+  }
+
+  @override
+  Future<void> releaseLock(String roiId) async {
+    locks.remove(roiId);
+  }
+
+  @override
+  Future<int> fetchTripVersion(String roiId) async {
+    return (trips[roiId]?['cloudVersion'] as int?) ?? 0;
+  }
+
+  @override
+  Future<bool> tripExists(String roiId) async {
+    return trips.containsKey(roiId);
+  }
+
+  @override
+  WriteBatch createBatch() {
+    return _FakeWriteBatch(this);
+  }
+
+  @override
+  void buildBatchOperations(WriteBatch batch, dynamic chunk, String roiId) {
+    final fakeBatch = batch as _FakeWriteBatch;
+    if (chunk.isDeleted) {
+      fakeBatch.addOp(() {
+        tripChunks[roiId]?.remove(chunk.id);
+      });
+    } else {
+      fakeBatch.addOp(() {
+        tripChunks.putIfAbsent(roiId, () => {})[chunk.id] = {
+          'id': chunk.id,
+          'poiId': chunk.poiId,
+          'date': chunk.date,
+          'startTime': chunk.startTime,
+          'endTime': chunk.endTime,
+          'status': chunk.status,
+          'sortOrder': chunk.sortOrder,
+          'duration': chunk.duration,
+          'transitDuration': chunk.transitDuration,
+          'isFixedTime': chunk.isFixedTime,
+          'authorId': chunk.authorId,
+        };
+      });
+    }
+  }
+
+  @override
+  void buildPoiBatchOperations(WriteBatch batch, dynamic poi, String roiId) {
+    final fakeBatch = batch as _FakeWriteBatch;
+    if (poi.isDeleted == true) {
+      fakeBatch.addOp(() {
+        tripPois[roiId]?.remove(poi.id);
+      });
+    } else {
+      fakeBatch.addOp(() {
+        tripPois.putIfAbsent(roiId, () => {})[poi.id] = {
+          'id': poi.id,
+          'roiId': roiId,
+          'authorId': poi.authorId,
+          'name': poi.name,
+          'description': poi.description,
+          'address': poi.address,
+          'lat': poi.lat,
+          'lng': poi.lng,
+          'businessHours': poi.businessHours,
+          'contactInfo': poi.contactInfo,
+          'remoteCoverImageUrl': poi.remoteCoverImageUrl,
+          'sortOrder': poi.sortOrder,
+        };
+      });
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTripPois(String roiId) async {
+    return tripPois[roiId]?.values.toList() ?? [];
+  }
+
+  @override
+  void appendVersionBumpAndLockRelease(WriteBatch batch, String roiId, int newVersion) {
+    final fakeBatch = batch as _FakeWriteBatch;
+    fakeBatch.addOp(() {
+      final trip = trips.putIfAbsent(roiId, () => {'id': roiId});
+      trip['cloudVersion'] = newVersion;
+      locks.remove(roiId);
+    });
+  }
+
+  @override
+  Future<void> commitBatch(WriteBatch batch) async {
+    final fakeBatch = batch as _FakeWriteBatch;
+    fakeBatch.execute();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTripData(String roiId) async {
+    return tripChunks[roiId]?.values.toList() ?? [];
+  }
+
+  @override
+  Future<void> initializeCloudTrip(String roiId, String userId, String tripName) async {
+    trips[roiId] = {
+      'id': roiId,
+      'name': tripName,
+      'authorId': userId,
+      'members': [userId],
+      'cloudVersion': 0,
+    };
+  }
+
+  @override
+  Stream<List<Map<String, dynamic>>> watchUserTrips(String userId) {
+    return _userTripsController.stream;
+  }
+
+  @override
+  Stream<Map<String, dynamic>?> watchTrip(String roiId) {
+    return Stream.value(trips[roiId]);
+  }
+}
+
+class _FakeWriteBatch implements WriteBatch {
+  final FakeFirestoreSyncService service;
+  final List<void Function()> operations = [];
+
+  _FakeWriteBatch(this.service);
+
+  void addOp(void Function() op) {
+    operations.add(op);
+  }
+
+  void execute() {
+    for (final op in operations) {
+      op();
+    }
+  }
+
+  @override
+  Future<void> commit() async {
+    execute();
+  }
+
+  @override
+  void delete(dynamic document) {}
+
+  @override
+  void set<T>(dynamic document, T data, [dynamic options]) {}
+
+  @override
+  void update(dynamic document, Map<Object, Object?> data) {}
+}
+
+void main() {
+  late AppDatabase db;
+  late FakeFirestoreSyncService fakeFirestore;
+  late SyncEngineService syncEngine;
+  late PoiRepository poiRepo;
+  late TimeChunkRepository chunkRepo;
+  late RoiRepository roiRepo;
+  const mockUser = 'test_user_alice';
+
+  setUp(() async {
+    db = AppDatabase.forTesting(NativeDatabase.memory());
+    fakeFirestore = FakeFirestoreSyncService();
+    syncEngine = SyncEngineService(
+      localDb: db,
+      firestoreSync: fakeFirestore,
+      currentUserId: mockUser,
+    );
+    poiRepo = LocalPoiRepository(db, mockUser);
+    chunkRepo = LocalTimeChunkRepository(db);
+    roiRepo = LocalRoiRepository(db, mockUser);
+
+    // Seed shared trip
+    await db.insertRoi(RoisCompanion.insert(
+      id: 'roi-1',
+      name: 'Kyoto Trip',
+      authorId: mockUser,
+      isShared: const Value(true),
+      cloudVersion: const Value(0),
+    ));
+    await fakeFirestore.initializeCloudTrip('roi-1', mockUser, 'Kyoto Trip');
+  });
+
+  tearDown(() async {
+    syncEngine.stopSync();
+    await db.close();
+  });
+
+  group('Issue #45: Two-way Sync Engine & Dirty Tracking', () {
+    test('POI insert and update mark syncStatus as dirty and executePush clears it', () async {
+      // 1. Add POI via repository
+      await poiRepo.savePoiWithRelations(
+        poi: PoiModel(
+          id: 'poi-1',
+          roiId: 'roi-1',
+          authorId: mockUser,
+          name: 'Kinkaku-ji',
+          lat: 35.039,
+          lng: 135.729,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+        animeIds: [],
+        tagIds: [],
+        isUpdate: false,
+      );
+
+      final inserted = await poiRepo.getPoiById('poi-1');
+      expect(inserted.syncStatus, equals(SyncStatus.dirty.index), reason: 'Newly created POI must be marked dirty');
+      expect(inserted.hasEverSynced, isFalse);
+
+      // 2. Push to cloud
+      await syncEngine.executePush('roi-1');
+
+      final synced = await poiRepo.getPoiById('poi-1');
+      expect(synced.syncStatus, equals(SyncStatus.synced.index), reason: 'Pushed POI must be marked synced');
+      expect(synced.hasEverSynced, isTrue);
+      expect(fakeFirestore.tripPois['roi-1']?['poi-1']?['name'], equals('Kinkaku-ji'));
+
+      // 3. Edit POI after first sync
+      await poiRepo.updatePoi(synced.copyWith(name: 'Golden Pavilion'));
+
+      final edited = await poiRepo.getPoiById('poi-1');
+      expect(edited.name, equals('Golden Pavilion'));
+      expect(edited.syncStatus, equals(SyncStatus.dirty.index), reason: 'POI edits must re-mark dirty for re-sync');
+
+      // 4. Re-push to cloud
+      await syncEngine.executePush('roi-1');
+
+      final reSynced = await poiRepo.getPoiById('poi-1');
+      expect(reSynced.syncStatus, equals(SyncStatus.synced.index));
+      expect(fakeFirestore.tripPois['roi-1']?['poi-1']?['name'], equals('Golden Pavilion'),
+          reason: 'Remote Firestore must receive the updated name');
+    });
+
+    test('Synced POI delete marks soft-delete, pushes deletion to cloud, and cleans up locally', () async {
+      await poiRepo.savePoiWithRelations(
+        poi: PoiModel(
+          id: 'poi-del',
+          roiId: 'roi-1',
+          authorId: mockUser,
+          name: 'To Delete Spot',
+          lat: 35.0,
+          lng: 135.0,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+        animeIds: [],
+        tagIds: [],
+        isUpdate: false,
+      );
+      await syncEngine.executePush('roi-1');
+      expect(fakeFirestore.tripPois['roi-1']?.containsKey('poi-del'), isTrue);
+
+      // Delete the synced POI
+      await poiRepo.deletePoi('poi-del');
+
+      // POI should be soft-deleted in DB (hidden from active queries)
+      final allActive = await poiRepo.getAllPois();
+      expect(allActive.any((p) => p.id == 'poi-del'), isFalse);
+
+      final rawPoi = await (db.select(db.pois)..where((p) => p.id.equals('poi-del'))).getSingle();
+      expect(rawPoi.isDeleted, isTrue);
+      expect(rawPoi.syncStatus, equals(SyncStatus.dirty.index));
+
+      // Execute push
+      await syncEngine.executePush('roi-1');
+
+      // Remote doc must be deleted
+      expect(fakeFirestore.tripPois['roi-1']?.containsKey('poi-del'), isFalse);
+
+      // Local soft-delete row must be pruned
+      final postCleanRow = await (db.select(db.pois)..where((p) => p.id.equals('poi-del'))).getSingleOrNull();
+      expect(postCleanRow, isNull);
+    });
+
+    test('Downstream executePull imports remote POIs and TimeChunks into local DB', () async {
+      // Simulate remote collaborator creating data in Firestore
+      fakeFirestore.trips['roi-1']?['cloudVersion'] = 3;
+      fakeFirestore.tripPois.putIfAbsent('roi-1', () => {})['remote-poi-1'] = {
+        'id': 'remote-poi-1',
+        'roiId': 'roi-1',
+        'authorId': 'collaborator_bob',
+        'name': 'Fushimi Inari',
+        'lat': 34.967,
+        'lng': 135.772,
+        'remoteCoverImageUrl': 'https://example.com/inari.jpg',
+        'sortOrder': 100,
+      };
+      fakeFirestore.tripChunks.putIfAbsent('roi-1', () => {})['remote-chunk-1'] = {
+        'id': 'remote-chunk-1',
+        'poiId': 'remote-poi-1',
+        'date': '2026-11-01',
+        'startTime': '10:00',
+        'endTime': '12:00',
+        'status': 'scheduled',
+        'duration': 120,
+        'transitDuration': 15,
+        'isFixedTime': true,
+        'sortOrder': 0,
+        'authorId': 'collaborator_bob',
+      };
+
+      await syncEngine.executePull('roi-1');
+
+      // Verify local DB received remote POI
+      final localPoi = await poiRepo.getPoiById('remote-poi-1');
+      expect(localPoi.name, equals('Fushimi Inari'));
+      expect(localPoi.remoteCoverImageUrl, equals('https://example.com/inari.jpg'));
+      expect(localPoi.authorId, equals('collaborator_bob'));
+      expect(localPoi.syncStatus, equals(SyncStatus.synced.index));
+      expect(localPoi.hasEverSynced, isTrue);
+
+      // Verify local DB received remote chunk
+      final localChunks = await chunkRepo.watchTimeChunksByPoi('remote-poi-1').first;
+      expect(localChunks.length, equals(1));
+      expect(localChunks.first.id, equals('remote-chunk-1'));
+      expect(localChunks.first.startTime, equals('10:00'));
+      expect(localChunks.first.endTime, equals('12:00'));
+
+      // Verify local cloudVersion matches remote
+      final localRoi = await db.getRoiById('roi-1');
+      expect(localRoi.cloudVersion, equals(3));
+    });
+
+    test('Downstream executePull handles remote chunk deletion (deletes clean, stashes dirty)', () async {
+      // Setup a synced POI and two synced chunks
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-shared',
+        roiId: const Value('roi-1'),
+        authorId: mockUser,
+        name: 'Shared Spot',
+        lat: 35.0,
+        lng: 135.0,
+        hasEverSynced: const Value(true),
+        syncStatus: Value(SyncStatus.synced.index),
+      ));
+
+      await db.insertTimeChunk(TimeChunksCompanion.insert(
+        id: 'chunk-clean',
+        poiId: 'poi-shared',
+        authorId: mockUser,
+        hasEverSynced: const Value(true),
+        syncStatus: Value(SyncStatus.synced.index),
+        status: const Value('scheduled'),
+      ));
+
+      await db.insertTimeChunk(TimeChunksCompanion.insert(
+        id: 'chunk-dirty',
+        poiId: 'poi-shared',
+        authorId: mockUser,
+        hasEverSynced: const Value(true),
+        syncStatus: Value(SyncStatus.dirty.index),
+        status: const Value('scheduled'),
+      ));
+
+      // Remote collaborator deletes both chunks and bumps version
+      fakeFirestore.trips['roi-1']?['cloudVersion'] = 5;
+      fakeFirestore.tripPois.putIfAbsent('roi-1', () => {})['poi-shared'] = {
+        'id': 'poi-shared',
+        'roiId': 'roi-1',
+        'authorId': mockUser,
+        'name': 'Shared Spot',
+        'lat': 35.0,
+        'lng': 135.0,
+      };
+      fakeFirestore.tripChunks['roi-1'] = {}; // empty — remote deleted both chunks
+
+      await syncEngine.executePull('roi-1');
+
+      // Clean chunk should be deleted locally
+      final cleanCheck = await (db.select(db.timeChunks)..where((t) => t.id.equals('chunk-clean'))).getSingleOrNull();
+      expect(cleanCheck, isNull, reason: 'Clean chunk deleted on remote must be deleted locally');
+
+      // Dirty chunk should be safely stashed so local effort is preserved
+      final dirtyCheck = await (db.select(db.timeChunks)..where((t) => t.id.equals('chunk-dirty'))).getSingleOrNull();
+      expect(dirtyCheck, isNull);
+
+      final stashed = await (db.select(db.timeChunks)..where((t) => t.syncStatus.equals(SyncStatus.stashed.index))).getSingleOrNull();
+      expect(stashed, isNotNull, reason: 'Locally dirty chunk deleted on remote must be stashed to backlog');
+      expect(stashed!.status, equals('backlog'));
+    });
+
+    test('executePush automatically pulls downstream when local is behind remote before pushing', () async {
+      // Local version is 0
+      // Remote version bumped to 2 by someone else with a new spot
+      fakeFirestore.trips['roi-1']?['cloudVersion'] = 2;
+      fakeFirestore.tripPois.putIfAbsent('roi-1', () => {})['remote-spot'] = {
+        'id': 'remote-spot',
+        'roiId': 'roi-1',
+        'authorId': 'bob',
+        'name': 'Bob Spot',
+        'lat': 35.1,
+        'lng': 135.1,
+      };
+
+      // Local has a dirty new POI
+      await poiRepo.savePoiWithRelations(
+        poi: PoiModel(
+          id: 'alice-spot',
+          roiId: 'roi-1',
+          authorId: mockUser,
+          name: 'Alice Spot',
+          lat: 35.2,
+          lng: 135.2,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+        animeIds: [],
+        tagIds: [],
+        isUpdate: false,
+      );
+
+      // Execute push: should merge remote-spot first, then push alice-spot with version 3
+      await syncEngine.executePush('roi-1');
+
+      // Local DB now has both
+      expect(await poiRepo.getPoiById('remote-spot'), isNotNull);
+      expect(await poiRepo.getPoiById('alice-spot'), isNotNull);
+
+      // Remote now has both and version is bumped to 3
+      expect(fakeFirestore.tripPois['roi-1']?.containsKey('remote-spot'), isTrue);
+      expect(fakeFirestore.tripPois['roi-1']?.containsKey('alice-spot'), isTrue);
+      expect(fakeFirestore.trips['roi-1']?['cloudVersion'], equals(3));
+    });
+
+    test('enableCloudSyncForRoi arms full re-sync for all existing POIs and chunks', () async {
+      // Create local unshared trip with POI and chunk
+      await db.insertRoi(RoisCompanion.insert(
+        id: 'roi-local',
+        name: 'Local Only',
+        authorId: mockUser,
+        isShared: const Value(false),
+      ));
+
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-local-1',
+        roiId: const Value('roi-local'),
+        authorId: mockUser,
+        name: 'Local Spot',
+        lat: 35.0,
+        lng: 135.0,
+        syncStatus: Value(SyncStatus.synced.index),
+      ));
+
+      await db.insertTimeChunk(TimeChunksCompanion.insert(
+        id: 'chunk-local-1',
+        poiId: 'poi-local-1',
+        authorId: mockUser,
+        syncStatus: Value(SyncStatus.synced.index),
+      ));
+
+      // User toggles Cloud Sync
+      await roiRepo.enableCloudSyncForRoi('roi-local');
+
+      final roi = await db.getRoiById('roi-local');
+      expect(roi.isShared, isTrue);
+
+      final poi = await (db.select(db.pois)..where((p) => p.id.equals('poi-local-1'))).getSingle();
+      expect(poi.syncStatus, equals(SyncStatus.dirty.index), reason: 'POI must be armed as dirty for cloud upload');
+
+      final chunk = await (db.select(db.timeChunks)..where((t) => t.id.equals('chunk-local-1'))).getSingle();
+      expect(chunk.syncStatus, equals(SyncStatus.dirty.index), reason: 'TimeChunk must be armed as dirty for cloud upload');
+    });
+  });
+}

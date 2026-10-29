@@ -226,6 +226,30 @@ void main() {
       expect(afterBatchUpdate.hasEverSynced, isTrue);
       expect(afterBatchUpdate.createdAt, 123456789);
     });
+
+    test('PoiRepository updatePoi marks syncStatus dirty and preserves hasEverSynced (#45)', () async {
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-sync-test',
+        authorId: 'test_user_id',
+        name: 'Initial Name',
+        lat: 35.0,
+        lng: 135.0,
+        hasEverSynced: const Value(true),
+        syncStatus: const Value(0), // synced
+      ));
+
+      final poi = await poiRepository.getPoiById('poi-sync-test');
+      expect(poi.hasEverSynced, isTrue);
+      expect(poi.syncStatus, equals(0));
+
+      await poiRepository.updatePoi(poi.copyWith(name: 'Updated Name'));
+
+      final updated = await poiRepository.getPoiById('poi-sync-test');
+      expect(updated.name, equals('Updated Name'));
+      expect(updated.hasEverSynced, isTrue);
+      expect(updated.syncStatus, equals(1)); // dirty
+      expect(updated.lastModifiedAt, isNotNull);
+    });
   });
 
   group('LocalTimeChunkRepository (#50)', () {
