@@ -21,7 +21,7 @@ Everything lives on your phone. **No account is required and you can use it full
 
 - 📍 **Save anime locations** with address, map coordinates, business hours, notes, and the anime they're from.
 - 🗂️ **Organize by region, anime, and tag** so a sprawling trip stays manageable.
-- ⬇️ **Import locations automatically** by searching an anime in the built-in Bangumi search — the spots come pre-filled with coordinates from the community-run [Anitabi](https://www.anitabi.cn) pilgrimage map.
+- ⬇️ **Import locations automatically** by searching an anime in the built-in Bangumi search — the spots come pre-filled with coordinates.
 - 🗺️ **See everything on a map**, color-coded by region.
 - 🗓️ **Build a day-by-day itinerary** with drag-and-drop scheduling, visit durations, travel time between stops, and progress tracking.
 - 📸 **Recreate scenes with the Anime Camera**, overlaying the original screenshot on your live camera so you can match the angle exactly.
@@ -86,15 +86,6 @@ Skip the manual entry and pull in a whole anime's pilgrimage spots:
 3. Tap the series you want, then confirm **Import**.
 4. The anime and its real-world locations are added to your library, ready to be sorted into a region.
 
-> 🌐 Importing needs an internet connection. The locations come from [Anitabi](https://www.anitabi.cn), a community-maintained pilgrimage map shared under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/); each imported place keeps its source and link in its description. The first import of the day downloads Anitabi's map index (about 2 MB); later imports reuse it.
-
-**If the import message mentions a problem:**
-
-- *"Skipped N without map coordinates"* — Anitabi lists some spots without coordinates, and a place needs coordinates to be saved. Everything else was imported.
-- *"…none have map coordinates, so nothing was imported"* — Anitabi has no usable coordinates for that anime yet.
-- *"Anitabi is temporarily refusing requests from this network"* — Anitabi's servers have paused requests from your network. Wait a while before trying again (repeated tries keep the pause going), or switch between Wi-Fi and mobile data.
-- *"Couldn't reach Anitabi"* — check your connection and tap **Import** again.
-
 ## 4. See your places on the map
 
 Tap **Map** from the home screen to see every place as a pin, color-coded by region. Use the filter at the top to focus on a single region, and tap any pin to preview that place and jump to its full details.
@@ -144,7 +135,6 @@ This is the heart of the app. *Available on Android and iOS.*
 ## Good to know
 
 - **It's yours and it's offline.** Your trips, photos, and notes are stored on your device. No account, no connection needed.
-- **A few things go online:** importing from Bangumi, signing in, and the photo editor's **Compose** cutout, which downloads its AI model (~176 MB) the first time you tap **Download AI model** — use Wi-Fi for that one.
 - **One copy for now.** Cloud sync isn't finished yet, so your data isn't duplicated anywhere else — keep that in mind before switching phones or clearing app data.
 - **Where features work:**
 
@@ -171,21 +161,11 @@ dart run build_runner build --delete-conflicting-outputs
 
 # Run on a connected device
 flutter run
-
-# Run the unit tests
-flutter test
 ```
 
-Source is organized feature-first under `lib/features/` (`anime`, `auth`, `calendar`, `camera`, `home`, `poi`, `roi`, `sync`, `tag`), with shared infrastructure under `lib/core/` (`database`, `router`, `providers`). See `CLAUDE.md` for the full architecture and conventions, and `CHANGELOG.md` for release history.
-
-Contributors using Claude Code get two project skills: `run-app` (build, launch, and drive the app on the Android emulator) and `release` (version, docs, build, smoke test, and a confirmation checklist before anything is published).
+Source is organized feature-first under `lib/features/` (`anime`, `auth`, `calendar`, `camera`, `home`, `poi`, `roi`, `sync`, `tag`), with shared infrastructure under `lib/core/` (`database`, `router`, `providers`). See `CLAUDE.md` for the full architecture and conventions.
 
 </details>
-
-## Acknowledgements
-
-- Pilgrimage locations and screenshots come from [Anitabi](https://www.anitabi.cn) and its contributors ([CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)).
-- Reading Anitabi's map data follows [MiriaGo](https://github.com/BilyHurington/MiriaGo) (MIT). See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ## License
 
