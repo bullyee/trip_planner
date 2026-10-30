@@ -6,6 +6,7 @@ import 'package:trip_planner/core/providers/sync_provider.dart';
 import 'firebase_options.dart';
 
 import 'core/router/app_router.dart';
+import 'features/poi/services/background_photo_save.dart';
 import 'shared/theme/app_theme.dart';
 // Added for custom error monitoring
 import 'core/utils/app_logger.dart';
@@ -75,6 +76,8 @@ class TripPlannerApp extends ConsumerWidget {
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
       routerConfig: goRouter,
+      // Background photo saves report back here after their editor closed.
+      scaffoldMessengerKey: rootMessengerKey,
     );
   }
 }

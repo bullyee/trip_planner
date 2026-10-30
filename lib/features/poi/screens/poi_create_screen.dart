@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,33 +6,24 @@ import 'package:uuid/uuid.dart';
 import '../../anime/models/anime_model.dart';
 import '../../anime/providers/anime_provider.dart';
 import '../../anime/repositories/anime_repository.dart';
-import '../../auth/providers/auth_provider.dart';
 import '../../tag/models/tag_model.dart';
 import '../../tag/providers/tag_provider.dart';
 import '../../roi/providers/roi_provider.dart';
 import '../../tag/repositories/tag_repository.dart';
-import '../repositories/media_repository.dart';
 import '../repositories/poi_repository.dart';
-import '../services/media_asset_service.dart';
 import '../controllers/poi_controller.dart';
 import '../../../core/utils/app_result.dart';
 
+/// Creates a POI — or edits [editPoiId] — and pops with its id, so a caller
+/// like the photo editor's POI button can use the new POI.
 class PoiCreateScreen extends ConsumerStatefulWidget {
   final String? roiId;
   final String? editPoiId;
-
-  /// Optional path to a photo (typically from the Anime Camera) that
-  /// should be archived as a `user_photo` MediaAsset for this POI
-  /// once it's created. Only honoured on the create path — ignored
-  /// when [editPoiId] is set, since "edit POI" isn't about adding
-  /// media.
-  final String? capturedPhotoPath;
 
   const PoiCreateScreen({
     super.key,
     this.roiId,
     this.editPoiId,
-    this.capturedPhotoPath,
   });
 
   @override
@@ -280,25 +269,7 @@ class _PoiCreateScreenState extends ConsumerState<PoiCreateScreen> {
         return;
     }
 
-    // Camera capture-then-create-POI flow: archive the temp capture
-    // as a `user_photo` MediaAsset under the new POI before we pop.
-    // Silently no-op when the file has already gone (rare) or when
-    // we're on the edit path.
-    if (widget.editPoiId == null && widget.capturedPhotoPath != null) {
-      final photoFile = File(widget.capturedPhotoPath!);
-      if (await photoFile.exists()) {
-        final currentUserId = ref.read(currentUserIdProvider);
-        await persistMediaAsset(
-          mediaRepo: ref.read(mediaRepositoryProvider),
-          source: photoFile,
-          poiId: poiId,
-          type: 'user_photo',
-          authorId: currentUserId,
-        );
-      }
-    }
-
-    if (mounted) context.pop();
+    if (mounted) context.pop(poiId);
   }
 }
 

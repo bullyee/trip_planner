@@ -1,21 +1,23 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:uuid/uuid.dart';
+import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
-import '../../auth/providers/auth_provider.dart';
 import '../../camera/services/reinhard_match_service.dart';
-import '../models/reference_image_model.dart';
-import '../providers/media_provider.dart';
-import '../repositories/media_repository.dart';
+import '../../camera/widgets/capture_sheets.dart';
+import '../providers/poi_provider.dart';
+import '../services/background_photo_save.dart';
 import '../services/brightness_service.dart';
 import '../services/edit_preview_service.dart';
-import '../services/media_asset_service.dart';
+import '../services/edit_recipe.dart';
+import '../services/full_res_render.dart';
 import '../services/sharpness_service.dart';
 import 'collage_page.dart';
 
@@ -45,6 +47,11 @@ class _EditState {
   final double brightness;
   final double sharpness;
 
+  /// Match Color: the reference [matchedBaseBytes] was matched against, so
+  /// Save matches the full-res photo against the same one even if the
+  /// reference is swapped later.
+  final String? matchReferencePath;
+
   const _EditState({
     this.bytes,
     this.tool,
@@ -53,6 +60,7 @@ class _EditState {
     this.strength = 1.0,
     this.brightness = 0,
     this.sharpness = 0,
+    this.matchReferencePath,
   });
 
   _EditState copyWith({
@@ -63,6 +71,7 @@ class _EditState {
     double? strength,
     double? brightness,
     double? sharpness,
+    String? matchReferencePath,
   }) {
     return _EditState(
       bytes: bytes ?? this.bytes,
@@ -72,26 +81,38 @@ class _EditState {
       strength: strength ?? this.strength,
       brightness: brightness ?? this.brightness,
       sharpness: sharpness ?? this.sharpness,
+      matchReferencePath: matchReferencePath ?? this.matchReferencePath,
     );
   }
+
+  /// This step as Save replays it on the full-resolution photo.
+  EditStep? get asEditStep => switch (tool) {
+        'match' =>
+          EditStep('match', strength, referencePath: matchReferencePath),
+        'brightness' => EditStep('brightness', brightness),
+        'sharpness' => EditStep('sharpness', sharpness),
+        _ => null,
+      };
 }
 
 /// Standalone photo editor — reads everything it needs from its
-/// constructor args and saves directly via [persistMediaAsset], so the
+/// constructor args and saves through [BackgroundPhotoSaves], so the
 /// same screen serves both the live camera flow ("just shot this") and
 /// the POI-detail flow ("picked this from gallery") without either
 /// path needing to seed any global state. Lives under `poi/screens`
 /// because the result is a POI's media asset; reuses the colour-match
 /// service that still ships from the camera feature.
 class PhotoEditScreen extends ConsumerStatefulWidget {
-  /// POI whose media assets list the saved photo joins.
-  final String poiId;
+  /// POI whose media assets list the saved photo joins, until the user picks
+  /// another with the AppBar's POI button. Null when the photo has no POI
+  /// yet — Edit Photo, or an Anime Camera shot taken without one: the result
+  /// then only goes to the phone's gallery, unless the user picks a POI or a
+  /// reference from one.
+  final String? poiId;
 
-  /// File on disk that this screen edits in place — the editor writes
-  /// the edited bytes back onto this path before [persistMediaAsset]
-  /// copies it into permanent app storage. Callers should hand over a
-  /// temp copy (for gallery picks) or the camera's own capture file
-  /// (which already lives in cache), not a path it can't safely mutate.
+  /// File on disk that this screen edits. It's never written to — the
+  /// edited result is rendered into its own temp file in the background
+  /// and copied into permanent app storage from there.
   final String sourcePath;
 
   /// Optional anime-scene reference: when set, the editor allows the
@@ -105,18 +126,23 @@ class PhotoEditScreen extends ConsumerStatefulWidget {
   final String? referenceImageId;
 
   /// `true` when [sourcePath] is a gallery-picked image rather than a
-  /// fresh camera capture, picked up by [persistMediaAsset] so the
-  /// resulting row's `type` column is `uploaded_image` and the POI
-  /// detail list renders the upload icon.
+  /// fresh camera capture, so the saved row's `type` column is
+  /// `uploaded_image` and the POI detail list renders the upload icon.
   final bool wasUpload;
+
+  /// `true` for a photo just taken with the Anime Camera. It isn't in the
+  /// phone's gallery yet, so Save puts the untouched original there next
+  /// to the edit.
+  final bool isCapture;
 
   const PhotoEditScreen({
     super.key,
-    required this.poiId,
+    this.poiId,
     required this.sourcePath,
     this.referencePath,
     this.referenceImageId,
     this.wasUpload = false,
+    this.isCapture = false,
   });
 
   @override
@@ -130,13 +156,17 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   List<_EditState> _history = const [_EditState()];
   int _historyIndex = 0;
 
-  // Reference image is mutable — the AppBar's photo_library button lets
-  // the user swap it (or add one when there isn't one yet) without
-  // leaving the editor. When the swap happens we drop any pending
-  // Match Color result because the matched bytes were computed against
-  // the old reference and would mislead the user.
+  // Reference image is mutable — the Reference tool lets the user swap it
+  // (or add one when there isn't one yet) without leaving the editor. When
+  // the swap happens we drop any pending Match Color result because the
+  // matched bytes were computed against the old reference and would
+  // mislead the user.
   String? _referencePath;
   String? _referenceImageId;
+  // POI the photo is saved into (null: only the phone's gallery). Starts as
+  // [PhotoEditScreen.poiId]; the AppBar's POI button changes it, and picking
+  // a reference from a POI fills it in when it's still empty.
+  String? _poiId;
 
   // Reference overlay starts visible (when a reference image is in
   // play) to match the live camera — the floating bar provides the eye
@@ -151,20 +181,60 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   // photo so completely that the user can't tell anything changed.
   double _overlayScale = 0.8;
   double _overlayOpacity = 0.4;
+  // Free rotation of the reference overlay in radians — driven by a
+  // two-finger twist or the floating bar's rotate button. Purely a
+  // framing aid; never burned into the saved photo.
+  double _overlayRotation = 0;
   Offset _gestureStartOffset = Offset.zero;
   Offset _gestureStartFocalPoint = Offset.zero;
   double _gestureStartScale = 1;
+  double _gestureStartRotation = 0;
 
   bool _processing = false;
   bool _saving = false;
+
+  // Manual photo orientation, set with the Rotate tool: mirrored left to
+  // right (first), then clockwise quarter-turns (0–3), then straightened by
+  // a free angle in degrees clockwise. Kept as global editor properties
+  // rather than history steps: they're geometry sitting on top of the
+  // filter chain (the per-pixel filters are orientation-agnostic), and at
+  // Save they're baked into the saved file so the POI photo matches the
+  // preview.
+  bool _mirrored = false;
+  int _rotationQuarters = 0;
+  double _straightenDegrees = 0;
+
+  // While the Rotate tool is open: the orientation being dialled in, shown
+  // live on the canvas and kept on Done.
+  bool _inRotateMode = false;
+  bool _draftMirrored = false;
+  int _draftQuarters = 0;
+  double _draftDegrees = 0;
+
+  // Crop is a geometric post-op like rotation: a normalised (0..1) rect
+  // over the *displayed* (turned and straightened) image. null = no crop /
+  // full frame. It's shown in the preview by clipping and baked into the
+  // saved file at Save. Solves the "phone shoots 4:3 but the anime is 16:9"
+  // mismatch — crop the capture down to the reference's proportions.
+  Rect? _cropRect;
+  // While the crop editor is open: the in-progress rect + an optional
+  // locked output aspect (width/height in pixels; null = free-form).
+  bool _inCropMode = false;
+  Rect _draftCropRect = const Rect.fromLTWH(0, 0, 1, 1);
+  double? _cropAspectLock;
+  // Pixel dimensions (decoded once) of the upright editing base and the
+  // reference image, so the crop UI knows the photo's aspect ratio and
+  // can offer a "Match ref" preset.
+  Size? _baseImageSize;
+  Size? _referenceImageSize;
 
   // Downscaled (1024 px long edge) copy of the source built once on
   // editor mount. Every preview compute — Match Color's Reinhard,
   // Sharpness prepare, the canvas Image.memory — runs against this
   // instead of the full-res source, so each tool's first interactive
-  // result lands in well under a second on a 12 MP shot. Save still
-  // re-runs each tool's effect on the full-res source so disk quality
-  // isn't downscaled.
+  // result lands in well under a second on a 12 MP shot. Save replays
+  // the tools on the full-res source instead ([_recipe]), so disk
+  // quality isn't downscaled.
   Uint8List? _editingBaseBytes;
   bool _preparingEditingBase = false;
 
@@ -181,19 +251,6 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   // interactive control — committing or backing out is the only way
   // to switch tools.
   bool _inEditMode = false;
-
-  // After each Confirm, a background `compute()` is scheduled to run
-  // the same filter chain on the **full-resolution source** (and to
-  // chain on top of the previous step's full-res checkpoint). The
-  // Future is stored here keyed by `_historyIndex`, so when the user
-  // hits Save the editor just awaits this Future — if the background
-  // job already finished, Save returns instantly; if not, Save waits
-  // for whatever remains instead of doubling the compute cost.
-  //
-  // Cleared from the map whenever the step's params change (new push,
-  // re-Confirm with different slider value) so the next replay rebuilds
-  // against the new state.
-  final Map<int, Future<Uint8List?>> _fullResCheckpoints = {};
 
   _EditState get _current => _history[_historyIndex];
   bool get _canUndo => _historyIndex > 0;
@@ -233,7 +290,55 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     super.initState();
     _referencePath = widget.referencePath;
     _referenceImageId = widget.referenceImageId;
+    _poiId = widget.poiId;
     unawaited(_prepareEditingBase());
+    unawaited(_loadReferenceSize());
+  }
+
+  /// Decode just the pixel dimensions of [bytes] (cheap — no full raster
+  /// kept around). Used to learn the photo's and reference's aspect
+  /// ratios for the crop tool.
+  Future<Size?> _decodeImageSize(Uint8List bytes) async {
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final size = Size(image.width.toDouble(), image.height.toDouble());
+    image.dispose();
+    codec.dispose();
+    return size;
+  }
+
+  Future<void> _loadReferenceSize() async {
+    final ref = _referenceFile;
+    if (ref == null) {
+      if (mounted) setState(() => _referenceImageSize = null);
+      return;
+    }
+    try {
+      final size = await _decodeImageSize(await ref.readAsBytes());
+      if (!mounted) return;
+      setState(() => _referenceImageSize = size);
+    } catch (_) {
+      // Unreadable reference (e.g. a missing file): the crop tool just
+      // won't offer the "Match ref" preset.
+      if (mounted) setState(() => _referenceImageSize = null);
+    }
+  }
+
+  /// Aspect ratio (w/h) of the photo as currently displayed — i.e. with
+  /// the manual rotation applied (odd quarter-turns swap width/height;
+  /// mirroring and straightening keep the shape). null until the editing
+  /// base has been decoded.
+  double? get _displayedImageAspect => _aspectFor(_rotationQuarters);
+
+  /// [_displayedImageAspect] for the photo turned [quarters] times.
+  double? _aspectFor(int quarters) {
+    final s = _baseImageSize;
+    if (s == null) return null;
+    final swap = quarters.isOdd;
+    final w = swap ? s.height : s.width;
+    final h = swap ? s.width : s.height;
+    return h == 0 ? null : w / h;
   }
 
   /// Decode the source + downscale to 1024 px long edge once, cache
@@ -248,6 +353,10 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       final downscaled = await compute(downscaleForEditing, sourceBytes);
       if (!mounted) return;
       setState(() => _editingBaseBytes = downscaled);
+      // The downscaled base is already EXIF-baked upright, so its pixel
+      // dimensions give the correct (un-rotated) display aspect ratio.
+      final size = await _decodeImageSize(downscaled);
+      if (mounted) setState(() => _baseImageSize = size);
     } finally {
       if (mounted) setState(() => _preparingEditingBase = false);
     }
@@ -255,18 +364,12 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
 
   void _pushHistory(_EditState state) {
     // Drop any redo branch when a new edit is applied past an undo.
-    final oldIndex = _historyIndex;
     final base = _historyIndex < _history.length - 1
         ? _history.sublist(0, _historyIndex + 1)
         : List<_EditState>.from(_history);
     base.add(state);
     _history = base;
     _historyIndex = _history.length - 1;
-    // Background full-res checkpoints for the truncated redo branch
-    // are stale now — drop them so a future Save doesn't reuse the
-    // wrong filter chain. Running futures complete in the background
-    // and their results just get dropped.
-    _fullResCheckpoints.removeWhere((k, _) => k > oldIndex);
   }
 
   void _undo() {
@@ -277,6 +380,119 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   void _redo() {
     if (!_canRedo) return;
     setState(() => _historyIndex++);
+  }
+
+  /// Open the Rotate tool on the photo's current orientation. The canvas
+  /// shows the draft live, uncropped and under a grid; Done keeps it and
+  /// Save bakes it into the saved file.
+  void _enterRotateMode() {
+    if (_processing) return;
+    setState(() {
+      _draftMirrored = _mirrored;
+      _draftQuarters = _rotationQuarters;
+      _draftDegrees = _straightenDegrees;
+      _inRotateMode = true;
+    });
+  }
+
+  /// Turn the draft a quarter clockwise ([turns] = 1) or anticlockwise (-1).
+  void _turnDraft(int turns) =>
+      setState(() => _draftQuarters = (_draftQuarters + turns) % 4);
+
+  /// Flip the draft as it's shown: left to right, or top to bottom when
+  /// [vertical]. The photo is mirrored before it's turned, so on screen a
+  /// flip also reverses the turn — and the straightening angle.
+  void _flipDraft({required bool vertical}) {
+    setState(() {
+      _draftMirrored = !_draftMirrored;
+      _draftQuarters = ((vertical ? 2 : 0) - _draftQuarters) % 4;
+      _draftDegrees = _draftDegrees == 0 ? 0 : -_draftDegrees;
+    });
+  }
+
+  void _resetRotateDraft() => setState(() {
+        _draftMirrored = false;
+        _draftQuarters = 0;
+        _draftDegrees = 0;
+      });
+
+  void _cancelRotate() => setState(() => _inRotateMode = false);
+
+  /// Keep the draft orientation. A committed crop follows the photo through
+  /// the turns and flips, so it still frames the same part of it; a new
+  /// straightening angle keeps its normalised rect.
+  void _confirmRotate() {
+    setState(() {
+      final crop = _cropRect;
+      if (crop != null) {
+        _cropRect = _carryCrop(
+          crop,
+          fromMirrored: _mirrored,
+          fromQuarters: _rotationQuarters,
+          toMirrored: _draftMirrored,
+          toQuarters: _draftQuarters,
+        );
+      }
+      _mirrored = _draftMirrored;
+      _rotationQuarters = _draftQuarters;
+      _straightenDegrees = _draftDegrees;
+      _inRotateMode = false;
+    });
+  }
+
+  /// Enter the crop editor — seed the draft rect from any existing crop
+  /// (or full frame) and start in free-form mode.
+  void _enterCropMode() {
+    if (_processing) return;
+    setState(() {
+      _draftCropRect = _cropRect ?? const Rect.fromLTWH(0, 0, 1, 1);
+      _cropAspectLock = null;
+      _inCropMode = true;
+    });
+  }
+
+  void _cancelCrop() => setState(() => _inCropMode = false);
+
+  void _confirmCrop() {
+    setState(() {
+      final r = _draftCropRect;
+      // A (near) full-frame rect means "no crop" — avoid baking a
+      // pointless re-encode that would just shave a pixel off the edges.
+      final isFull = r.left <= 0.001 &&
+          r.top <= 0.001 &&
+          r.right >= 0.999 &&
+          r.bottom >= 0.999;
+      _cropRect = isFull ? null : r;
+      _inCropMode = false;
+    });
+  }
+
+  /// Lock the crop to a given output aspect (width/height in pixels), or
+  /// null for free-form. Locking re-centres the draft rect at the largest
+  /// rectangle of that aspect that fits inside the photo.
+  void _setCropAspect(double? aspect) {
+    setState(() {
+      _cropAspectLock = aspect;
+      if (aspect != null) _draftCropRect = _centeredAspectRect(aspect);
+    });
+  }
+
+  /// Largest normalised rect of output pixel-aspect [a], centred in the
+  /// displayed image. In normalised space the width/height ratio is
+  /// `a / displayedAspect` because the image's own aspect stretches the
+  /// [0,1]² box.
+  Rect _centeredAspectRect(double a) {
+    final dispAR = _displayedImageAspect ?? 1;
+    final k = a / dispAR; // normalised width / height
+    double nw, nh;
+    if (k >= 1) {
+      nw = 1;
+      nh = 1 / k;
+    } else {
+      nh = 1;
+      nw = k;
+    }
+    return Rect.fromLTWH((1 - nw) / 2, (1 - nh) / 2, nw, nh);
   }
 
   @override
@@ -337,6 +553,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
           toolBaseBytes: base,
           matchedBaseBytes: storeMatchedBase ? result : null,
           strength: 1.0,
+          matchReferencePath: ref.path,
         ));
         _inEditMode = true;
       });
@@ -370,9 +587,9 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   /// Brightness drag mutates the live state — the canvas re-renders
   /// the source image through a `ColorFilter.matrix` matrix in real
   /// time, so the user gets immediate visual feedback without any
-  /// per-frame compute. The byte-buffer adjust isn't needed until the
-  /// user actually saves: `_resolveBytesForSave` runs it once against
-  /// the source so the JPEG that lands on disk matches the canvas.
+  /// per-frame compute. The byte-buffer adjust runs at Confirm, and Save
+  /// replays it on the full-res source so the JPEG that lands on disk
+  /// matches the canvas.
   void _setBrightness(double value) {
     if (_current.tool != 'brightness') return;
     _mutateCurrent((s) => s.copyWith(brightness: value));
@@ -577,101 +794,16 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       if (newBytes != null) {
         _mutateCurrent((s) => s.copyWith(bytes: newBytes));
       }
-      final editedIndex = _historyIndex;
       // Replay any later tools on top of this step's new result, so revisiting
       // an earlier adjustment keeps the later ones instead of dropping them.
-      await _replayDownstream(editedIndex);
+      await _replayDownstream(_historyIndex);
       if (!mounted) return;
       setState(() {
         _historyIndex = _history.length - 1; // show the full composed result
         _inEditMode = false;
       });
-      // The edited step + everything downstream changed — drop their stale
-      // full-res checkpoints and reschedule for the chain end.
-      _fullResCheckpoints.removeWhere((k, _) => k >= editedIndex);
-      _scheduleFullResCheckpoint(_historyIndex);
     } finally {
       if (mounted) setState(() => _processing = false);
-    }
-  }
-
-  /// Schedule a background `compute()` for the full-res result of the
-  /// filter at [idx]. Idempotent — early-returns if the checkpoint is
-  /// already in the map (running or completed). The actual work runs
-  /// in a worker isolate; Save just awaits the Future stored here.
-  void _scheduleFullResCheckpoint(int idx) {
-    if (idx <= 0) return;
-    if (_fullResCheckpoints.containsKey(idx)) return;
-    // Capture the step + reference at scheduling time so a later
-    // re-Confirm (which will reschedule with new params) can't make
-    // this Future see mutated state mid-run.
-    final step = _history[idx];
-    final referenceFile = _referenceFile;
-    _fullResCheckpoints[idx] =
-        _computeFullResForStep(idx, step, referenceFile);
-  }
-
-  Future<Uint8List?> _computeFullResForStep(
-    int idx,
-    _EditState step,
-    File? referenceFile,
-  ) async {
-    if (idx <= 0) return null;
-
-    // Resolve the base: either the source (for the very first filter)
-    // or recursively the previous step's full-res checkpoint.
-    Uint8List baseBytes;
-    if (idx == 1) {
-      baseBytes = await _sourceFile.readAsBytes();
-    } else {
-      if (!_fullResCheckpoints.containsKey(idx - 1)) {
-        _scheduleFullResCheckpoint(idx - 1);
-      }
-      final prevFuture = _fullResCheckpoints[idx - 1];
-      if (prevFuture == null) return null;
-      final prev = await prevFuture;
-      if (prev == null) return null;
-      baseBytes = prev;
-    }
-
-    switch (step.tool) {
-      case 'match':
-        if (referenceFile == null) return baseBytes;
-        final t = step.strength.clamp(0.0, 1.0);
-        if (t <= 0.001) return baseBytes;
-        final referenceBytes = await referenceFile.readAsBytes();
-        final matched = await compute(
-          reinhardMatch,
-          MatchArgs(
-            capturedBytes: baseBytes,
-            referenceBytes: referenceBytes,
-          ),
-        );
-        if (t >= 0.999) return matched;
-        return compute(
-          lerpJpegs,
-          LerpArgs(jpegA: baseBytes, jpegB: matched, strength: t),
-        );
-      case 'brightness':
-        if (step.brightness == 0) return baseBytes;
-        return compute(
-          applyBrightness,
-          BrightnessArgs(
-            sourceBytes: baseBytes,
-            brightness: step.brightness,
-          ),
-        );
-      case 'sharpness':
-        if (step.sharpness == 0) return baseBytes;
-        return compute(
-          applySharpness,
-          SharpnessArgs(
-            sourceBytes: baseBytes,
-            amount: step.sharpness,
-          ),
-        );
-      default:
-        return baseBytes;
     }
   }
 
@@ -725,7 +857,10 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
         final refBytes = await ref.readAsBytes();
         final matched = await compute(
             reinhardMatch, MatchArgs(capturedBytes: prev, referenceBytes: refBytes));
-        step = step.copyWith(matchedBaseBytes: matched);
+        step = step.copyWith(
+          matchedBaseBytes: matched,
+          matchReferencePath: ref.path,
+        );
       }
       final recomputed = await _recomputePreview(step, prev);
       _history[j] = step.copyWith(toolBaseBytes: prev, bytes: recomputed);
@@ -760,43 +895,110 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   /// (the cutout source) and the prepared editing base.
   bool _collagePage = false;
 
-  Future<void> _save() async {
-    if (_saving) return;
-    final mediaRepo = ref.read(mediaRepositoryProvider);
+  // Downscaled base the Compose page draws on: the chain preview with the
+  // manual rotation and crop applied, so its geometry matches the full-res
+  // photo [_recipe] renders for Compose at save time. Rebuilt every time
+  // Compose opens.
+  Uint8List? _composeBase;
+  bool _preparingCompose = false;
 
-    setState(() => _saving = true);
-    File? tempFile;
-    try {
-      final bytesToWrite = await _resolveBytesForSave();
-      File fileToPersist = _sourceFile;
-      if (bytesToWrite != null) {
-        final tempDir = await getTemporaryDirectory();
-        final tempPath = p.join(tempDir.path, 'edited_${const Uuid().v4()}.jpg');
-        tempFile = File(tempPath);
-        await tempFile.writeAsBytes(bytesToWrite, flush: true);
-        fileToPersist = tempFile;
-      }
-      final currentUserId = ref.read(currentUserIdProvider);
-      final ok = await persistMediaAsset(
-        mediaRepo: mediaRepo,
-        source: fileToPersist,
-        poiId: widget.poiId,
-        type: widget.wasUpload ? 'uploaded_image' : 'user_photo',
-        referenceImageId: _referenceImageId,
-        authorId: currentUserId,
-      );
-      if (!mounted) return;
+  bool get _isTurned =>
+      _mirrored || _rotationQuarters % 4 != 0 || _straightenDegrees != 0;
+
+  bool get _hasGeometryEdits => _isTurned || _cropRect != null;
+
+  /// What Save and Compose render at full resolution: the tools of the
+  /// active chain in order, then the mirror, rotation, straightening and
+  /// crop.
+  EditRecipe _recipe() {
+    final crop = _cropRect;
+    return EditRecipe(
+      steps: [
+        for (var i = 1; i <= _historyIndex && i < _history.length; i++)
+          if (_history[i].asEditStep case final step?) step,
+      ],
+      mirror: _mirrored,
+      quarters: _rotationQuarters % 4,
+      angle: _straightenDegrees,
+      crop: crop == null ? null : [crop.left, crop.top, crop.width, crop.height],
+    );
+  }
+
+  /// Hands the full-res render to [BackgroundPhotoSaves] and closes the
+  /// editor at once: a 12 MP render takes seconds, and the user shouldn't
+  /// have to sit through it. The photo shows up on the POI page (or in the
+  /// phone's gallery, for Edit Photo) when the save finishes; the render
+  /// never touches the source file.
+  void _save() {
+    if (_saving) return;
+    // The render runs when its turn in the save queue comes, after this
+    // editor has closed, so take everything it needs now. With no filter,
+    // rotation or crop the original is saved as-is.
+    final recipe = _recipe();
+    final edited = !recipe.isEmpty;
+    final sourcePath = widget.sourcePath;
+    final poiId = _poiId;
+    // Every new picture also goes to the phone's gallery. An unedited photo
+    // that isn't a fresh capture is already there (or already in the app),
+    // so it's skipped.
+    final toGallery = edited || widget.isCapture;
+    if (poiId == null && !toGallery) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? 'Photo saved.' : 'Save failed.')),
+        const SnackBar(content: Text('No changes to save.')),
       );
-      if (ok) Navigator.of(context).pop();
+      return;
+    }
+    _saving = true;
+    ref.read(backgroundPhotoSavesProvider.notifier).save(
+          poiId: poiId,
+          toGallery: toGallery,
+          originalToGallery: widget.isCapture,
+          type: widget.wasUpload ? 'uploaded_image' : 'user_photo',
+          render: () async =>
+              edited ? await renderEditedJpeg(sourcePath, recipe) : null,
+          original: File(sourcePath),
+          referenceImageId: _referenceImageId,
+        );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Saving in the background…')),
+    );
+    Navigator.of(context).pop();
+  }
+
+  /// Bake the manual orientation, then the crop, into the downscaled
+  /// preview [bytes], for the Compose page's canvas. Crop goes last so its
+  /// normalised rect lines up with the turned pixels the user saw.
+  Future<Uint8List> _applyGeometry(Uint8List bytes) {
+    final crop = _cropRect;
+    return compute(
+      transformJpeg,
+      TransformArgs(
+        bytes,
+        mirror: _mirrored,
+        quarters: _rotationQuarters % 4,
+        angle: _straightenDegrees,
+        crop: crop == null ? null : [crop.left, crop.top, crop.width, crop.height],
+      ),
+    );
+  }
+
+  /// Open the Compose page. Its preview base gets the same rotation and
+  /// crop as the full-res base it saves with — otherwise layers placed on
+  /// the preview would land somewhere else in the saved image.
+  Future<void> _openCompose() async {
+    final base = _chainBase;
+    if (base == null || _referencePath == null || _preparingCompose) return;
+    setState(() => _preparingCompose = true);
+    try {
+      final composeBase =
+          _hasGeometryEdits ? await _applyGeometry(base) : base;
+      if (!mounted) return;
+      setState(() {
+        _composeBase = composeBase;
+        _collagePage = true;
+      });
     } finally {
-      if (tempFile != null && await tempFile.exists()) {
-        try {
-          await tempFile.delete();
-        } catch (_) {}
-      }
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() => _preparingCompose = false);
     }
   }
 
@@ -804,107 +1006,112 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     Navigator.of(context).pop();
   }
 
-  /// Replace the reference image by picking from this POI's
-  /// `ReferenceImages` rows — keeping the foreign-key link so the
-  /// saved MediaAsset records which reference frame it was matched
-  /// against. When the user is editing through a Match Color result,
-  /// push a fresh original step on top of the history — the existing
-  /// matched bytes were computed against the previous reference and
-  /// would be misleading to keep displayed.
+  /// Add or replace the reference image: one of this POI's reference
+  /// images, or any image from the gallery (e.g. a screenshot the user
+  /// saved themselves).
   Future<void> _changeReference() async {
     if (_processing) return;
-    final images = await ref
-        .read(referenceImagesByPoiProvider(widget.poiId).future);
-    if (!mounted) return;
-    if (images.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('No reference images on this POI. Add some on its page.'),
-        ),
-      );
-      return;
-    }
-
-    final picked = await showModalBottomSheet<ReferenceImageModel>(
+    final fromPoi = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.grey[900],
-      builder: (ctx) => ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: images.length,
-        itemBuilder: (ctx, index) {
-          final image = images[index];
-          final file = (image.localPath != null && image.localPath!.isNotEmpty) 
-              ? File(image.localPath!) 
-              : null;
-          return ListTile(
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                width: 52,
-                height: 52,
-                // CRITICAL FIX: Conditionally render the image widget based on file existence
-                child: file != null
-                    ? Image.file(
-                        // Dart's type promotion knows 'file' is safely a non-null File here
-                        file,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const ColoredBox(
-                          color: Colors.black26,
-                          child: Icon(Icons.broken_image, color: Colors.white54),
-                        ),
-                      )
-                    // Fallback for cloud-only images: 
-                    // Try to load remoteUrl if available, otherwise show a placeholder.
-                    : (image.remoteUrl != null && image.remoteUrl!.isNotEmpty)
-                        ? Image.network(
-                            image.remoteUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const ColoredBox(
-                              color: Colors.black26,
-                              child: Icon(Icons.broken_image, color: Colors.white54),
-                            ),
-                          )
-                        : const ColoredBox(
-                            color: Colors.black26,
-                            child: Icon(Icons.cloud, color: Colors.white54),
-                          ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.collections, color: Colors.white),
+              title: Text(
+                _poiId != null
+                    ? "This POI's reference images"
+                    : "A POI's reference images",
+                style: const TextStyle(color: Colors.white),
               ),
+              subtitle: _poiId != null
+                  ? null
+                  : const Text(
+                      'The photo is also saved to that POI.',
+                      style: TextStyle(color: Colors.white54),
+                    ),
+              onTap: () => Navigator.pop(ctx, true),
             ),
-            title: Text(
-              image.localPath != null 
-                ? p.basenameWithoutExtension(image.localPath!)
-                : (image.metadata ?? 'Cloud Image'),
-              style: const TextStyle(color: Colors.white),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Colors.white),
+              title: const Text(
+                'Pick a reference from the gallery',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () => Navigator.pop(ctx, false),
             ),
-            onTap: () => Navigator.pop(ctx, image),
-          );
-        },
+          ],
+        ),
       ),
     );
-    if (picked == null) return;
-    if (!mounted) return;
-    if (picked.localPath == null || picked.localPath!.isEmpty) {
-      debugPrint('Cannot edit: Local path is missing. This is a cloud-only image.');
-      return;
+    if (fromPoi == null || !mounted) return;
+    if (fromPoi) {
+      await _pickPoiReference();
+    } else {
+      await _pickGalleryReference();
     }
+  }
 
-    final file = File(picked.localPath!);
-    if (!await file.exists()) {
+  /// Any image from the gallery. It has no `ReferenceImages` row, so the
+  /// saved photo isn't linked to a reference frame.
+  Future<void> _pickGalleryReference() async {
+    final XFile? picked;
+    try {
+      picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    } on PlatformException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Image file not found: ${picked.localPath}')),
+        SnackBar(content: Text('Could not pick image: ${e.message ?? e.code}')),
       );
       return;
     }
+    if (picked == null || !mounted) return;
+    _useReference(picked.path);
+  }
+
+  /// One of a POI's `ReferenceImages` rows — keeping the foreign-key link
+  /// so the saved MediaAsset records which reference frame it was matched
+  /// against. Without a POI yet, the editor asks which POI first, and the
+  /// result is saved into that POI's media as well.
+  Future<void> _pickPoiReference() async {
+    final poiId = _poiId ?? await pickPoiId(context, ref);
+    if (poiId == null || !mounted) return;
+    final picked = await pickPoiReferenceImage(context, ref, poiId);
+    if (picked == null || !mounted) return;
+    _useReference(picked.localPath!, imageId: picked.id, poiId: poiId);
+  }
+
+  /// The AppBar's POI button: save the photo into another POI, a new one
+  /// (made with the POI form, which hands back its id), or none — then it
+  /// only goes to the phone's gallery.
+  Future<void> _choosePoi() async {
+    final choice = await pickPhotoPoi(context, ref, current: _poiId);
+    if (choice == null || !mounted) return;
+    if (!choice.createNew) {
+      setState(() => _poiId = choice.poiId);
+      return;
+    }
+    final created = await context.push<String>('/pois/new');
+    if (created != null && mounted) setState(() => _poiId = created);
+  }
+
+  /// Switch to the reference at [path] — from [poiId] when it's one of a
+  /// POI's reference images, which also becomes the photo's POI if it has
+  /// none yet. When the user is editing through a Match Color result, push a
+  /// fresh original step on top of the history — the existing matched bytes
+  /// were computed against the previous reference and would be misleading
+  /// to keep displayed.
+  void _useReference(String path, {String? imageId, String? poiId}) {
     setState(() {
-      _referencePath = picked.localPath;
-      _referenceImageId = picked.id;
+      _referencePath = path;
+      _referenceImageId = imageId;
+      _poiId ??= poiId;
       _overlayOffset = Offset.zero;
       _overlayScale = 0.8;
       _overlayOpacity = 0.4;
+      _overlayRotation = 0;
       if (_current.tool == 'match') {
         _pushHistory(const _EditState());
       }
@@ -913,6 +1120,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       // new reference.
       _inEditMode = false;
     });
+    unawaited(_loadReferenceSize());
   }
 
   void _resetOverlay() {
@@ -920,32 +1128,13 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       _overlayOffset = Offset.zero;
       _overlayScale = 0.8;
       _overlayOpacity = 0.4;
+      _overlayRotation = 0;
     });
   }
 
-  /// Save reads the cached background full-res result for the current
-  /// history step instead of replaying filters inline. The Future is
-  /// scheduled at Confirm time, so by the time the user reaches Save
-  /// it is either already done (instant) or just finishing (waits the
-  /// remaining ms). If nothing has been Confirmed yet, returns null
-  /// so persistMediaAsset records the original untouched source.
-  Future<Uint8List?> _resolveBytesForSave() async {
-    if (_historyIndex <= 0) return null;
-    if (!_fullResCheckpoints.containsKey(_historyIndex)) {
-      _scheduleFullResCheckpoint(_historyIndex);
-    }
-    final future = _fullResCheckpoints[_historyIndex];
-    if (future == null) return null;
-    try {
-      return await future;
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// Bottom strip — centered slider for the active tool's continuous
-  /// param above, horizontal row of icon-above-label tool buttons +
-  /// Save below. Modelled on Google Photos: each tool reads as a
+  /// param above, horizontal row of icon-above-label tool buttons
+  /// below. Modelled on Google Photos: each tool reads as a
   /// little icon with its label underneath, the slider lives on its
   /// own centered row above the tool icons so it doesn't have to
   /// share width with the buttons.
@@ -954,6 +1143,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     bool hasReference,
     String? activeTool,
   ) {
+    if (_inRotateMode) return _buildRotateStrip(theme);
     final slider = _activeSliderForTool(activeTool, theme);
     return Container(
       color: Colors.black,
@@ -972,57 +1162,183 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
           // distracting accidental-tap target if it stayed visible.
           if (!_inEditMode)
             SizedBox(
-              // 72 px (not 64) gives the two-line "Match\nColor" label
-              // enough vertical room without truncating; single-line
-              // labels stay vertically centered.
-              height: 72,
-              child: Center(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                // 4 buttons × ~72 px easily fits the narrowest phone
-                // width, so Center keeps them as a balanced row in the
-                // middle. The scroll view is just a safety net for if
-                // a 5th tool gets added later and overflows a small
-                // screen.
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _ToolButton(
-                      icon: Icons.palette,
-                      // Force two lines so the label stays readable
-                      // inside the 72 px button — `Match Color` on one
-                      // line gets truncated to `Match C…`.
-                      label: 'Match\nColor',
-                      enabled: hasReference && !_processing,
-                      disabledHint:
-                          hasReference ? null : 'No reference image',
-                      selected: activeTool == 'match',
-                      applied: _appliedTools.contains('match'),
-                      onTap: () => _runMatch(
-                        'match',
-                        reinhardMatch,
-                        storeMatchedBase: true,
+              // Room for the icon over a two-line label like
+              // "Match\nColor"; single-line labels stay centred.
+              height: 80,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = _toolButtonWidth(constraints.maxWidth);
+                  return Center(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      // Center keeps the buttons as a balanced row when
+                      // they all fit; on a phone the 7 tools scroll, with
+                      // the one at the edge cut in half.
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Add or change the reference: the overlay,
+                          // Match Color and Compose all work from it.
+                          _ToolButton(
+                            width: width,
+                            icon: hasReference
+                                ? Icons.photo_library
+                                : Icons.add_photo_alternate,
+                            label: 'Reference',
+                            enabled: !_processing,
+                            selected: false,
+                            onTap: _changeReference,
+                          ),
+                          _ToolButton(
+                            width: width,
+                            icon: Icons.palette,
+                            // Two lines, so the label stays large enough
+                            // to read instead of shrinking to fit.
+                            label: 'Match\nColor',
+                            enabled: hasReference && !_processing,
+                            disabledHint:
+                                hasReference ? null : 'No reference image',
+                            selected: activeTool == 'match',
+                            applied: _appliedTools.contains('match'),
+                            onTap: () => _runMatch(
+                              'match',
+                              reinhardMatch,
+                              storeMatchedBase: true,
+                            ),
+                          ),
+                          _ToolButton(
+                            width: width,
+                            icon: Icons.brightness_6,
+                            label: 'Brightness',
+                            enabled: !_processing,
+                            selected: activeTool == 'brightness',
+                            applied: _appliedTools.contains('brightness'),
+                            onTap: _runBrightness,
+                          ),
+                          _ToolButton(
+                            width: width,
+                            icon: Icons.deblur,
+                            label: 'Sharpness',
+                            enabled: !_processing,
+                            selected: activeTool == 'sharpness',
+                            applied: _appliedTools.contains('sharpness'),
+                            onTap: _runSharpness,
+                          ),
+                          _ToolButton(
+                            width: width,
+                            icon: Icons.rotate_90_degrees_cw,
+                            label: 'Rotate',
+                            enabled: !_processing && _baseImageSize != null,
+                            selected: false,
+                            applied: _isTurned,
+                            onTap: _enterRotateMode,
+                          ),
+                          _ToolButton(
+                            width: width,
+                            icon: Icons.crop,
+                            label: 'Crop',
+                            enabled: !_processing && _baseImageSize != null,
+                            selected: false,
+                            applied: _cropRect != null,
+                            onTap: _enterCropMode,
+                          ),
+                          // Compose (stage 2) flattens cutouts / the
+                          // reference onto the edited photo and saves
+                          // from its own page.
+                          _ToolButton(
+                            width: width,
+                            icon: Icons.auto_awesome_mosaic,
+                            label: 'Compose',
+                            enabled: hasReference &&
+                                !_processing &&
+                                !_saving &&
+                                !_preparingCompose &&
+                                _chainBase != null,
+                            disabledHint:
+                                hasReference ? null : 'No reference image',
+                            selected: false,
+                            applied: false,
+                            onTap: _openCompose,
+                          ),
+                        ],
                       ),
                     ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// The Rotate tool's strip: the straightening slider over the
+  /// quarter-turn and flip buttons.
+  Widget _buildRotateStrip(ThemeData theme) {
+    final degrees = _draftDegrees;
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _LabelledSlider(
+            label: 'Straighten',
+            value: degrees,
+            min: -45,
+            max: 45,
+            readout: '${degrees > 0 ? '+' : ''}${degrees.toStringAsFixed(1)}°',
+            theme: theme,
+            // Tenths of a degree, so the slider can land back on exactly 0.
+            onChanged: (v) =>
+                setState(() => _draftDegrees = (v * 10).round() / 10),
+          ),
+          SizedBox(
+            height: 80,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // The same size as the main strip's tool buttons.
+                final width = _toolButtonWidth(constraints.maxWidth);
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                     _ToolButton(
-                      icon: Icons.brightness_6,
-                      label: 'Brightness',
-                      enabled: !_processing,
-                      selected: activeTool == 'brightness',
-                      applied: _appliedTools.contains('brightness'),
-                      onTap: _runBrightness,
+                      width: width,
+                      icon: Icons.rotate_left,
+                      label: '90° left',
+                      enabled: true,
+                      selected: false,
+                      onTap: () => _turnDraft(-1),
                     ),
                     _ToolButton(
-                      icon: Icons.deblur,
-                      label: 'Sharpness',
-                      enabled: !_processing,
-                      selected: activeTool == 'sharpness',
-                      applied: _appliedTools.contains('sharpness'),
-                      onTap: _runSharpness,
+                      width: width,
+                      icon: Icons.rotate_right,
+                      label: '90° right',
+                      enabled: true,
+                      selected: false,
+                      onTap: () => _turnDraft(1),
+                    ),
+                    _ToolButton(
+                      width: width,
+                      icon: Icons.flip,
+                      label: 'Flip ↔',
+                      enabled: true,
+                      selected: false,
+                      onTap: () => _flipDraft(vertical: false),
+                    ),
+                    _ToolButton(
+                      width: width,
+                      icon: Icons.flip,
+                      iconQuarterTurns: 1,
+                      label: 'Flip ↕',
+                      enabled: true,
+                      selected: false,
+                      onTap: () => _flipDraft(vertical: true),
                     ),
                   ],
-                ),
-              ),
+                );
+              },
             ),
           ),
         ],
@@ -1146,19 +1462,20 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
         : baseDisplay();
   }
 
-  /// Default-mode AppBar: back/undo/redo on the left, change-ref +
-  /// overlay + Save on the right. Use while no tool is being dialled
-  /// in, so the user can step through edit history and commit to disk.
-  PreferredSizeWidget _buildMainAppBar(
-    ThemeData theme,
-    bool hasReference,
-  ) {
+  /// Default-mode AppBar: back/undo/redo on the left, the POI the photo is
+  /// saved into in the middle, Save on the right. Use while no tool is
+  /// being dialled in, so the user can step through edit history and
+  /// commit to disk. Save is always here; Compose (which saves from its own
+  /// page), the reference and rotation are tools in the bottom strip.
+  PreferredSizeWidget _buildMainAppBar(ThemeData theme) {
     return AppBar(
       backgroundColor: Colors.black,
       foregroundColor: Colors.white,
       // Wider leading slot to fit back + undo + redo in a row without
       // pushing the title.
       leadingWidth: 168,
+      titleSpacing: 0,
+      title: _buildPoiButton(),
       leading: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1180,45 +1497,88 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
         ],
       ),
       actions: [
-        IconButton(
-          icon: const Icon(Icons.photo_library),
-          tooltip:
-              hasReference ? 'Change reference image' : 'Add reference image',
-          onPressed: _processing ? null : _changeReference,
-        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: hasReference
-              ? TextButton(
-                  // With a reference, the forward action is Compose; Save lives
-                  // on the Compose page (it flattens base + layers).
-                  onPressed: (_processing || _editingBaseBytes == null)
-                      ? null
-                      : () => setState(() => _collagePage = true),
-                  style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.primary,
-                    disabledForegroundColor: Colors.white38,
-                  ),
-                  child: const Text('Compose →'),
-                )
-              : TextButton(
-                  // No reference to compose against — save directly.
-                  onPressed: _saving ? null : _save,
-                  style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.primary,
-                    disabledForegroundColor: Colors.white38,
-                  ),
-                  child: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Save'),
-                ),
+          child: TextButton(
+            onPressed: (_saving || _processing) ? null : _save,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.primary,
+              disabledForegroundColor: Colors.white38,
+            ),
+            child: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('Save'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The main AppBar's POI button: the POI the photo is saved into, or "No
+  /// POI" when it only goes to the phone's gallery. Tapping it picks another
+  /// ([_choosePoi]).
+  Widget _buildPoiButton() {
+    final id = _poiId;
+    final name = id == null
+        ? 'No POI'
+        : ref.watch(allPoisProvider).valueOrNull?[id]?.name ?? 'POI';
+    return TextButton.icon(
+      onPressed: _processing ? null : _choosePoi,
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.white,
+        disabledForegroundColor: Colors.white38,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+      icon: Icon(id == null ? Icons.location_off : Icons.place, size: 18),
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          const Icon(Icons.arrow_drop_down, size: 20),
+        ],
+      ),
+    );
+  }
+
+  /// Rotate-tool AppBar: Cancel ✕, "Rotate", Reset (once the draft is
+  /// turned, flipped or straightened), Done.
+  PreferredSizeWidget _buildRotateAppBar(ThemeData theme) {
+    final changed =
+        _draftMirrored || _draftQuarters != 0 || _draftDegrees != 0;
+    return AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        tooltip: 'Cancel rotate',
+        onPressed: _cancelRotate,
+      ),
+      title: const Text('Rotate', style: TextStyle(fontSize: 16)),
+      actions: [
+        if (changed)
+          TextButton(
+            onPressed: _resetRotateDraft,
+            style: TextButton.styleFrom(foregroundColor: Colors.white70),
+            child: const Text('Reset'),
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TextButton(
+            onPressed: _confirmRotate,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.primary,
+            ),
+            child: const Text('Done'),
+          ),
         ),
       ],
     );
@@ -1229,10 +1589,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
   /// version" affordance disappear — the only way out of this
   /// AppBar is Cancel (discard) or Confirm (keep), matching the
   /// modal feel of Google Photos' per-tool editing.
-  PreferredSizeWidget _buildEditModeAppBar(
-    ThemeData theme,
-    bool hasReference,
-  ) {
+  PreferredSizeWidget _buildEditModeAppBar(ThemeData theme) {
     return AppBar(
       backgroundColor: Colors.black,
       foregroundColor: Colors.white,
@@ -1246,12 +1603,6 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
         style: const TextStyle(fontSize: 16),
       ),
       actions: [
-        IconButton(
-          icon: const Icon(Icons.photo_library),
-          tooltip:
-              hasReference ? 'Change reference image' : 'Add reference image',
-          onPressed: _processing ? null : _changeReference,
-        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: TextButton(
@@ -1267,15 +1618,84 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     );
   }
 
-  /// Outer canvas wrapper: in Compare mode the edited captured sits
-  /// next to the reference as a 50 / 50 split; otherwise the canvas
-  /// is the single edited captured (with the optional translucent
-  /// overlay layered on top).
+  /// [image], which fills its box, mirrored, turned and straightened the
+  /// way Save writes it. Lay it out in a box of the turned photo's [aspect].
+  Widget _orientedPhoto(
+    Widget image, {
+    required bool mirror,
+    required int quarters,
+    required double degrees,
+    required double aspect,
+  }) {
+    Widget photo = RotatedBox(
+      quarterTurns: quarters,
+      child: mirror ? Transform.flip(flipX: true, child: image) : image,
+    );
+    if (degrees != 0) {
+      // Turned about its centre and zoomed in to the largest rectangle of
+      // its shape that it still covers, as straightenAndCrop renders it.
+      photo = ClipRect(
+        child: Transform.rotate(
+          angle: degrees * math.pi / 180,
+          child: Transform.scale(
+            scale: 1 / straightenScale(aspect, 1, degrees),
+            child: photo,
+          ),
+        ),
+      );
+    }
+    return photo;
+  }
+
+  /// Outer canvas wrapper: the edited captured image (turned and
+  /// cropped as Save will write it) with the optional translucent
+  /// reference overlay layered on top. While the Rotate tool is open the
+  /// photo shows the draft orientation instead, uncropped, under a grid.
   Widget _buildCanvasContent(Uint8List? currentBytes, File? reference) {
+    // Only the photo turns with the Rotate tool; the reference overlay
+    // below keeps its own independent rotation.
+    final rotating = _inRotateMode;
+    final quarters = rotating ? _draftQuarters : _rotationQuarters;
+    final aspect = _aspectFor(quarters);
+    Widget photo;
+    if (aspect == null) {
+      // The editing base isn't decoded yet, so neither is the photo's
+      // shape — and nothing can be turned before it is.
+      photo = Center(child: _buildEditingCanvas(currentBytes));
+    } else {
+      final oriented = _orientedPhoto(
+        _buildEditingCanvas(currentBytes),
+        mirror: rotating ? _draftMirrored : _mirrored,
+        quarters: quarters,
+        degrees: rotating ? _draftDegrees : _straightenDegrees,
+        aspect: aspect,
+      );
+      // When a crop is committed, show only the cropped region (scaled up
+      // to fill the canvas) so the preview matches what Save will write.
+      final crop = rotating ? null : _cropRect;
+      photo = crop != null
+          ? _CroppedView(crop: crop, imageAspect: aspect, child: oriented)
+          : Center(
+              child: AspectRatio(
+                aspectRatio: aspect,
+                child: rotating
+                    ? Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          oriented,
+                          const IgnorePointer(
+                            child: CustomPaint(painter: _GridPainter()),
+                          ),
+                        ],
+                      )
+                    : oriented,
+              ),
+            );
+    }
     return Stack(
       fit: StackFit.expand,
       children: [
-        Center(child: _buildEditingCanvas(currentBytes)),
+        photo,
         if (_showOverlay && reference != null)
           Positioned.fill(
             child: GestureDetector(
@@ -1284,6 +1704,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                 _gestureStartOffset = _overlayOffset;
                 _gestureStartFocalPoint = details.focalPoint;
                 _gestureStartScale = _overlayScale;
+                _gestureStartRotation = _overlayRotation;
               },
               onScaleUpdate: (details) {
                 setState(() {
@@ -1293,23 +1714,29 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                       (_gestureStartScale * details.scale)
                           .clamp(0.35, 4)
                           .toDouble();
+                  // Two-finger twist rotates the reference overlay.
+                  _overlayRotation =
+                      _gestureStartRotation + details.rotation;
                 });
               },
               child: Center(
                 child: Transform.translate(
                   offset: _overlayOffset,
-                  child: Transform.scale(
-                    scale: _overlayScale,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 2,
+                  child: Transform.rotate(
+                    angle: _overlayRotation,
+                    child: Transform.scale(
+                      scale: _overlayScale,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Colors.white,
+                            width: 2,
+                          ),
                         ),
-                      ),
-                      child: Opacity(
-                        opacity: _overlayOpacity,
-                        child: Image.file(reference, fit: BoxFit.contain),
+                        child: Opacity(
+                          opacity: _overlayOpacity,
+                          child: Image.file(reference, fit: BoxFit.contain),
+                        ),
                       ),
                     ),
                   ),
@@ -1329,11 +1756,28 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     final currentBytes = _current.bytes;
     final activeTool = _current.tool;
 
+    if (_inCropMode) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        appBar: _buildCropAppBar(theme),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(child: _buildCropCanvas()),
+              _buildCropStrip(theme),
+            ],
+          ),
+        ),
+      );
+    }
+
     final adjust = Scaffold(
       backgroundColor: Colors.black,
-      appBar: _inEditMode
-          ? _buildEditModeAppBar(theme, hasReference)
-          : _buildMainAppBar(theme, hasReference),
+      appBar: _inRotateMode
+          ? _buildRotateAppBar(theme)
+          : _inEditMode
+              ? _buildEditModeAppBar(theme)
+              : _buildMainAppBar(theme),
       body: SafeArea(
         child: Column(
           children: [
@@ -1342,7 +1786,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                 fit: StackFit.expand,
                 children: [
                   _buildCanvasContent(currentBytes, reference),
-                  if (_processing || _preparingEditingBase)
+                  if (_processing || _preparingEditingBase || _preparingCompose)
                     const Positioned.fill(
                       child: ColoredBox(
                         color: Color(0x66000000),
@@ -1352,10 +1796,8 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                         ),
                       ),
                     ),
-                  // Floating opacity bar — only when the AppBar overlay
-                  // is on AND Compare mode is off (Compare already
-                  // shows both images, so the overlay layer is hidden
-                  // and its controls go with it).
+                  // Floating opacity bar — only when a reference image
+                  // is in play (the Reference tool adds one).
                   if (hasReference)
                     Positioned(
                       left: 12,
@@ -1368,6 +1810,8 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
                         onOpacityChanged: (v) =>
                             setState(() => _overlayOpacity = v),
                         onReset: _resetOverlay,
+                        onRotate: () => setState(
+                            () => _overlayRotation += math.pi / 2),
                         onToggleVisibility: () =>
                             setState(() => _showOverlay = !_showOverlay),
                       ),
@@ -1383,8 +1827,8 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
 
     // Adjust → Compose → Save. Keep Compose alive in an IndexedStack so going
     // Back to Adjust doesn't lose placed layers. Compose needs a reference
-    // (the cutout source) + the prepared base; without one, Adjust saves
-    // directly and there's no Compose page.
+    // (the cutout source) + the prepared base; without one there's no
+    // Compose page (Adjust's Save still works either way).
     final base = _editingBaseBytes;
     final refPath = _referencePath;
     if (base == null || refPath == null) {
@@ -1397,35 +1841,263 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
       children: [
         adjust,
         CollagePage(
-          basePreview: _chainBase ?? base,
-          resolveFullResBase: () async =>
-              await _resolveBytesForSave() ?? await _sourceFile.readAsBytes(),
+          basePreview: _composeBase ?? _chainBase ?? base,
+          sourcePath: widget.sourcePath,
+          recipe: _recipe(),
           referencePath: refPath,
-          poiId: widget.poiId,
+          poiId: _poiId,
+          originalCapture: widget.isCapture ? _sourceFile : null,
           onBack: () => setState(() => _collagePage = false),
         ),
       ],
     );
   }
+
+  /// Crop-submode AppBar: Cancel ✕, "Crop" title, Reset (when a crop is
+  /// already committed), Done. The reference's visibility is on the
+  /// overlay bar in the crop strip.
+  PreferredSizeWidget _buildCropAppBar(ThemeData theme) {
+    return AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        tooltip: 'Cancel crop',
+        onPressed: _cancelCrop,
+      ),
+      title: const Text('Crop', style: TextStyle(fontSize: 16)),
+      actions: [
+        if (_cropRect != null)
+          TextButton(
+            onPressed: () => setState(() {
+              _cropRect = null;
+              _draftCropRect = const Rect.fromLTWH(0, 0, 1, 1);
+              _cropAspectLock = null;
+            }),
+            style: TextButton.styleFrom(foregroundColor: Colors.white70),
+            child: const Text('Reset'),
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TextButton(
+            onPressed: _confirmCrop,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.primary,
+            ),
+            child: const Text('Done'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Crop canvas — the photo at its display aspect with the interactive
+  /// crop frame on top. Shows the latest committed look (the chain
+  /// result, else the editing base) since crop is purely geometric.
+  ///
+  /// With a reference loaded (and the overlay on), the reference floats
+  /// inside the crop box at the overlay's opacity (set on the crop strip's
+  /// overlay bar) and moves and resizes with it, so the user can line the
+  /// crop up with the anime frame — with "Match ref" it fills the box
+  /// exactly.
+  Widget _buildCropCanvas() {
+    final ar = _displayedImageAspect ?? 1;
+    final display = _chainBase;
+    final reference = _showOverlay ? _referenceFile : null;
+    final image = _orientedPhoto(
+      display != null
+          ? Image.memory(display, fit: BoxFit.fill, gaplessPlayback: true)
+          : Image.file(_sourceFile, fit: BoxFit.fill),
+      mirror: _mirrored,
+      quarters: _rotationQuarters,
+      degrees: _straightenDegrees,
+      aspect: ar,
+    );
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Center(
+        child: AspectRatio(
+          aspectRatio: ar,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final box = _draftCropRect;
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  image,
+                  if (reference != null)
+                    Positioned(
+                      left: box.left * constraints.maxWidth,
+                      top: box.top * constraints.maxHeight,
+                      width: box.width * constraints.maxWidth,
+                      height: box.height * constraints.maxHeight,
+                      child: IgnorePointer(
+                        child: Opacity(
+                          opacity: _overlayOpacity,
+                          child: Image.file(reference, fit: BoxFit.contain),
+                        ),
+                      ),
+                    ),
+                  _CropFrame(
+                    rect: _draftCropRect,
+                    aspectLock: _cropAspectLock,
+                    onChanged: (r) => setState(() => _draftCropRect = r),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Horizontal strip of aspect-ratio presets for the crop editor. The
+  /// "Match ref" chip (only with a reference loaded) locks to the anime
+  /// image's proportions — the whole point of the feature. With a
+  /// reference, the overlay bar above the chips sets how see-through it is
+  /// in the crop box, or hides it.
+  Widget _buildCropStrip(ThemeData theme) {
+    final ref = _referenceImageSize;
+    final dispAR = _displayedImageAspect;
+    final chips = <Widget>[
+      _cropChip('Free', null, theme),
+      if (ref != null && ref.height > 0)
+        _cropChip('Match ref', ref.width / ref.height, theme),
+      if (dispAR != null) _cropChip('Original', dispAR, theme),
+      _cropChip('1:1', 1, theme),
+      _cropChip('4:3', 4 / 3, theme),
+      _cropChip('3:4', 3 / 4, theme),
+      _cropChip('16:9', 16 / 9, theme),
+      _cropChip('9:16', 9 / 16, theme),
+    ];
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_hasReference)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: _FloatingOverlayBar(
+                overlayVisible: _showOverlay,
+                opacity: _overlayOpacity,
+                theme: theme,
+                onOpacityChanged: (v) => setState(() => _overlayOpacity = v),
+                onToggleVisibility: () =>
+                    setState(() => _showOverlay = !_showOverlay),
+              ),
+            ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(children: chips),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cropChip(String label, double? aspect, ThemeData theme) {
+    final lock = _cropAspectLock;
+    final selected = aspect == null
+        ? lock == null
+        : lock != null && (lock - aspect).abs() < 0.001;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => _setCropAspect(aspect),
+        backgroundColor: Colors.white12,
+        selectedColor: theme.colorScheme.primary,
+        labelStyle: TextStyle(
+          color: selected ? Colors.white : Colors.white70,
+        ),
+        side: BorderSide.none,
+        showCheckmark: false,
+      ),
+    );
+  }
+}
+
+/// [crop] (normalised, over the photo as shown mirrored [fromMirrored] and
+/// turned [fromQuarters] times) moved onto the photo shown mirrored
+/// [toMirrored] and turned [toQuarters] times, so it frames the same part
+/// of the photo.
+Rect _carryCrop(
+  Rect crop, {
+  required bool fromMirrored,
+  required int fromQuarters,
+  required bool toMirrored,
+  required int toQuarters,
+}) {
+  // Shown = turns ∘ mirror, so getting from one to the other is a turn —
+  // after a left-to-right mirror when only one of them is mirrored.
+  var r = crop;
+  final int turns;
+  if (fromMirrored != toMirrored) {
+    r = Rect.fromLTWH(1 - r.right, r.top, r.width, r.height);
+    turns = toQuarters + fromQuarters;
+  } else {
+    turns = toQuarters - fromQuarters;
+  }
+  for (var i = 0; i < turns % 4; i++) {
+    // A clockwise quarter-turn takes (x, y) to (1 - y, x).
+    r = Rect.fromLTWH(1 - r.bottom, r.left, r.height, r.width);
+  }
+  return r;
+}
+
+/// Width of a tool button in the editor's bottom strips: four and a half of
+/// them across a strip [stripWidth] wide, so when a row of tools doesn't
+/// fit, the button cut in half at the edge shows that it scrolls. At most
+/// 96 dp, so they don't sprawl across a tablet or a landscape screen, where
+/// they all fit anyway.
+double _toolButtonWidth(double stripWidth) => math.min(96, stripWidth / 4.5);
+
+/// Grid over the photo while the Rotate tool is open, to line horizons and
+/// verticals up against when straightening.
+class _GridPainter extends CustomPainter {
+  const _GridPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white38
+      ..strokeWidth = 1;
+    const lines = 6;
+    for (var i = 1; i < lines; i++) {
+      final x = size.width * i / lines;
+      final y = size.height * i / lines;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GridPainter oldDelegate) => false;
 }
 
 /// Floating overlay control bar — sits at the bottom edge of the
-/// canvas whenever a reference image is in play (and Compare mode
-/// isn't on). Layout matches the camera screen's bottom row:
+/// canvas whenever a reference image is in play. Layout follows the
+/// camera screen's bottom row, plus a rotate button:
 ///
-///   visible:  [🗏] [slider────────] [↻ reset] [👁‍🗨 hide]
-///   hidden:                                   [👁 show]
+///   visible:  [🗏] [slider────────] [⟳ 90°] [↻ reset] [👁‍🗨 hide]
+///   hidden:                                            [👁 show]
 ///
-/// so the two screens share the same controls in the same order. The
-/// AppBar no longer carries an overlay toggle — this bar is the only
-/// way in and out of the overlay state, and that makes the two
-/// surfaces feel like the same tool.
+/// The AppBar carries no overlay toggle — this bar is the only way in
+/// and out of the overlay state, so the two surfaces feel like the
+/// same tool. The crop strip shows it too, without [onRotate] and
+/// [onReset]: there the reference just fills the crop box.
 class _FloatingOverlayBar extends StatelessWidget {
   final bool overlayVisible;
   final double opacity;
   final ThemeData theme;
   final ValueChanged<double> onOpacityChanged;
-  final VoidCallback onReset;
+  final VoidCallback? onReset;
+  final VoidCallback? onRotate;
   final VoidCallback onToggleVisibility;
 
   const _FloatingOverlayBar({
@@ -1433,8 +2105,9 @@ class _FloatingOverlayBar extends StatelessWidget {
     required this.opacity,
     required this.theme,
     required this.onOpacityChanged,
-    required this.onReset,
     required this.onToggleVisibility,
+    this.onReset,
+    this.onRotate,
   });
 
   @override
@@ -1469,17 +2142,30 @@ class _FloatingOverlayBar extends StatelessWidget {
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.restart_alt),
-                color: Colors.white,
-                tooltip: 'Reset overlay',
-                onPressed: onReset,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 36,
-                  height: 36,
+              if (onRotate != null)
+                IconButton(
+                  icon: const Icon(Icons.rotate_right),
+                  color: Colors.white,
+                  tooltip: 'Rotate reference 90°',
+                  onPressed: onRotate,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 36,
+                    height: 36,
+                  ),
                 ),
-              ),
+              if (onReset != null)
+                IconButton(
+                  icon: const Icon(Icons.restart_alt),
+                  color: Colors.white,
+                  tooltip: 'Reset overlay',
+                  onPressed: onReset,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 36,
+                    height: 36,
+                  ),
+                ),
             ] else
               const Spacer(),
             IconButton(
@@ -1512,13 +2198,15 @@ class _FloatingOverlayBar extends StatelessWidget {
 /// When [centerZero] is true the indicator shows signed percentages
 /// (`-50%` / `+25%`) so a slider whose default is the midpoint reads
 /// the way Lightroom / Google Photos do; otherwise it shows
-/// `0%`–`100%` over the [min]–[max] range.
+/// `0%`–`100%` over the [min]–[max] range. [readout], when given, is shown
+/// instead (e.g. the Rotate tool's degrees).
 class _LabelledSlider extends StatelessWidget {
   final String label;
   final double value;
   final double min;
   final double max;
   final bool centerZero;
+  final String? readout;
   final ThemeData theme;
   final ValueChanged<double> onChanged;
   final ValueChanged<double>? onChangeEnd;
@@ -1531,13 +2219,16 @@ class _LabelledSlider extends StatelessWidget {
     required this.theme,
     required this.onChanged,
     this.centerZero = false,
+    this.readout,
     this.onChangeEnd,
   });
 
   @override
   Widget build(BuildContext context) {
     final String readout;
-    if (centerZero) {
+    if (this.readout case final given?) {
+      readout = given;
+    } else if (centerZero) {
       final extent = (max - min).abs() / 2;
       final percent = extent > 0 ? (value / extent) * 100 : 0;
       readout =
@@ -1594,7 +2285,13 @@ class _LabelledSlider extends StatelessWidget {
 /// rest sit in dim white so the selection reads at a glance against
 /// the canvas's typically dark surroundings.
 class _ToolButton extends StatelessWidget {
+  /// From [_toolButtonWidth], so the strips' buttons all match.
+  final double width;
   final IconData icon;
+
+  /// Clockwise quarter-turns for [icon] — the Rotate tool's vertical flip
+  /// is the horizontal flip icon turned once.
+  final int iconQuarterTurns;
   final String label;
   final bool enabled;
   final bool selected;
@@ -1603,11 +2300,13 @@ class _ToolButton extends StatelessWidget {
   final VoidCallback onTap;
 
   const _ToolButton({
+    required this.width,
     required this.icon,
     required this.label,
     required this.enabled,
     required this.selected,
     required this.onTap,
+    this.iconQuarterTurns = 0,
     this.applied = false,
     this.disabledHint,
   });
@@ -1624,22 +2323,27 @@ class _ToolButton extends StatelessWidget {
                 ? Colors.lightBlueAccent
                 : Colors.white70;
     final tile = Container(
-      width: 72,
+      width: width,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: fg, size: 26),
+          RotatedBox(
+            quarterTurns: iconQuarterTurns,
+            child: Icon(icon, color: fg, size: 28),
+          ),
           const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(color: fg, fontSize: 11, height: 1.15),
-            textAlign: TextAlign.center,
-            // Two lines so labels like "Match\nColor" wrap cleanly;
-            // single-word labels just stay one line.
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+          // Labels like "Match\nColor" break where they say; a long single
+          // word on a narrow screen shrinks to fit instead of being cut off.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              style: TextStyle(color: fg, fontSize: 12, height: 1.15),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+            ),
           ),
         ],
       ),
@@ -1656,4 +2360,272 @@ class _ToolButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Displays only [crop] (a normalised rect over a [imageAspect] image),
+/// scaled up to fill this widget's box with letterboxing — used so the
+/// main-mode preview shows exactly what a committed crop will save,
+/// without re-encoding anything. [child] must render the full displayed
+/// image filling whatever box it's given.
+class _CroppedView extends StatelessWidget {
+  final Rect crop;
+  final double imageAspect;
+  final Widget child;
+
+  const _CroppedView({
+    required this.crop,
+    required this.imageAspect,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final box = Size(constraints.maxWidth, constraints.maxHeight);
+        final outAR = imageAspect * (crop.width / crop.height);
+        // Fit the cropped output into the box (contain).
+        double outW = box.width;
+        double outH = outW / outAR;
+        if (outH > box.height) {
+          outH = box.height;
+          outW = outH * outAR;
+        }
+        final outLeft = (box.width - outW) / 2;
+        final outTop = (box.height - outH) / 2;
+        // The full image, sized so its crop region maps onto outW × outH.
+        final fullW = outW / crop.width;
+        final fullH = outH / crop.height;
+        return Stack(
+          children: [
+            Positioned(
+              left: outLeft,
+              top: outTop,
+              width: outW,
+              height: outH,
+              child: ClipRect(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: -crop.left * fullW,
+                      top: -crop.top * fullH,
+                      width: fullW,
+                      height: fullH,
+                      child: child,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Interactive crop frame drawn over the photo (which is laid out at its
+/// display aspect, so this widget's box and the image share coordinates).
+/// Drag a corner to resize, drag inside to move; with [aspectLock] set,
+/// resizes keep that output pixel aspect. Reports the new rect in
+/// normalised (0..1) coordinates via [onChanged].
+class _CropFrame extends StatefulWidget {
+  final Rect rect;
+  final double? aspectLock;
+  final ValueChanged<Rect> onChanged;
+
+  const _CropFrame({
+    required this.rect,
+    required this.aspectLock,
+    required this.onChanged,
+  });
+
+  @override
+  State<_CropFrame> createState() => _CropFrameState();
+}
+
+class _CropFrameState extends State<_CropFrame> {
+  // Touch radius for grabbing a corner, and the smallest crop side.
+  static const double _handleHit = 30;
+  static const double _minSide = 44;
+
+  int _handle = -1; // -1 none, 0=TL 1=TR 2=BL 3=BR, 4=move
+  Rect _startPx = Rect.zero;
+  Offset _startPoint = Offset.zero;
+  Size _size = Size.zero;
+
+  Rect get _rectPx => Rect.fromLTRB(
+        widget.rect.left * _size.width,
+        widget.rect.top * _size.height,
+        widget.rect.right * _size.width,
+        widget.rect.bottom * _size.height,
+      );
+
+  void _onStart(Offset p) {
+    _startPoint = p;
+    _startPx = _rectPx;
+    final corners = [
+      _startPx.topLeft,
+      _startPx.topRight,
+      _startPx.bottomLeft,
+      _startPx.bottomRight,
+    ];
+    _handle = -1;
+    for (var i = 0; i < 4; i++) {
+      if ((corners[i] - p).distance <= _handleHit) {
+        _handle = i;
+        break;
+      }
+    }
+    if (_handle == -1 && _startPx.contains(p)) _handle = 4;
+  }
+
+  void _onUpdate(Offset p) {
+    if (_handle == -1 || _size.isEmpty) return;
+    final dx = p.dx - _startPoint.dx;
+    final dy = p.dy - _startPoint.dy;
+    final r = _startPx;
+
+    if (_handle == 4) {
+      final nl = (r.left + dx).clamp(0.0, _size.width - r.width);
+      final nt = (r.top + dy).clamp(0.0, _size.height - r.height);
+      _emit(Rect.fromLTWH(nl, nt, r.width, r.height));
+      return;
+    }
+
+    double l = r.left, t = r.top, rt = r.right, b = r.bottom;
+    switch (_handle) {
+      case 0:
+        l += dx;
+        t += dy;
+        break;
+      case 1:
+        rt += dx;
+        t += dy;
+        break;
+      case 2:
+        l += dx;
+        b += dy;
+        break;
+      case 3:
+        rt += dx;
+        b += dy;
+        break;
+    }
+    l = l.clamp(0.0, _size.width);
+    rt = rt.clamp(0.0, _size.width);
+    t = t.clamp(0.0, _size.height);
+    b = b.clamp(0.0, _size.height);
+    var nr = Rect.fromLTRB(math.min(l, rt), math.min(t, b), math.max(l, rt),
+        math.max(t, b));
+    if (nr.width < _minSide || nr.height < _minSide) return;
+
+    final a = widget.aspectLock;
+    if (a != null) {
+      nr = _applyAspect(nr, a, _handle);
+      if (nr.width < _minSide ||
+          nr.height < _minSide ||
+          nr.left < -0.5 ||
+          nr.top < -0.5 ||
+          nr.right > _size.width + 0.5 ||
+          nr.bottom > _size.height + 0.5) {
+        return;
+      }
+    }
+    _emit(nr);
+  }
+
+  /// Re-shape [r] to output pixel-aspect [a], keeping the corner opposite
+  /// the dragged [handle] anchored.
+  Rect _applyAspect(Rect r, double a, int handle) {
+    final w = r.width;
+    final h = w / a;
+    switch (handle) {
+      case 0: // TL moves, BR fixed
+        return Rect.fromLTRB(r.right - w, r.bottom - h, r.right, r.bottom);
+      case 1: // TR moves, BL fixed
+        return Rect.fromLTRB(r.left, r.bottom - h, r.left + w, r.bottom);
+      case 2: // BL moves, TR fixed
+        return Rect.fromLTRB(r.right - w, r.top, r.right, r.top + h);
+      default: // BR moves, TL fixed
+        return Rect.fromLTRB(r.left, r.top, r.left + w, r.top + h);
+    }
+  }
+
+  void _emit(Rect px) {
+    widget.onChanged(Rect.fromLTRB(
+      px.left / _size.width,
+      px.top / _size.height,
+      px.right / _size.width,
+      px.bottom / _size.height,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _size = Size(constraints.maxWidth, constraints.maxHeight);
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onPanStart: (d) => _onStart(d.localPosition),
+          onPanUpdate: (d) => _onUpdate(d.localPosition),
+          child: CustomPaint(size: _size, painter: _CropPainter(_rectPx)),
+        );
+      },
+    );
+  }
+}
+
+/// Paints the crop frame: dimmed mask outside the rect, a white border,
+/// rule-of-thirds guides, and bold corner brackets.
+class _CropPainter extends CustomPainter {
+  final Rect rect;
+
+  _CropPainter(this.rect);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final outer = Path()..addRect(Offset.zero & size);
+    final inner = Path()..addRect(rect);
+    canvas.drawPath(
+      Path.combine(PathOperation.difference, outer, inner),
+      Paint()..color = const Color(0x99000000),
+    );
+
+    final border = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawRect(rect, border);
+
+    final thirds = Paint()
+      ..color = Colors.white54
+      ..strokeWidth = 1;
+    for (var i = 1; i < 3; i++) {
+      final x = rect.left + rect.width * i / 3;
+      canvas.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), thirds);
+      final y = rect.top + rect.height * i / 3;
+      canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), thirds);
+    }
+
+    final handle = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+    const len = 22.0;
+    void bracket(Offset c, double sx, double sy) {
+      canvas.drawLine(c, c.translate(sx * len, 0), handle);
+      canvas.drawLine(c, c.translate(0, sy * len), handle);
+    }
+
+    bracket(rect.topLeft, 1, 1);
+    bracket(rect.topRight, -1, 1);
+    bracket(rect.bottomLeft, 1, -1);
+    bracket(rect.bottomRight, -1, -1);
+  }
+
+  @override
+  bool shouldRepaint(_CropPainter oldDelegate) => oldDelegate.rect != rect;
 }
