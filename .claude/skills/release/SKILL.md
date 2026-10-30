@@ -1,19 +1,25 @@
 ---
 name: release
-description: Cut a trip_planner Android release (GitHub pre-release with a debug-signed APK) — survey what ships, choose the version, bump pubspec, update the static docs (CHANGELOG, README, CLAUDE.md, docs/), run tests, build and smoke-test the APK, then post a release checklist and wait for the user to confirm before any commit, push, PR, tag, or publish. Use when asked to release, ship, cut a version, or publish an APK.
+description: Cut a trip_planner Android release (GitHub pre-release with a debug-signed APK) — survey what ships, choose the version, bump pubspec, update the static docs (CHANGELOG, README, CLAUDE.md, docs/), run tests, build and smoke-test the APK, then post a release checklist and wait for the user to confirm before any commit, push, PR, tag, or publish. After the tag is pushed, GitHub Actions builds the published APK into a draft release. Use when asked to release, ship, cut a version, or publish an APK.
 ---
 
 # Release trip_planner
 
 Releases are GitHub **pre-releases** tagged `vX.Y.Z` on `master`, each with two assets: `app-release.apk` (debug-signed, sideload only — not a Play Store build) and `app-release.apk.sha1`. History lives in `CHANGELOG.md`.
 
+Two GitHub Actions workflows take the mechanical parts:
+- `.github/workflows/ci.yml` runs `flutter test` on every PR and on `master`.
+- `.github/workflows/release.yml` runs when a `vX.Y.Z` tag is pushed. It builds the APK, checks it, and attaches it to a **draft** pre-release. Publishing the draft stays a manual step (step 9). It can also be run by hand from the Actions tab to build an APK artifact from any branch.
+
+This file is shared by every coding agent working on the repo. Claude Code reads it from `.claude/skills/release/`, and Antigravity reads `.agents/skills/release/SKILL.md`, which points here. Where a step names an agent-specific tool, use your agent's equivalent.
+
 ## Rules that override everything below
 
 - **Nothing outward-facing without the user's explicit yes at the gate (step 7)** — that covers commit, push, PR, tag, `gh release`, and issue comments. Approval given earlier in the conversation, or for a previous release, does not carry over.
 - Changes reach `master` only through a PR with at least one external reviewer. The user doesn't self-merge, and neither do you.
 - Never run `flutter analyze` — it freezes the dev PC. `flutter test` is fine.
-- Commit subjects are imperative ("Release v0.1.2", "Fix …"), no Conventional-Commit prefixes, and every commit ends with the Co-Authored-By trailer from the harness's attribution reminder. PR bodies end with the harness's "Generated with Claude Code" line.
-- The Bash tool is POSIX bash: no PowerShell here-strings. Pass long text with `git commit -F`, `--body-file`, `--notes-file` pointing at files in the session scratchpad.
+- Commit subjects are imperative ("Release v0.1.2", "Fix …"), no Conventional-Commit prefixes. End every commit with the co-author trailer your agent's instructions require (Claude Code: the one in its attribution reminder), and PR bodies with your agent's generated-by line, if it has one.
+- Commands below are POSIX shell (Git Bash on Windows): no PowerShell here-strings. Pass long text with `git commit -F`, `--body-file`, `--notes-file` pointing at files in a temp folder outside the repo (Claude Code: the session scratchpad). `$OUT` below is that folder.
 
 ## 1. Survey what ships
 
@@ -65,9 +71,11 @@ Run `dart run build_runner build --delete-conflicting-outputs` first if any Rive
 
 ## 5. Build the APK
 
+This local build is for the smoke test and the size check. The APK that gets published is built by `release.yml` from the tag (step 9). Both are signed with the same key: CI restores this PC's `~/.android/debug.keystore` from the `ANDROID_DEBUG_KEYSTORE_B64` secret.
+
 ```bash
-flutter build apk --release                      # a few minutes — run_in_background
-OUT="<scratchpad>/release-vX.Y.Z"; mkdir -p "$OUT"
+flutter build apk --release                      # a few minutes; run it in the background if you can
+OUT="<temp folder>/release-vX.Y.Z"; mkdir -p "$OUT"
 cp build/app/outputs/flutter-apk/app-release.apk "$OUT/"
 (cd "$OUT" && sha1sum app-release.apk | cut -d' ' -f1 > app-release.apk.sha1)
 ls -la "$OUT"
@@ -93,10 +101,10 @@ Release vX.Y.Z — please confirm
 - APK: <size> MB, sha1 <hash> (LAST was <size> MB)
 - Smoke test: <device> — <what was exercised>; screenshots: <paths>
 - Not verified: <what, and why>
-- On approval I will: commit on release/vX.Y.Z → push → open PR "Release vX.Y.Z" (needs an external reviewer) → after it merges, ask once more, then tag and publish the GitHub pre-release with the APK
+- On approval I will: commit on release/vX.Y.Z → push → open PR "Release vX.Y.Z" (needs an external reviewer) → after it merges, ask once more, then push the tag, let CI build the draft pre-release, check it, and publish it
 ```
 
-Then ask with AskUserQuestion — "Ship vX.Y.Z?" with options *Approve: commit, push, open PR* / *Change something first* / *Cancel*. Run no git or `gh` write command until the answer is approve. On *Change something first*, make the changes and post the check again.
+Then ask the user and wait for the answer (Claude Code: AskUserQuestion) — "Ship vX.Y.Z?" with options *Approve: commit, push, open PR* / *Change something first* / *Cancel*. Run no git or `gh` write command until the answer is approve. On *Change something first*, make the changes and post the check again.
 
 ## 8. After approval: commit, push, PR
 
@@ -115,18 +123,38 @@ PR body: the checklist from step 7 as a GitHub task list (`- [x]` for what's don
 
 ## 9. After merge: tag and publish (confirm again)
 
-Ask once more: "PR #n is merged — publish vX.Y.Z now?" On yes:
+Ask once more: "PR #n is merged — tag and publish vX.Y.Z now?" On yes, push the tag and wait for `release.yml`:
 
 ```bash
 git fetch origin && git switch master && git pull --ff-only
 git log --oneline -3                             # release commit on top?
 git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z
-gh release create vX.Y.Z --prerelease --verify-tag \
-  --title "vX.Y.Z — <headline>" --notes-file "$OUT/notes.md" \
-  "$OUT/app-release.apk" "$OUT/app-release.apk.sha1"
+RUN=$(gh run list --workflow release.yml --branch vX.Y.Z --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch "$RUN" --exit-status                # ~15 min
+gh release view vX.Y.Z --json isDraft,assets --jq '.isDraft, (.assets[] | "\(.name) \(.size)")'
 ```
 
-If anything besides the release PR merged after the APK was built, rebuild from the tag before uploading.
+The workflow fails instead of releasing when:
+- `pubspec.yaml`'s version doesn't match the tag.
+- `flutter test` fails.
+- The APK is signed with a key other than the one every release used. The key's SHA-256 is pinned in the workflow as `EXPECTED_CERT_SHA256`.
+- The APK bundles an `.onnx` model.
+
+On success it attaches `app-release.apk` and `app-release.apk.sha1` to a **draft** pre-release, with this version's CHANGELOG section as placeholder notes. Check the draft's APK size against step 5. It differs slightly from the local build, but not by megabytes.
+
+If the run fails:
+- A fix that needs no code change, such as a missing secret: fix it, then `gh run rerun "$RUN"`.
+- A fix that needs code goes through a PR. Then ask the user before moving the tag: `git push origin :refs/tags/vX.Y.Z`, tag again on the new `master` head, and push the tag.
+
+Then write the notes and publish the draft:
+
+```bash
+gh release edit vX.Y.Z --title "vX.Y.Z — <headline>" --notes-file "$OUT/notes.md" --draft=false
+```
+
+If Actions is unavailable, fall back to uploading the step 5 build, provided nothing besides the release PR merged after it was built. Run `gh release create vX.Y.Z --prerelease --verify-tag --title … --notes-file … "$OUT/app-release.apk" "$OUT/app-release.apk.sha1"`.
+
+The `ANDROID_DEBUG_KEYSTORE_B64` secret is the base64 of the keystore that signed every release. If it's ever lost, existing users have to uninstall the app, and lose its local data, before a new APK will install.
 
 Release notes match the previous ones: a one-paragraph summary, then `### :sparkles: New`, `### :wrench: Changes`, `### :bug: Fixes`, `### :warning: Notes` (debug-signed / sideload only, known issues, anything unverified), and an install line ("download app-release.apk, allow unknown sources, tap").
 
