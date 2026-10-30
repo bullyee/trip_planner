@@ -1,0 +1,121 @@
+name: Release APK
+
+# Pushing a vX.Y.Z tag builds the APK and attaches it to a *draft* pre-release.
+# Whoever cuts the release (see .claude/skills/release/SKILL.md) checks the
+# draft, writes the notes, and publishes it.
+# Running it by hand from the Actions tab builds an APK artifact from any
+# branch without touching releases.
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  # Certificate of every published APK so far. A different key means the APK
+  # can't install over the previous release, so the build fails instead.
+  EXPECTED_CERT_SHA256: 3071a9322ca7e9d41364a7d48a4d787fbbc5356d780119fd6f9fe76dc30da3f1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check pubspec version matches the tag
+        if: github.ref_type == 'tag'
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have=$(sed -nE 's/^version: *([^+ ]+).*/\1/p' pubspec.yaml)
+          if [ "$want" != "$have" ]; then
+            echo "::error::pubspec.yaml version is $have but the tag is $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      # The app is signed with Gradle's debug signing config, which reads
+      # ~/.android/debug.keystore. Restore the same keystore every release used.
+      - name: Install signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::Secret ANDROID_DEBUG_KEYSTORE_B64 is not set"
+            exit 1
+          fi
+          mkdir -p ~/.android
+          echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+
+      - name: Install SQLite
+        run: sudo apt-get update -q && sudo apt-get install -y -q libsqlite3-dev
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.1
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter test
+      - run: flutter build apk --release
+
+      - name: Check signer and contents
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner
+          cert=$("$APKSIGNER" verify --print-certs "$APK" | sed -nE 's/^Signer #1 certificate SHA-256 digest: //p')
+          if [ "$cert" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::APK is signed with $cert, expected $EXPECTED_CERT_SHA256"
+            exit 1
+          fi
+          # The cutout model is downloaded at runtime and must not be bundled.
+          if unzip -l "$APK" | grep -q '\.onnx$'; then
+            echo "::error::APK bundles an .onnx model"
+            exit 1
+          fi
+
+      - name: Collect assets
+        run: |
+          mkdir dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/
+          (cd dist && sha1sum app-release.apk | cut -d' ' -f1 > app-release.apk.sha1)
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-release-${{ github.ref_name }}
+          path: dist/
+          retention-days: 14
+
+      - name: Attach to a draft pre-release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/app-release.apk dist/app-release.apk.sha1 --clobber
+          else
+            # Placeholder notes: the CHANGELOG section for this version.
+            awk -v v="${TAG#v}" '
+              index($0, "## [" v "]") == 1 { on = 1; next }
+              on && /^## \[/ { exit }
+              on { print }
+            ' CHANGELOG.md > notes.md
+            [ -s notes.md ] || echo "Release $TAG" > notes.md
+            gh release create "$TAG" --draft --prerelease --verify-tag \
+              --title "$TAG" --notes-file notes.md \
+              dist/app-release.apk dist/app-release.apk.sha1
+          fi
