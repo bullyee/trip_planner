@@ -915,7 +915,7 @@ class _PhotoEditScreenState extends ConsumerState<PhotoEditScreen> {
     return EditRecipe(
       steps: [
         for (var i = 1; i <= _historyIndex && i < _history.length; i++)
-          if (_history[i].asEditStep case final step?) step,
+          ?_history[i].asEditStep,
       ],
       mirror: _mirrored,
       quarters: _rotationQuarters % 4,

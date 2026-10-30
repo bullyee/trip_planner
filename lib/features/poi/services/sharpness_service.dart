@@ -91,8 +91,8 @@ void _sharpen(
 /// `gaussianBlur(radius: 2)`.
 final List<double> _blurKernel = () {
   const radius = 2;
-  final sigma = radius * (2.0 / 3.0);
-  final s = 2.0 * sigma * sigma;
+  const sigma = radius * (2.0 / 3.0);
+  const s = 2.0 * sigma * sigma;
   final kernel = <double>[];
   var sum = 0.0;
   for (var x = -radius; x <= radius; ++x) {
