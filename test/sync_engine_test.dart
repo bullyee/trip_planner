@@ -13,6 +13,21 @@ import 'package:trip_planner/features/sync/services/firestore_sync_service.dart'
 import 'package:trip_planner/features/sync/services/sync_engine_service.dart';
 
 /// In-memory fake implementation of FirestoreSyncService for unit tests
+class GatedFake extends FakeFirestoreSyncService {
+  Completer<void>? gate;
+  final waiting = Completer<void>();
+
+  @override
+  Future<void> commitBatch(WriteBatch batch) async {
+    final g = gate;
+    if (g != null) {
+      if (!waiting.isCompleted) waiting.complete();
+      await g.future;
+    }
+    return super.commitBatch(batch);
+  }
+}
+
 class FakeFirestoreSyncService implements FirestoreSyncService {
   final Map<String, Map<String, dynamic>> trips = {};
   final Map<String, Map<String, Map<String, dynamic>>> tripPois = {};
@@ -107,6 +122,11 @@ class FakeFirestoreSyncService implements FirestoreSyncService {
         };
       });
     }
+  }
+
+  @override
+  Future<void> deletePoiFromTrip(String roiId, String poiId) async {
+    tripPois[roiId]?.remove(poiId);
   }
 
   @override
@@ -690,6 +710,92 @@ void main() {
           reason: 'roi-2 POI must be pushed');
 
       syncEngine.stopSync();
+    });
+  });
+
+  group('Round 2 Review Tests (E, F, and Session Tombstone)', () {
+    late AppDatabase db;
+    late GatedFake fake;
+    late SyncEngineService engine;
+    late PoiRepository poiRepo;
+    const user = 'alice';
+
+    setUp(() async {
+      db = AppDatabase.forTesting(NativeDatabase.memory());
+      fake = GatedFake();
+      engine = SyncEngineService(localDb: db, firestoreSync: fake, currentUserId: user);
+      poiRepo = LocalPoiRepository(db, user, fake);
+      for (final id in ['roi-1', 'roi-2']) {
+        await db.insertRoi(RoisCompanion.insert(
+            id: id, name: id, authorId: user, isShared: const Value(true)));
+        await fake.initializeCloudTrip(id, user, id);
+      }
+    });
+
+    tearDown(() async {
+      engine.stopSync();
+      await db.close();
+    });
+
+    PoiModel createPoi(String id, String roiId, String name) => PoiModel(
+        id: id, roiId: roiId, authorId: user, name: name, lat: 35, lng: 135, createdAt: 0);
+
+    Future<void> save(PoiModel p, {required bool update}) => poiRepo.savePoiWithRelations(
+        poi: p, animeIds: [], tagIds: [], isUpdate: update);
+
+    test('E: an edit made while a push is committing still reaches the cloud', () async {
+      await save(createPoi('p1', 'roi-1', 'v1'), update: false);
+      await engine.executePush('roi-1');
+      await save(createPoi('p1', 'roi-1', 'v2'), update: true);
+
+      fake.gate = Completer<void>();
+      final push = engine.executePush('roi-1'); // reads v2, then waits in commit
+      await fake.waiting.future;
+      await save(createPoi('p1', 'roi-1', 'v3'), update: true); // edited during the commit
+      fake.gate!.complete();
+      await push;
+
+      final local = await db.getPoiById('p1');
+      final cloudName = fake.tripPois['roi-1']?['p1']?['name'];
+      expect(
+        cloudName == 'v3' || local.syncStatus == SyncStatus.dirty.index,
+        isTrue,
+        reason: 'cloud has "$cloudName" and the local v3 edit is marked '
+            '${SyncStatus.values[local.syncStatus].name}, so v3 is never uploaded',
+      );
+    });
+
+    test('F: a POI moved to another shared trip stays there after the old trip is pulled', () async {
+      await save(createPoi('p2', 'roi-1', 'spot'), update: false);
+      await engine.executePush('roi-1');
+      await save(createPoi('p2', 'roi-2', 'spot'), update: true); // moved to roi-2
+      await engine.executePush('roi-2');
+
+      // A collaborator changes something else in roi-1, bumping its version.
+      fake.trips['roi-1']!['cloudVersion'] = (fake.trips['roi-1']!['cloudVersion'] as int) + 1;
+      await engine.executePull('roi-1');
+
+      final local = await db.getPoiById('p2');
+      expect(local.roiId, 'roi-2', reason: 'the pull of roi-1 moved the POI back');
+      expect(fake.tripPois['roi-1']?.containsKey('p2') ?? false, isFalse,
+          reason: "roi-1's cloud copy is never deleted, so collaborators still see it there");
+    });
+
+    test('Tombstone: locally deleted trip is never resurrected by downstream pull', () async {
+      engine.notifyRoiDeleted('roi-1');
+      
+      // Attempting to pull roi-1 should be a no-op
+      await engine.executePull('roi-1');
+      
+      // Downstream snapshot with roi-1 is ignored
+      fake.emitUserTrips([
+        {'id': 'roi-1', 'name': 'roi-1', 'cloudVersion': 5, 'members': [user]},
+      ]);
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      final roi = await (db.select(db.rois)..where((r) => r.id.equals('roi-1'))).getSingleOrNull();
+      // Even if roi row was deleted by deleteRoi, it should NOT be re-created or synced
+      expect(roi?.cloudVersion != 5, isTrue);
     });
   });
 }

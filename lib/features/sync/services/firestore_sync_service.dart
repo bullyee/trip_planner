@@ -97,6 +97,10 @@ class FirestoreSyncService {
     }
   }
 
+  Future<void> deletePoiFromTrip(String roiId, String poiId) async {
+    await _db.collection('trips').doc(roiId).collection('pois').doc(poiId).delete();
+  }
+
   Future<List<Map<String, dynamic>>> fetchTripPois(String roiId) async {
     final snapshot = await _db.collection('trips').doc(roiId).collection('pois').get();
     return snapshot.docs.map((d) => d.data()).toList();

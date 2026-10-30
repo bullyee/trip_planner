@@ -49,25 +49,35 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
 
   @override
   Future<void> batchUpdateTimeChunks(List<TimeChunkModel> chunks) async {
-    final companions = chunks.map((model) => TimeChunksCompanion(
-      id: Value(model.id),
-      poiId: Value(model.poiId),
-      authorId: Value(model.authorId),
-      date: Value(model.date),
-      startTime: Value(model.startTime),
-      endTime: Value(model.endTime),
-      status: Value(model.status ?? 'backlog'),
-      createdAt: Value(model.createdAt),
-      isShared: Value(model.isShared),
-      sortOrder: Value(model.sortOrder),
-      duration: Value(model.duration),
-      transitDuration: Value(model.transitDuration),
-      isFixedTime: Value(model.isFixedTime),
-      syncStatus: Value(SyncStatus.dirty.index),
-      isDeleted: Value(model.isDeleted),
-      hasEverSynced: Value(model.hasEverSynced),
-      lastModifiedAt: Value(DateTime.now()),
-    )).toList();
+    final existingChunks = await (localDb.select(localDb.timeChunks)..where((t) => t.id.isIn(chunks.map((c) => c.id)))).get();
+    final existingMap = {for (final c in existingChunks) c.id: c};
+    final companions = chunks.map((model) {
+      final existing = existingMap[model.id];
+      DateTime modifiedAt = DateTime.now();
+      if (existing?.lastModifiedAt != null &&
+          modifiedAt.difference(existing!.lastModifiedAt!).inSeconds < 1) {
+        modifiedAt = existing.lastModifiedAt!.add(const Duration(seconds: 1));
+      }
+      return TimeChunksCompanion(
+        id: Value(model.id),
+        poiId: Value(model.poiId),
+        authorId: Value(model.authorId),
+        date: Value(model.date),
+        startTime: Value(model.startTime),
+        endTime: Value(model.endTime),
+        status: Value(model.status ?? 'backlog'),
+        createdAt: Value(model.createdAt),
+        isShared: Value(model.isShared),
+        sortOrder: Value(model.sortOrder),
+        duration: Value(model.duration),
+        transitDuration: Value(model.transitDuration),
+        isFixedTime: Value(model.isFixedTime),
+        syncStatus: Value(SyncStatus.dirty.index),
+        isDeleted: Value(model.isDeleted),
+        hasEverSynced: Value(model.hasEverSynced),
+        lastModifiedAt: Value(modifiedAt),
+      );
+    }).toList();
 
     await localDb.batchUpdateTimeChunks(companions);
   }
@@ -98,6 +108,12 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
 
   @override
   Future<void> updateTimeChunk(TimeChunkModel chunk) async {
+    final existing = await (localDb.select(localDb.timeChunks)..where((t) => t.id.equals(chunk.id))).getSingleOrNull();
+    DateTime modifiedAt = DateTime.now();
+    if (existing?.lastModifiedAt != null &&
+        modifiedAt.difference(existing!.lastModifiedAt!).inSeconds < 1) {
+      modifiedAt = existing.lastModifiedAt!.add(const Duration(seconds: 1));
+    }
     await localDb.updateTimeChunk(TimeChunksCompanion(
       id: Value(chunk.id),
       poiId: Value(chunk.poiId),
@@ -115,7 +131,7 @@ class LocalTimeChunkRepository implements TimeChunkRepository {
       syncStatus: Value(SyncStatus.dirty.index),
       isDeleted: Value(chunk.isDeleted),
       hasEverSynced: Value(chunk.hasEverSynced),
-      lastModifiedAt: Value(DateTime.now()),
+      lastModifiedAt: Value(modifiedAt),
     ));
   }
 

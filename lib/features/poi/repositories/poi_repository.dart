@@ -7,6 +7,8 @@ import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../sync/providers/firestore_sync_provider.dart';
+import '../../sync/services/firestore_sync_service.dart';
 
 part 'poi_repository.g.dart';
 
@@ -44,8 +46,9 @@ abstract class PoiRepository {
 class LocalPoiRepository implements PoiRepository {
   final AppDatabase localDb;
   final String currentUserId;
+  final FirestoreSyncService? firestoreSync;
 
-  LocalPoiRepository(this.localDb, this.currentUserId);
+  LocalPoiRepository(this.localDb, this.currentUserId, [this.firestoreSync]);
 
   @override
   Future<void> updatePoi(PoiModel poi) async {
@@ -86,6 +89,18 @@ class LocalPoiRepository implements PoiRepository {
         // --- [UPDATE FLOW] ---
         // Fetch the existing POI to preserve its sync state and original author
         final currentPoi = await localDb.getPoiById(poi.id);
+        if (currentPoi.hasEverSynced && currentPoi.roiId != null && currentPoi.roiId != poi.roiId) {
+          try {
+            await firestoreSync?.deletePoiFromTrip(currentPoi.roiId!, poi.id);
+          } catch (e) {
+            debugPrint('[LocalPoiRepository] Error deleting POI from old cloud trip: $e');
+          }
+        }
+        DateTime modifiedAt = DateTime.now();
+        if (currentPoi.lastModifiedAt != null &&
+            modifiedAt.difference(currentPoi.lastModifiedAt!).inSeconds < 1) {
+          modifiedAt = currentPoi.lastModifiedAt!.add(const Duration(seconds: 1));
+        }
         final updateCompanion = PoisCompanion(
           id: Value(poi.id),
           roiId: Value(poi.roiId),
@@ -107,7 +122,7 @@ class LocalPoiRepository implements PoiRepository {
           syncStatus: const Value(1), // SyncStatus.dirty
           hasEverSynced: Value(currentPoi.hasEverSynced),
           isDeleted: Value(currentPoi.isDeleted),
-          lastModifiedAt: Value(DateTime.now()),
+          lastModifiedAt: Value(modifiedAt),
         );
         
         await localDb.updatePoi(updateCompanion);
@@ -323,5 +338,6 @@ class LocalPoiRepository implements PoiRepository {
 PoiRepository poiRepository(PoiRepositoryRef ref) {
   final db = ref.watch(databaseProvider);
   final currentUserId = ref.watch(currentUserIdProvider);
-  return LocalPoiRepository(db, currentUserId);
+  final firestoreSync = ref.watch(firestoreSyncServiceProvider);
+  return LocalPoiRepository(db, currentUserId, firestoreSync);
 }

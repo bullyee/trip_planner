@@ -79,7 +79,13 @@ service cloud.firestore {
         // (a) Lock-only change: acquire/release the sync lock.
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['syncLock']))
         ||
-        // (b) A real sync commit: monotonic version bump, lock respected, and
+        // (b) Member self-removal: a member can remove only themselves from `members`
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          && resource.data.members.removeAll(request.resource.data.members).hasOnly([request.auth.uid])
+        )
+        ||
+        // (c) A real sync commit: monotonic version bump, lock respected, and
         //     membership / authorship are NOT allowed to change here.
         (
           request.resource.data.cloudVersion == resource.data.cloudVersion + 1

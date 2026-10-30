@@ -21,6 +21,10 @@ class SyncEngineService {
   final Set<String> _inFlightSyncRois = <String>{};
   final Set<String> _locallyDeletedRoiIds = <String>{};
 
+  void notifyRoiDeleted(String roiId) {
+    _locallyDeletedRoiIds.add(roiId);
+  }
+
   SyncEngineService({
     required this.localDb,
     required this.firestoreSync,
@@ -142,6 +146,7 @@ class SyncEngineService {
   }
 
   Future<void> executePush(String roiId) async {
+    if (_locallyDeletedRoiIds.contains(roiId)) return;
     if (_inFlightSyncRois.contains(roiId)) {
       debugPrint('[SyncEngine] Sync already in-flight for trip $roiId. Skipping push.');
       return;
@@ -217,6 +222,7 @@ class SyncEngineService {
   }
 
   Future<void> executePull(String roiId) async {
+    if (_locallyDeletedRoiIds.contains(roiId)) return;
     if (_inFlightSyncRois.contains(roiId)) {
       debugPrint('[SyncEngine] Sync already in-flight for trip $roiId. Skipping pull.');
       return;
@@ -330,6 +336,17 @@ class SyncEngineService {
           ..where((p) => p.id.equals(poiId)))
         .getSingleOrNull();
 
+    // If the local POI belongs to another trip, it was moved!
+    // Clean up the obsolete cloud doc in this old trip and skip upserting locally.
+    if (existing != null && existing.roiId != null && existing.roiId != roiId) {
+      try {
+        await firestoreSync.deletePoiFromTrip(roiId, poiId);
+      } catch (e) {
+        debugPrint('[SyncEngine] Error deleting moved POI from old trip: $e');
+      }
+      return;
+    }
+
     // If local POI has unpushed edits, let local edits take precedence until pushed
     if (existing != null && existing.syncStatus == SyncStatus.dirty.index) {
       return;
@@ -411,7 +428,15 @@ class SyncEngineService {
         if (chunk.isDeleted) {
           await (localDb.delete(localDb.timeChunks)..where((t) => t.id.equals(chunk.id))).go();
         } else {
-          await (localDb.update(localDb.timeChunks)..where((t) => t.id.equals(chunk.id))).write(
+          final query = localDb.update(localDb.timeChunks)
+            ..where((t) {
+              final idMatch = t.id.equals(chunk.id);
+              final timeMatch = chunk.lastModifiedAt == null
+                  ? t.lastModifiedAt.isNull()
+                  : t.lastModifiedAt.equals(chunk.lastModifiedAt!);
+              return idMatch & timeMatch;
+            });
+          await query.write(
             TimeChunksCompanion(
               syncStatus: Value(SyncStatus.synced.index),
               hasEverSynced: const Value(true),
@@ -425,7 +450,15 @@ class SyncEngineService {
         if (poi.isDeleted) {
           await localDb.hardDeletePoi(poi.id);
         } else {
-          await (localDb.update(localDb.pois)..where((p) => p.id.equals(poi.id))).write(
+          final query = localDb.update(localDb.pois)
+            ..where((p) {
+              final idMatch = p.id.equals(poi.id);
+              final timeMatch = poi.lastModifiedAt == null
+                  ? p.lastModifiedAt.isNull()
+                  : p.lastModifiedAt.equals(poi.lastModifiedAt!);
+              return idMatch & timeMatch;
+            });
+          await query.write(
             PoisCompanion(
               syncStatus: Value(SyncStatus.synced.index),
               hasEverSynced: const Value(true),
