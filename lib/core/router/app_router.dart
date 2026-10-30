@@ -93,15 +93,10 @@ GoRouter router(RouterRef ref) {
         ),
       ),
       GoRoute(
+        // Pops with the new POI's id, which the photo editor's POI button
+        // uses to save into it.
         path: '/pois/new',
-        builder: (context, state) {
-          final capturedPath = state.uri.queryParameters['capturedPath'];
-          return PoiCreateScreen(
-            capturedPhotoPath: capturedPath != null
-                ? Uri.decodeComponent(capturedPath)
-                : null,
-          );
-        },
+        builder: (context, state) => const PoiCreateScreen(),
       ),
       GoRoute(
         path: '/pois/:poiId/edit',
@@ -122,25 +117,16 @@ GoRouter router(RouterRef ref) {
         ),
       ),
       GoRoute(
+        // A photo with no POI yet: Edit Photo from the home screen, or an
+        // Anime Camera shot taken without one. The editor's POI button can
+        // pick one.
+        path: '/photo-edit',
+        builder: (context, state) => _photoEditScreen(state),
+      ),
+      GoRoute(
         path: '/pois/:poiId/photo-edit',
-        builder: (context, state) {
-          final qp = state.uri.queryParameters;
-          final source = qp['path'];
-          if (source == null) {
-            return const Scaffold(
-              body: Center(child: Text('Missing source path.')),
-            );
-          }
-          return PhotoEditScreen(
-            poiId: state.pathParameters['poiId']!,
-            sourcePath: Uri.decodeComponent(source),
-            referencePath: qp['ref'] != null
-                ? Uri.decodeComponent(qp['ref']!)
-                : null,
-            referenceImageId: qp['refId'],
-            wasUpload: qp['upload'] == '1',
-          );
-        },
+        builder: (context, state) =>
+            _photoEditScreen(state, poiId: state.pathParameters['poiId']!),
       ),
       GoRoute(
         path: '/animes/:animeId/edit',
@@ -185,5 +171,26 @@ GoRouter router(RouterRef ref) {
         builder: (context, state) => const BangumiSearchScreen(),
       ),
     ],
+  );
+}
+
+/// The photo editor for both of its routes, from the query: `path` (the
+/// photo), `ref` / `refId` (its reference), `upload=1` (picked from the
+/// gallery) and `capture=1` (just shot with the Anime Camera).
+Widget _photoEditScreen(GoRouterState state, {String? poiId}) {
+  final qp = state.uri.queryParameters;
+  final source = qp['path'];
+  if (source == null) {
+    return const Scaffold(
+      body: Center(child: Text('Missing source path.')),
+    );
+  }
+  return PhotoEditScreen(
+    poiId: poiId,
+    sourcePath: Uri.decodeComponent(source),
+    referencePath: qp['ref'] != null ? Uri.decodeComponent(qp['ref']!) : null,
+    referenceImageId: qp['refId'],
+    wasUpload: qp['upload'] == '1',
+    isCapture: qp['capture'] == '1',
   );
 }

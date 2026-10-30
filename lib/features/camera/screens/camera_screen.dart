@@ -6,16 +6,11 @@ import 'package:flutter/foundation.dart' show compute, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as p;
 
-import '../../poi/models/poi_model.dart';
-import '../../poi/models/reference_image_model.dart';
-import '../../poi/providers/media_provider.dart';
-import '../../poi/providers/poi_provider.dart';
 import '../providers/camera_provider.dart';
+import '../widgets/capture_sheets.dart';
 
 enum _CameraFrameMode { native, screenFill }
 
@@ -217,40 +212,21 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       // without re-running camera init.
       //
       // When the camera was opened without a POI context (Anime Camera
-      // entry from the home screen), the picker step asks the user
-      // either to save into one of their existing POIs or to spin up
-      // a new one — the photo carries through both paths instead of
-      // hitting a dead-end snackbar.
+      // entry from the home screen), the editor opens with no POI: the
+      // photo goes to the phone's gallery, and the editor's POI button
+      // can save it into an existing POI or a new one as well.
       //
       // If the user already picked a POI earlier via the reference-
       // image library button (which writes to `cameraProvider.poiId`),
-      // reuse that selection so they aren't asked to pick again.
-      final cachedPoiId = ref.read(cameraProvider).poiId;
-      final initialPoiId = widget.poiId ?? cachedPoiId;
-      final poiSelection = initialPoiId != null
-          ? _PoiCaptureSelection.existing(initialPoiId)
-          : await _resolvePoiForCapture();
-      if (!mounted || poiSelection == null) return;
-
-      if (poiSelection.createNew) {
-        context.push(
-          '/pois/new?capturedPath=${Uri.encodeComponent(visiblePhoto.path)}',
-        );
-        return;
-      }
-
+      // the editor starts with that one.
       final camState = ref.read(cameraProvider);
-      final qs = <String, String>{
-        'path': Uri.encodeComponent(visiblePhoto.path),
-      };
-      if (camState.referenceImage != null) {
-        qs['ref'] = Uri.encodeComponent(camState.referenceImage!.path);
-      }
-      if (camState.referenceImageId != null) {
-        qs['refId'] = camState.referenceImageId!;
-      }
-      final query = qs.entries.map((e) => '${e.key}=${e.value}').join('&');
-      context.push('/pois/${poiSelection.poiId}/photo-edit?$query');
+      openCaptureInEditor(
+        context,
+        photoPath: visiblePhoto.path,
+        poiId: widget.poiId ?? camState.poiId,
+        referencePath: camState.referenceImage?.path,
+        referenceImageId: camState.referenceImageId,
+      );
     } on CameraException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -679,251 +655,26 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   Future<void> _pickPoiReferenceImage() async {
     final poiId = await _resolvePoiIdForReference();
-    if (poiId == null) return;
+    if (poiId == null || !mounted) return;
 
-    final images =
-        await ref.read(referenceImagesByPoiProvider(poiId).future);
-
-    if (!mounted) return;
-    if (images.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No reference images. Add some on the POI page.'),
-        ),
-      );
-      return;
-    }
-
-    final picked = await showModalBottomSheet<ReferenceImageModel>(
-      context: context,
-      backgroundColor: Colors.grey[900],
-      builder: (ctx) => ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: images.length,
-        itemBuilder: (ctx, index) {
-          final image = images[index];
-
-          // 1. Build a safe image widget with fallback strategy (Local -> Remote -> Placeholder)
-          Widget imageWidget;
-          if (image.localPath != null && image.localPath!.isNotEmpty) {
-            imageWidget = Image.file(
-              File(image.localPath!),
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const ColoredBox(
-                color: Colors.black26,
-                child: Icon(Icons.broken_image, color: Colors.white54),
-              ),
-            );
-          } else if (image.remoteUrl != null && image.remoteUrl!.isNotEmpty) {
-            imageWidget = Image.network(
-              image.remoteUrl!,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const ColoredBox(
-                color: Colors.black26,
-                child: Icon(Icons.broken_image, color: Colors.white54),
-              ),
-            );
-          } else {
-            imageWidget = const ColoredBox(
-              color: Colors.black26,
-              child: Icon(Icons.image_not_supported, color: Colors.white54),
-            );
-          }
-
-          // 2. Build a safe title with fallback text
-          String titleText = 'Unknown Image';
-          if (image.metadata != null && image.metadata!.isNotEmpty) {
-            titleText = image.metadata!;
-          } else if (image.localPath != null && image.localPath!.isNotEmpty) {
-            titleText = p.basenameWithoutExtension(image.localPath!);
-          } else if (image.remoteUrl != null && image.remoteUrl!.isNotEmpty) {
-            titleText = 'Cloud Reference Image'; 
-          }
-
-          return ListTile(
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                width: 52,
-                height: 52,
-                child: imageWidget, // Inject the safely resolved widget
-              ),
-            ),
-            title: Text(
-              titleText,
-              style: const TextStyle(color: Colors.white),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            onTap: () => Navigator.pop(ctx, image),
-          );
-        },
-      ),
-    );
-
+    final picked = await pickPoiReferenceImage(context, ref, poiId);
     if (picked == null) return;
-
-    if (picked.localPath == null || picked.localPath!.isEmpty) {
-      debugPrint('Local path is missing. This image might be cloud-only.');
-      return; 
-    }
-
-    // 2. Safe instantiation using the bang operator (!) since we verified it's not null
-    final file = File(picked.localPath!);
-    if (!await file.exists()) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Image file not found: ${picked.localPath}')),
-      );
-      return;
-    }
 
     ref
         .read(cameraProvider.notifier)
-        .setReferenceImage(file, referenceImageId: picked.id);
-  }
-
-  /// Bottom sheet shown after the user takes a photo from the Anime
-  /// Camera entry (no `poiId` on the route). Lets them either pick
-  /// an existing POI to save the shot into, or jump straight to the
-  /// POI create form with the captured file attached.
-  Future<_PoiCaptureSelection?> _resolvePoiForCapture() async {
-    final poisMap = await ref.read(allPoisProvider.future);
-    final pois = poisMap.values.toList();
-    if (!mounted) return null;
-
-    return showModalBottomSheet<_PoiCaptureSelection>(
-      context: context,
-      backgroundColor: Colors.grey[900],
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(
-                Icons.add_location_alt,
-                color: Colors.white,
-              ),
-              title: const Text(
-                'Create new POI',
-                style: TextStyle(color: Colors.white),
-              ),
-              subtitle: const Text(
-                'Start a new POI with this photo attached',
-                style: TextStyle(color: Colors.white54),
-              ),
-              onTap: () =>
-                  Navigator.pop(ctx, const _PoiCaptureSelection.create()),
-            ),
-            const Divider(color: Colors.white24, height: 1),
-            Flexible(
-              child: pois.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text(
-                        'No existing POIs yet.',
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                    )
-                  : ListView.builder(
-                      shrinkWrap: true,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      itemCount: pois.length,
-                      itemBuilder: (ctx, index) {
-                        final poi = pois[index];
-                        return ListTile(
-                          leading: const Icon(
-                            Icons.location_on,
-                            color: Colors.white70,
-                          ),
-                          title: Text(
-                            poi.name,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          subtitle: poi.address != null
-                              ? Text(
-                                  poi.address!,
-                                  style:
-                                      const TextStyle(color: Colors.white54),
-                                )
-                              : null,
-                          onTap: () => Navigator.pop(
-                            ctx,
-                            _PoiCaptureSelection.existing(poi.id),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
+        .setReferenceImage(File(picked.localPath!), referenceImageId: picked.id);
   }
 
   Future<String?> _resolvePoiIdForReference() async {
     final currentPoiId = ref.read(cameraProvider).poiId;
     if (currentPoiId != null) return currentPoiId;
 
-    final poisMap = await ref.read(allPoisProvider.future);
-    final pois = poisMap.values.toList();
-
-    if (!mounted) return null;
-    if (pois.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No POIs yet. Create one first.')),
-      );
-      return null;
-    }
-
-    final picked = await showModalBottomSheet<PoiModel>(
-      context: context,
-      backgroundColor: Colors.grey[900],
-      builder: (ctx) => ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: pois.length,
-        itemBuilder: (ctx, index) {
-          final poi = pois[index];
-
-          return ListTile(
-            leading: const Icon(Icons.location_on, color: Colors.white70),
-            title: Text(
-              poi.name,
-              style: const TextStyle(color: Colors.white),
-            ),
-            subtitle: poi.address != null
-                ? Text(
-                    poi.address!,
-                    style: const TextStyle(color: Colors.white54),
-                  )
-                : null,
-            onTap: () => Navigator.pop(ctx, poi),
-          );
-        },
-      ),
-    );
-
+    final picked = await pickPoiId(context, ref);
     if (picked == null) return null;
 
-    ref.read(cameraProvider.notifier).setPoiId(picked.id);
-    return picked.id;
+    ref.read(cameraProvider.notifier).setPoiId(picked);
+    return picked;
   }
-}
-
-/// Result of the post-capture POI picker. Either a chosen existing
-/// POI's id, or a sentinel telling the caller to route to the POI
-/// create form with the captured photo attached.
-class _PoiCaptureSelection {
-  final String? poiId;
-  final bool createNew;
-
-  const _PoiCaptureSelection.existing(String id)
-      : poiId = id,
-        createNew = false;
-
-  const _PoiCaptureSelection.create()
-      : poiId = null,
-        createNew = true;
 }
 
 class _FrameModeToggle extends StatelessWidget {

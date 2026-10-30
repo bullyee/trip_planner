@@ -14,6 +14,7 @@ import '../../auth/providers/auth_provider.dart';
 import '../../calendar/models/time_chunk_model.dart';
 import '../../calendar/providers/calendar_provider.dart';
 import '../../calendar/repositories/time_chunk_repository.dart';
+import '../services/background_photo_save.dart';
 import '../models/media_asset_model.dart';
 import '../models/poi_model.dart';
 import '../models/reference_image_model.dart';
@@ -419,6 +420,31 @@ class PoiDetailScreen extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 8),
+              // Edits saving in the background land in the list below
+              // once they finish.
+              Builder(builder: (context) {
+                final saving = ref
+                    .watch(backgroundPhotoSavesProvider)
+                    .where((save) => save.poiId == poi.id)
+                    .length;
+                if (saving == 0) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(saving == 1
+                          ? 'Saving 1 photo…'
+                          : 'Saving $saving photos…'),
+                    ],
+                  ),
+                );
+              }),
               mediaAsync.when(
                 loading: () => const CircularProgressIndicator(),
                 error: (err, _) => Text('Error: $err'),

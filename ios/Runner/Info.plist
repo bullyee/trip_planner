@@ -30,6 +30,8 @@
 	<string>Trip Planner uses the camera to capture POI photos with a reference overlay.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Trip Planner uses your photo library to choose anime reference images.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Trip Planner saves your edited photos to your photo library.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

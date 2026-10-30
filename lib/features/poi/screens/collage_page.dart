@@ -4,18 +4,16 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image/image.dart' as img;
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../../anime/screens/cutout_editor_screen.dart';
-import '../../auth/providers/auth_provider.dart';
-import '../repositories/media_repository.dart';
-import '../services/media_asset_service.dart';
+import '../services/background_photo_save.dart';
+import '../services/edit_recipe.dart';
+import '../services/full_res_render.dart';
 
 /// 拼貼 / Compose — "edit page v2". Stacks cutout characters (and a translucent
 /// reference overlay) onto the edited photo, each layer freely
-/// dragged / scaled / rotated, then flattens to a `user_photo`.
+/// dragged / scaled / rotated, then flattens to a `user_photo` in the
+/// background ([BackgroundPhotoSaves]).
 ///
 /// Geometry is stored normalized over the base image (centerN 0..1, widthN as a
 /// fraction of base width) so the on-screen preview and the full-res composite
@@ -24,11 +22,20 @@ class CollagePage extends ConsumerStatefulWidget {
   /// Downscaled edited photo for the canvas preview.
   final Uint8List basePreview;
 
-  /// Resolves the full-resolution edited photo bytes for the final composite.
-  final Future<Uint8List> Function() resolveFullResBase;
+  /// The photo being edited and the editor's edits, rendered at full
+  /// resolution for the final composite.
+  final String sourcePath;
+  final EditRecipe recipe;
 
   final String referencePath;
-  final String poiId;
+
+  /// POI whose media the result joins; null saves only to the phone's
+  /// gallery. The result always goes to the gallery as well.
+  final String? poiId;
+
+  /// The untouched photo, when it was just taken with the Anime Camera: it
+  /// isn't in the gallery yet, so it's saved there next to the result.
+  final File? originalCapture;
 
   /// Return to the Adjust page (back arrow). Layers persist — the parent keeps
   /// this page alive in an IndexedStack.
@@ -37,9 +44,11 @@ class CollagePage extends ConsumerStatefulWidget {
   const CollagePage({
     super.key,
     required this.basePreview,
-    required this.resolveFullResBase,
+    required this.sourcePath,
+    required this.recipe,
     required this.referencePath,
-    required this.poiId,
+    this.poiId,
+    this.originalCapture,
     required this.onBack,
   });
 
@@ -161,12 +170,6 @@ class _CollagePageState extends ConsumerState<CollagePage> {
     frame.image.dispose();
   }
 
-  Future<ui.Image> _decode(Uint8List bytes) async {
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frame = await codec.getNextFrame();
-    return frame.image;
-  }
-
   // ---- adding layers ------------------------------------------------------
 
   Future<void> _addCutout(CutoutEngine? _) async {
@@ -177,7 +180,7 @@ class _CollagePageState extends ConsumerState<CollagePage> {
       ),
     );
     if (!mounted || bytes == null) return;
-    final image = await _decode(bytes);
+    final image = await decodeUiImage(bytes);
     if (!mounted) {
       image.dispose();
       return;
@@ -193,7 +196,7 @@ class _CollagePageState extends ConsumerState<CollagePage> {
   Future<void> _addDirectOverlay() async {
     if (_busy) return;
     final bytes = await File(widget.referencePath).readAsBytes();
-    final image = await _decode(bytes);
+    final image = await decodeUiImage(bytes);
     if (!mounted) {
       image.dispose();
       return;
@@ -225,118 +228,48 @@ class _CollagePageState extends ConsumerState<CollagePage> {
 
   // ---- composite + save ---------------------------------------------------
 
-  Future<void> _save() async {
+  /// Flattens the layers onto the edited photo and saves the result through
+  /// [BackgroundPhotoSaves], closing the editor at once instead of keeping
+  /// the user waiting on the full-resolution render.
+  void _save() {
     if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      final baseBytes = await widget.resolveFullResBase();
-      final base = await _decode(baseBytes);
-      final w = base.width, h = base.height;
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder,
-          Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()));
-      canvas.drawImage(base, Offset.zero, Paint());
-      for (final l in _layers) {
-        final cx = l.centerN.dx * w;
-        final cy = l.centerN.dy * h;
-        final targetW = l.widthN * w;
-        final s = targetW / l.image.width;
-        canvas.save();
-        canvas.translate(cx, cy);
-        canvas.rotate(l.rotation);
-        canvas.scale(s);
-        canvas.drawImage(
-          l.image,
-          Offset(-l.image.width / 2, -l.image.height / 2),
-          Paint()..color = Color.fromRGBO(0, 0, 0, l.opacity),
+    _busy = true;
+    // Snapshot everything the render needs: it runs when its turn in the
+    // save queue comes, and this page — with the layer bitmaps — is
+    // disposed as soon as the editor closes.
+    final layers = [
+      for (final l in _layers)
+        _LayerSnapshot(
+          l.image.clone(),
+          l.centerN,
+          l.widthN,
+          l.rotation,
+          l.opacity,
+        ),
+    ];
+    final sourcePath = widget.sourcePath;
+    final recipe = widget.recipe;
+    final compare = _compare;
+    final vertical = _compareVertical;
+    final referencePath = widget.referencePath;
+    ref.read(backgroundPhotoSavesProvider.notifier).save(
+          poiId: widget.poiId,
+          toGallery: true,
+          originalToGallery: widget.originalCapture != null,
+          original: widget.originalCapture,
+          type: compare ? 'comparison_image' : 'user_photo',
+          render: () => _renderCollage(
+            renderEditedImage(sourcePath, recipe),
+            layers,
+            compare: compare,
+            vertical: vertical,
+            referencePath: referencePath,
+          ),
         );
-        canvas.restore();
-      }
-      final picture = recorder.endRecording();
-      final composed = await picture.toImage(w, h);
-      base.dispose();
-      picture.dispose();
-
-      // With Compare on, save the side-by-side (composed | reference) in the
-      // chosen orientation; otherwise just the composed image.
-      ui.Image finalImg = composed;
-      if (_compare) {
-        final refImg =
-            await _decode(await File(widget.referencePath).readAsBytes());
-        finalImg = await _stitch(composed, refImg, _compareVertical);
-        refImg.dispose();
-        composed.dispose();
-      }
-      final png = await finalImg.toByteData(format: ui.ImageByteFormat.png);
-      finalImg.dispose();
-      if (png == null) throw 'compose failed';
-
-      // Re-encode to JPEG (opaque result) so the saved file isn't a huge PNG.
-      final jpg = img.encodeJpg(
-        img.decodeImage(png.buffer.asUint8List())!,
-        quality: 92,
-      );
-      final tmp = File(p.join(
-        (await getTemporaryDirectory()).path,
-        '${_compare ? 'compare' : 'collage'}_${_layers.length}.jpg',
-      ));
-      await tmp.writeAsBytes(jpg, flush: true);
-      final currentUserId = ref.read(currentUserIdProvider);
-      final ok = await persistMediaAsset(
-        mediaRepo: ref.read(mediaRepositoryProvider),
-        source: tmp,
-        poiId: widget.poiId,
-        type: _compare ? 'comparison_image' : 'user_photo',
-        authorId: currentUserId,
-      );
-      if (await tmp.exists()) await tmp.delete();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? 'Collage saved.' : 'Save failed.')),
-      );
-      if (ok) Navigator.of(context).pop();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Save failed: $e')));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  /// Stitch [a] and [b] together — side by side, or stacked when [vertical] —
-  /// at a common height / width, preserving each image's aspect ratio.
-  Future<ui.Image> _stitch(ui.Image a, ui.Image b, bool vertical) async {
-    final aw = a.width.toDouble(), ah = a.height.toDouble();
-    final bw = b.width.toDouble(), bh = b.height.toDouble();
-    final double totalW, totalH;
-    final Rect aDst, bDst;
-    if (vertical) {
-      final cw = aw > bw ? aw : bw;
-      final aH = ah * cw / aw, bH = bh * cw / bw;
-      totalW = cw;
-      totalH = aH + bH;
-      aDst = Rect.fromLTWH(0, 0, cw, aH);
-      bDst = Rect.fromLTWH(0, aH, cw, bH);
-    } else {
-      final ch = ah > bh ? ah : bh;
-      final aW = aw * ch / ah, bW = bw * ch / bh;
-      totalW = aW + bW;
-      totalH = ch;
-      aDst = Rect.fromLTWH(0, 0, aW, ch);
-      bDst = Rect.fromLTWH(aW, 0, bW, ch);
-    }
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, totalW, totalH));
-    canvas.drawColor(Colors.white, BlendMode.src);
-    final paint = Paint()..filterQuality = FilterQuality.high;
-    canvas.drawImageRect(a, Rect.fromLTWH(0, 0, aw, ah), aDst, paint);
-    canvas.drawImageRect(b, Rect.fromLTWH(0, 0, bw, bh), bDst, paint);
-    final pic = recorder.endRecording();
-    final out = await pic.toImage(totalW.round(), totalH.round());
-    pic.dispose();
-    return out;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Saving in the background…')),
+    );
+    Navigator.of(context).pop();
   }
 
   // ---- build --------------------------------------------------------------
@@ -649,4 +582,123 @@ class _CollagePageState extends ConsumerState<CollagePage> {
       ),
     );
   }
+}
+
+/// One layer as it was when Save was tapped, with its own handle on the
+/// bitmap so the render can outlive the Compose page.
+class _LayerSnapshot {
+  final ui.Image image;
+  final Offset centerN;
+  final double widthN;
+  final double rotation;
+  final double opacity;
+
+  const _LayerSnapshot(
+    this.image,
+    this.centerN,
+    this.widthN,
+    this.rotation,
+    this.opacity,
+  );
+}
+
+/// Flattens [layers] onto [base] at full resolution — and, with [compare],
+/// stitches the result next to the reference — and returns it as JPEG.
+/// Disposes the layer snapshots when done. Runs after the Compose page has
+/// closed, so it uses nothing from it.
+Future<Uint8List> _renderCollage(
+  Future<ui.Image> base,
+  List<_LayerSnapshot> layers, {
+  required bool compare,
+  required bool vertical,
+  required String referencePath,
+}) async {
+  try {
+    final baseImage = await base;
+    final w = baseImage.width, h = baseImage.height;
+
+    final recorder = ui.PictureRecorder();
+    final canvas =
+        Canvas(recorder, Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()));
+    canvas.drawImage(baseImage, Offset.zero, Paint());
+    for (final l in layers) {
+      final cx = l.centerN.dx * w;
+      final cy = l.centerN.dy * h;
+      final targetW = l.widthN * w;
+      final s = targetW / l.image.width;
+      canvas.save();
+      canvas.translate(cx, cy);
+      canvas.rotate(l.rotation);
+      canvas.scale(s);
+      canvas.drawImage(
+        l.image,
+        Offset(-l.image.width / 2, -l.image.height / 2),
+        Paint()..color = Color.fromRGBO(0, 0, 0, l.opacity),
+      );
+      canvas.restore();
+    }
+    final picture = recorder.endRecording();
+    final composed = await picture.toImage(w, h);
+    baseImage.dispose();
+    picture.dispose();
+
+    // With Compare on, save the side-by-side (composed | reference) in the
+    // chosen orientation; otherwise just the composed image.
+    var finalImage = composed;
+    if (compare) {
+      final refImage =
+          await decodeUiImage(await File(referencePath).readAsBytes());
+      finalImage = await _stitch(composed, refImage, vertical);
+      refImage.dispose();
+      composed.dispose();
+    }
+
+    // Straight to JPEG from the raw pixels, off the UI thread: no PNG
+    // encode + decode round trip.
+    final RgbaImage pixels;
+    try {
+      pixels = await rgbaOf(finalImage);
+    } finally {
+      finalImage.dispose();
+    }
+    return encodeJpeg(pixels, quality: 92);
+  } finally {
+    for (final l in layers) {
+      l.image.dispose();
+    }
+  }
+}
+
+/// Stitch [a] and [b] together — side by side, or stacked when [vertical] —
+/// at a common height / width, preserving each image's aspect ratio.
+Future<ui.Image> _stitch(ui.Image a, ui.Image b, bool vertical) async {
+  final aw = a.width.toDouble(), ah = a.height.toDouble();
+  final bw = b.width.toDouble(), bh = b.height.toDouble();
+  final double totalW, totalH;
+  final Rect aDst, bDst;
+  if (vertical) {
+    final cw = aw > bw ? aw : bw;
+    final aH = ah * cw / aw, bH = bh * cw / bw;
+    totalW = cw;
+    totalH = aH + bH;
+    aDst = Rect.fromLTWH(0, 0, cw, aH);
+    bDst = Rect.fromLTWH(0, aH, cw, bH);
+  } else {
+    final ch = ah > bh ? ah : bh;
+    final aW = aw * ch / ah, bW = bw * ch / bh;
+    totalW = aW + bW;
+    totalH = ch;
+    aDst = Rect.fromLTWH(0, 0, aW, ch);
+    bDst = Rect.fromLTWH(aW, 0, bW, ch);
+  }
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, totalW, totalH));
+  canvas.drawColor(Colors.white, BlendMode.src);
+  final paint = Paint()..filterQuality = FilterQuality.high;
+  canvas.drawImageRect(a, Rect.fromLTWH(0, 0, aw, ah), aDst, paint);
+  canvas.drawImageRect(b, Rect.fromLTWH(0, 0, bw, bh), bDst, paint);
+  final pic = recorder.endRecording();
+  final out = await pic.toImage(totalW.round(), totalH.round());
+  pic.dispose();
+  return out;
 }
