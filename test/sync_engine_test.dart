@@ -5,7 +5,6 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trip_planner/core/database/database.dart';
 import 'package:trip_planner/core/database/tables.dart';
-import 'package:trip_planner/features/calendar/models/time_chunk_model.dart';
 import 'package:trip_planner/features/calendar/repositories/time_chunk_repository.dart';
 import 'package:trip_planner/features/poi/models/poi_model.dart';
 import 'package:trip_planner/features/poi/repositories/poi_repository.dart';
@@ -153,6 +152,21 @@ class FakeFirestoreSyncService implements FirestoreSyncService {
   }
 
   @override
+  Future<void> leaveOrDeleteCloudTrip(String roiId, String userId) async {
+    final trip = trips[roiId];
+    if (trip == null) return;
+    final members = List<String>.from(trip['members'] as List? ?? []);
+    members.remove(userId);
+    if (members.isEmpty) {
+      trips.remove(roiId);
+      tripPois.remove(roiId);
+      tripChunks.remove(roiId);
+    } else {
+      trip['members'] = members;
+    }
+  }
+
+  @override
   Stream<Map<String, dynamic>?> watchTrip(String roiId) {
     return Stream.value(trips[roiId]);
   }
@@ -208,7 +222,7 @@ void main() {
     );
     poiRepo = LocalPoiRepository(db, mockUser);
     chunkRepo = LocalTimeChunkRepository(db);
-    roiRepo = LocalRoiRepository(db, mockUser);
+    roiRepo = LocalRoiRepository(db, mockUser, firestoreSync: fakeFirestore);
 
     // Seed shared trip
     await db.insertRoi(RoisCompanion.insert(
@@ -498,6 +512,184 @@ void main() {
 
       final chunk = await (db.select(db.timeChunks)..where((t) => t.id.equals('chunk-local-1'))).getSingle();
       expect(chunk.syncStatus, equals(SyncStatus.dirty.index), reason: 'TimeChunk must be armed as dirty for cloud upload');
+    });
+
+    test('Deleting a synced POI with time chunk, photo, and reference image pushes cleanly without FK violation (#45 review 1)', () async {
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-cascade-1',
+        roiId: const Value('roi-1'),
+        authorId: mockUser,
+        name: 'Cascade Spot',
+        lat: 35.0,
+        lng: 135.0,
+        syncStatus: Value(SyncStatus.synced.index),
+        hasEverSynced: const Value(true),
+      ));
+
+      await db.insertTimeChunk(TimeChunksCompanion.insert(
+        id: 'chunk-cascade-1',
+        poiId: 'poi-cascade-1',
+        authorId: mockUser,
+        syncStatus: Value(SyncStatus.synced.index),
+        hasEverSynced: const Value(true),
+      ));
+
+      await db.insertMediaAsset(MediaAssetsCompanion.insert(
+        id: 'asset-cascade-1',
+        poiId: 'poi-cascade-1',
+        authorId: mockUser,
+        type: 'user_photo',
+        localPath: const Value('/tmp/photo.jpg'),
+      ));
+
+      await db.insertReferenceImage(ReferenceImagesCompanion.insert(
+        id: 'ref-cascade-1',
+        poiId: 'poi-cascade-1',
+        authorId: mockUser,
+        localPath: const Value('/tmp/ref.jpg'),
+      ));
+
+      await syncEngine.executePush('roi-1');
+
+      // Delete POI
+      await poiRepo.deletePoi('poi-cascade-1');
+
+      final deletedPoi = await (db.select(db.pois)..where((p) => p.id.equals('poi-cascade-1'))).getSingle();
+      expect(deletedPoi.isDeleted, isTrue);
+      expect(deletedPoi.syncStatus, equals(SyncStatus.dirty.index));
+
+      // Push the deletion — must not throw FK constraint failed
+      await expectLater(syncEngine.executePush('roi-1'), completes);
+
+      // Verify POI, chunk, mediaAsset, and referenceImage are hard-deleted locally
+      expect(await (db.select(db.pois)..where((p) => p.id.equals('poi-cascade-1'))).getSingleOrNull(), isNull);
+      expect(await (db.select(db.timeChunks)..where((t) => t.id.equals('chunk-cascade-1'))).getSingleOrNull(), isNull);
+      expect(await (db.select(db.mediaAssets)..where((m) => m.poiId.equals('poi-cascade-1'))).get(), isEmpty);
+      expect(await (db.select(db.referenceImages)..where((r) => r.poiId.equals('poi-cascade-1'))).get(), isEmpty);
+
+      // Verify cloud doc was removed
+      expect(fakeFirestore.tripPois['roi-1']?['poi-cascade-1'], isNull);
+    });
+
+    test('Peer pulling remote POI delete hard-deletes locally without leaving dirty soft-delete (#45 review 2)', () async {
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-peer-1',
+        roiId: const Value('roi-1'),
+        authorId: mockUser,
+        name: 'Peer Spot',
+        lat: 35.0,
+        lng: 135.0,
+        syncStatus: Value(SyncStatus.synced.index),
+        hasEverSynced: const Value(true),
+      ));
+
+      await db.insertTimeChunk(TimeChunksCompanion.insert(
+        id: 'chunk-peer-1',
+        poiId: 'poi-peer-1',
+        authorId: mockUser,
+        syncStatus: Value(SyncStatus.synced.index),
+        hasEverSynced: const Value(true),
+      ));
+
+      fakeFirestore.trips['roi-1'] = {
+        'id': 'roi-1',
+        'cloudVersion': 2,
+        'members': [mockUser],
+      };
+      fakeFirestore.tripPois['roi-1'] = {};
+      fakeFirestore.tripChunks['roi-1'] = {};
+
+      await syncEngine.executePull('roi-1');
+
+      final localPoi = await (db.select(db.pois)..where((p) => p.id.equals('poi-peer-1'))).getSingleOrNull();
+      expect(localPoi, isNull, reason: 'Remote delete must hard-delete clean local POI');
+
+      final localChunk = await (db.select(db.timeChunks)..where((t) => t.id.equals('chunk-peer-1'))).getSingleOrNull();
+      expect(localChunk, isNull, reason: 'Remote delete must hard-delete clean local chunk');
+
+      await expectLater(syncEngine.executePush('roi-1'), completes);
+    });
+
+    test('Deleting a shared trip removes user from cloud members and does not resurrect (#45 review 5)', () async {
+      fakeFirestore.trips['roi-1'] = {
+        'id': 'roi-1',
+        'name': 'Kyoto Trip',
+        'members': [mockUser, 'bob'],
+        'cloudVersion': 1,
+      };
+
+      await roiRepo.deleteRoi('roi-1');
+
+      final localRoi = await (db.select(db.rois)..where((r) => r.id.equals('roi-1'))).getSingleOrNull();
+      expect(localRoi, isNull);
+
+      expect(fakeFirestore.trips['roi-1']?['members'], equals(['bob']));
+
+      fakeFirestore.emitUserTrips([
+        {'id': 'roi-1', 'name': 'Kyoto Trip', 'members': ['bob'], 'cloudVersion': 2}
+      ]);
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      final checkAgain = await (db.select(db.rois)..where((r) => r.id.equals('roi-1'))).getSingleOrNull();
+      expect(checkAgain, isNull);
+    });
+
+    test('In-flight guard prevents concurrent push/pull overlap on same trip (#45 review 6)', () async {
+      final pushFuture = syncEngine.executePush('roi-1');
+      final pullFuture = syncEngine.executePull('roi-1');
+
+      await Future.wait([pushFuture, pullFuture]);
+      final roi = await db.getRoiById('roi-1');
+      expect(roi.isShared, isTrue);
+    });
+
+    test('Debounce handles multiple trips without dropping earlier trips (#45 review 3)', () async {
+      await db.insertRoi(RoisCompanion.insert(
+        id: 'roi-2',
+        name: 'Tokyo Trip',
+        authorId: mockUser,
+        isShared: const Value(true),
+      ));
+
+      syncEngine.startSync();
+
+      // 1. Insert dirty chunk in roi-1
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-trip1',
+        roiId: const Value('roi-1'),
+        authorId: mockUser,
+        name: 'Spot Trip 1',
+        lat: 35.0,
+        lng: 135.0,
+      ));
+      await db.insertTimeChunk(TimeChunksCompanion.insert(
+        id: 'chunk-trip1',
+        poiId: 'poi-trip1',
+        authorId: mockUser,
+        syncStatus: Value(SyncStatus.dirty.index),
+      ));
+
+      // 2. Shortly after (within debounce window), insert dirty POI in roi-2
+      await Future.delayed(const Duration(milliseconds: 300));
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-trip2',
+        roiId: const Value('roi-2'),
+        authorId: mockUser,
+        name: 'Spot Trip 2',
+        lat: 35.0,
+        lng: 135.0,
+        syncStatus: Value(SyncStatus.dirty.index),
+      ));
+
+      // 3. Wait for debounce timer (2s) to fire and execute both pushes
+      await Future.delayed(const Duration(milliseconds: 2500));
+
+      expect(fakeFirestore.tripChunks['roi-1']?.containsKey('chunk-trip1'), isTrue,
+          reason: 'roi-1 chunk must be pushed');
+      expect(fakeFirestore.tripPois['roi-2']?.containsKey('poi-trip2'), isTrue,
+          reason: 'roi-2 POI must be pushed');
+
+      syncEngine.stopSync();
     });
   });
 }

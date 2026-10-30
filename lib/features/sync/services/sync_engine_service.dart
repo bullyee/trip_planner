@@ -17,6 +17,9 @@ class SyncEngineService {
   StreamSubscription? _globalPoiSyncSub;
   StreamSubscription? _downstreamSub;
   Timer? _debounceTimer;
+  final Set<String> _pendingRoiIdsToPush = <String>{};
+  final Set<String> _inFlightSyncRois = <String>{};
+  final Set<String> _locallyDeletedRoiIds = <String>{};
 
   SyncEngineService({
     required this.localDb,
@@ -64,6 +67,7 @@ class SyncEngineService {
         for (final remoteTrip in trips) {
           final roiId = remoteTrip['id'] as String?;
           if (roiId == null || roiId.isEmpty) continue;
+          if (_locallyDeletedRoiIds.contains(roiId)) continue;
 
           final remoteVersion = (remoteTrip['cloudVersion'] as num?)?.toInt() ?? 0;
           try {
@@ -105,24 +109,25 @@ class SyncEngineService {
   void _scheduleDebouncedPush({
     List<TimeChunk>? dirtyChunks,
     List<Poi>? dirtyPois,
-  }) {
+  }) async {
+    if (dirtyChunks != null && dirtyChunks.isNotEmpty) {
+      final poiIds = dirtyChunks.map((c) => c.poiId).toSet().toList();
+      final pois = await (localDb.select(localDb.pois)
+            ..where((p) => p.id.isIn(poiIds)))
+          .get();
+      _pendingRoiIdsToPush.addAll(pois.map((p) => p.roiId).whereType<String>());
+    }
+
+    if (dirtyPois != null && dirtyPois.isNotEmpty) {
+      _pendingRoiIdsToPush.addAll(dirtyPois.map((p) => p.roiId).whereType<String>());
+    }
+
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(seconds: 2), () async {
-      final affectedRoiIds = <String>{};
+      final roisToPush = Set<String>.from(_pendingRoiIdsToPush);
+      _pendingRoiIdsToPush.clear();
 
-      if (dirtyChunks != null && dirtyChunks.isNotEmpty) {
-        final poiIds = dirtyChunks.map((c) => c.poiId).toSet().toList();
-        final pois = await (localDb.select(localDb.pois)
-              ..where((p) => p.id.isIn(poiIds)))
-            .get();
-        affectedRoiIds.addAll(pois.map((p) => p.roiId).whereType<String>());
-      }
-
-      if (dirtyPois != null && dirtyPois.isNotEmpty) {
-        affectedRoiIds.addAll(dirtyPois.map((p) => p.roiId).whereType<String>());
-      }
-
-      for (final roiId in affectedRoiIds) {
+      for (final roiId in roisToPush) {
         try {
           final roi = await localDb.getRoiById(roiId);
           if (roi.isShared) {
@@ -137,29 +142,36 @@ class SyncEngineService {
   }
 
   Future<void> executePush(String roiId) async {
-    // Self-heal: if the cloud trip is missing (never initialized, or deleted
-    // out-of-band), re-create it and re-arm this trip's local data for a full
-    // re-push.
-    if (!await firestoreSync.tripExists(roiId)) {
-      final roi = await localDb.getRoiById(roiId);
-      await firestoreSync.initializeCloudTrip(roiId, currentUserId, roi.name);
-      await _resetRoiForFullResync(roiId);
+    if (_inFlightSyncRois.contains(roiId)) {
+      debugPrint('[SyncEngine] Sync already in-flight for trip $roiId. Skipping push.');
+      return;
     }
-
-    final lockAcquired = await firestoreSync.acquireLock(roiId, currentUserId);
-    if (!lockAcquired) throw Exception('Resource locked.');
+    _inFlightSyncRois.add(roiId);
 
     try {
-      final cloudVersion = await firestoreSync.fetchTripVersion(roiId);
-      final roiRecord = await localDb.getRoiById(roiId);
-      final localVersion = roiRecord.cloudVersion;
-
-      // Bidirectional convergence: if remote is ahead, pull remote updates first
-      // so local edits merge on top rather than clobbering remote changes (#45)
-      if (cloudVersion > localVersion) {
-        debugPrint('[SyncEngine] Local version ($localVersion) behind cloud ($cloudVersion). Merging downstream first...');
-        await executePull(roiId);
+      // Self-heal: if the cloud trip is missing (never initialized, or deleted
+      // out-of-band), re-create it and re-arm this trip's local data for a full
+      // re-push.
+      if (!await firestoreSync.tripExists(roiId)) {
+        final roi = await localDb.getRoiById(roiId);
+        await firestoreSync.initializeCloudTrip(roiId, currentUserId, roi.name);
+        await _resetRoiForFullResync(roiId);
       }
+
+      final lockAcquired = await firestoreSync.acquireLock(roiId, currentUserId);
+      if (!lockAcquired) throw Exception('Resource locked.');
+
+      try {
+        final cloudVersion = await firestoreSync.fetchTripVersion(roiId);
+        final roiRecord = await localDb.getRoiById(roiId);
+        final localVersion = roiRecord.cloudVersion;
+
+        // Bidirectional convergence: if remote is ahead, pull remote updates first
+        // so local edits merge on top rather than clobbering remote changes (#45)
+        if (cloudVersion > localVersion) {
+          debugPrint('[SyncEngine] Local version ($localVersion) behind cloud ($cloudVersion). Merging downstream first...');
+          await _internalPull(roiId);
+        }
 
       final dirtyChunks = await _fetchDirtyRecords(roiId);
       final dirtyPois = await _fetchDirtyPois(roiId);
@@ -191,17 +203,33 @@ class SyncEngineService {
         await firestoreSync.commitBatch(batch);
       }
 
-      await _postPushLocalCleanup(roiId, dirtyChunks, dirtyPois, nextVersion);
-    } catch (e) {
-      try {
-        await firestoreSync.releaseLock(roiId);
-      } catch (_) {}
-      debugPrint('[SyncEngine] Push failed: $e');
-      rethrow;
+        await _postPushLocalCleanup(roiId, dirtyChunks, dirtyPois, nextVersion);
+      } catch (e) {
+        try {
+          await firestoreSync.releaseLock(roiId);
+        } catch (_) {}
+        debugPrint('[SyncEngine] Push failed: $e');
+        rethrow;
+      }
+    } finally {
+      _inFlightSyncRois.remove(roiId);
     }
   }
 
   Future<void> executePull(String roiId) async {
+    if (_inFlightSyncRois.contains(roiId)) {
+      debugPrint('[SyncEngine] Sync already in-flight for trip $roiId. Skipping pull.');
+      return;
+    }
+    _inFlightSyncRois.add(roiId);
+    try {
+      await _internalPull(roiId);
+    } finally {
+      _inFlightSyncRois.remove(roiId);
+    }
+  }
+
+  Future<void> _internalPull(String roiId) async {
     try {
       final cloudVersion = await firestoreSync.fetchTripVersion(roiId);
       final roiRecord = await localDb.getRoiById(roiId);
@@ -227,8 +255,8 @@ class SyncEngineService {
                 const PoisCompanion(roiId: Value(null)),
               );
             } else {
-              // Safe to cascade delete locally
-              await localDb.deletePoi(localPoi.id);
+              // Remote deletion of clean POI: hard-delete locally so it is completely removed without becoming dirty
+              await localDb.hardDeletePoi(localPoi.id);
             }
           }
         }
@@ -241,7 +269,7 @@ class SyncEngineService {
         // --- 2. Downstream TimeChunk Synchronization ---
         final remoteChunkIds = cloudData.map((c) => c['id'] as String).toSet();
         final currentPois = await (localDb.select(localDb.pois)
-              ..where((p) => p.roiId.equals(roiId)))
+              ..where((p) => p.roiId.equals(roiId) & p.isDeleted.equals(false)))
             .get();
         final currentPoiIds = currentPois.map((p) => p.id).toSet();
 
@@ -378,19 +406,7 @@ class SyncEngineService {
     int newVersion,
   ) async {
     await localDb.transaction(() async {
-      for (final poi in pushedPois) {
-        if (poi.isDeleted) {
-          await (localDb.delete(localDb.pois)..where((p) => p.id.equals(poi.id))).go();
-        } else {
-          await (localDb.update(localDb.pois)..where((p) => p.id.equals(poi.id))).write(
-            PoisCompanion(
-              syncStatus: Value(SyncStatus.synced.index),
-              hasEverSynced: const Value(true),
-              isShared: const Value(true),
-            ),
-          );
-        }
-      }
+      // 1. Process pushed time chunks first to avoid FK constraint violations
       for (final chunk in pushedChunks) {
         if (chunk.isDeleted) {
           await (localDb.delete(localDb.timeChunks)..where((t) => t.id.equals(chunk.id))).go();
@@ -403,6 +419,23 @@ class SyncEngineService {
           );
         }
       }
+
+      // 2. Process pushed POIs second (cascades remaining child records if deleted)
+      for (final poi in pushedPois) {
+        if (poi.isDeleted) {
+          await localDb.hardDeletePoi(poi.id);
+        } else {
+          await (localDb.update(localDb.pois)..where((p) => p.id.equals(poi.id))).write(
+            PoisCompanion(
+              syncStatus: Value(SyncStatus.synced.index),
+              hasEverSynced: const Value(true),
+              isShared: const Value(true),
+            ),
+          );
+        }
+      }
+
+      // 3. Update local ROI cloudVersion
       await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
         RoisCompanion(cloudVersion: Value(newVersion)),
       );

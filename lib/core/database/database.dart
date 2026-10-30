@@ -59,6 +59,12 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(pois, pois.isDeleted);
             await m.addColumn(pois, pois.hasEverSynced);
             await m.addColumn(pois, pois.lastModifiedAt);
+
+            // Backfill hasEverSynced for existing shared trips (#45)
+            await customStatement('''
+              UPDATE pois SET has_ever_synced = 1
+              WHERE roi_id IN (SELECT id FROM rois WHERE is_shared = 1 AND cloud_version > 0);
+            ''');
           }
         },
         beforeOpen: (details) async {
@@ -351,6 +357,17 @@ class AppDatabase extends _$AppDatabase {
   Future<bool> updatePoi(PoisCompanion poi) => update(pois).replace(poi);
 
   Future<List<Poi>> getAllPois() => (select(pois)..where((p) => p.isDeleted.equals(false))).get();
+
+  Future<int> hardDeletePoi(String id) {
+    return transaction(() async {
+      await (delete(mediaAssets)..where((m) => m.poiId.equals(id))).go();
+      await (delete(referenceImages)..where((r) => r.poiId.equals(id))).go();
+      await (delete(timeChunks)..where((t) => t.poiId.equals(id))).go();
+      await (delete(poiAnimes)..where((pa) => pa.poiId.equals(id))).go();
+      await (delete(poiTags)..where((pt) => pt.poiId.equals(id))).go();
+      return (delete(pois)..where((p) => p.id.equals(id))).go();
+    });
+  }
 
   Future<int> deletePoi(String id) {
     return transaction(() async {

@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+import '../../sync/services/firestore_sync_service.dart';
+import '../../sync/providers/firestore_sync_provider.dart';
 import 'package:drift/drift.dart'; 
 import '../../auth/providers/auth_provider.dart';
 import '../models/roi_model.dart';
@@ -26,8 +29,9 @@ abstract class RoiRepository {
 class LocalRoiRepository implements RoiRepository {
   final AppDatabase localDb;
   final String currentUserId;
+  final FirestoreSyncService? firestoreSync;
   
-  LocalRoiRepository(this.localDb, this.currentUserId);
+  LocalRoiRepository(this.localDb, this.currentUserId, {this.firestoreSync});
 
   RoiModel _mapRoi(Roi row) {
     return RoiModel(
@@ -85,6 +89,14 @@ class LocalRoiRepository implements RoiRepository {
   
   @override
   Future<void> deleteRoi(String id) async {
+    final roi = await (localDb.select(localDb.rois)..where((r) => r.id.equals(id))).getSingleOrNull();
+    if (roi != null && roi.isShared && firestoreSync != null && currentUserId.isNotEmpty && currentUserId != 'guest_local_user') {
+      try {
+        await firestoreSync!.leaveOrDeleteCloudTrip(id, currentUserId);
+      } catch (e) {
+        debugPrint('[LocalRoiRepository] Error leaving cloud trip: $e');
+      }
+    }
     await localDb.deleteRoi(id);
   }
 
@@ -127,5 +139,6 @@ class LocalRoiRepository implements RoiRepository {
 RoiRepository roiRepository(RoiRepositoryRef ref) {
   final db = ref.watch(databaseProvider);
   final currentUserId = ref.watch(currentUserIdProvider);
-  return LocalRoiRepository(db, currentUserId);
+  final firestoreSync = ref.watch(firestoreSyncServiceProvider);
+  return LocalRoiRepository(db, currentUserId, firestoreSync: firestoreSync);
 }

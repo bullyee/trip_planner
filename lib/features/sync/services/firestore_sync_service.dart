@@ -135,11 +135,31 @@ class FirestoreSyncService {
     });
   }
 
+  Future<void> leaveOrDeleteCloudTrip(String roiId, String userId) async {
+    final docRef = _db.collection('trips').doc(roiId);
+    final snapshot = await docRef.get();
+    if (!snapshot.exists) return;
+
+    final data = snapshot.data();
+    if (data == null) return;
+    final members = List<String>.from(data['members'] as List? ?? []);
+    members.remove(userId);
+
+    if (members.isEmpty) {
+      await docRef.delete();
+    } else {
+      await docRef.update({
+        'members': FieldValue.arrayRemove([userId]),
+      });
+    }
+  }
+
   Stream<List<Map<String, dynamic>>> watchUserTrips(String userId) {
     return _db
         .collection('trips')
         .where('members', arrayContains: userId)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
+        .where((snapshot) => !snapshot.metadata.hasPendingWrites)
         .map((snapshot) => snapshot.docs.map((doc) => doc.data()).toList());
   }
 
