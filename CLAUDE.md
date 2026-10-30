@@ -52,6 +52,6 @@ Source of truth: `lib/core/database/tables.dart`; migrations live in `lib/core/d
   - Always send `AnitabiApiService.userAgent`, never retry on 403/429, and keep downloads rare. The data is CC BY-NC-SA 4.0, so keep the `origin`/`originURL` attribution.
 
 ## Workflows
-- Tests: `flutter test` (unit tests under `test/`).
+- Tests: `flutter test` (unit tests under `test/`). CI (`.github/workflows/ci.yml`) runs them on every PR and on `master`.
 - Run and drive the app on Android: `.claude/skills/run-app/SKILL.md`.
-- Releases: `.claude/skills/release/SKILL.md`. GitHub pre-releases tagged `vX.Y.Z` with an APK; the `pubspec.yaml` version matches the tag; history in `CHANGELOG.md`.
+- Releases: `.claude/skills/release/SKILL.md` (Antigravity reaches it through `.agents/skills/release/`). GitHub pre-releases tagged `vX.Y.Z` with an APK; the `pubspec.yaml` version matches the tag; history in `CHANGELOG.md`. Pushing the tag runs `.github/workflows/release.yml`, which builds and signs the APK (keystore from the `ANDROID_DEBUG_KEYSTORE_B64` secret) and attaches it to a draft pre-release.
