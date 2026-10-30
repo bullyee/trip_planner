@@ -1,148 +1,130 @@
 package com.example.trip_planner
 
-import android.Manifest
+import android.app.ActivityManager
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
-import android.util.Log
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.*
 
+/**
+ * Hosts the `trip_planner/overlay` channel. On Android the Anime Camera opens
+ * the phone's own camera app (through image_picker, so shots get the phone's
+ * full processing) and floats the anime reference over it in a small
+ * draggable window, [ReferenceOverlay].
+ */
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.example.trip_planner/camera"
-    private val TAG = "AnimeCamera"
-    private val REQUEST_CAMERA = 1001
-    private val REQUEST_OVERLAY_PERMISSION = 1002
-    private var pendingResult: MethodChannel.Result? = null
-    private var photoPath: String? = null
-    private var overlayImagePath: String? = null
+    private val channelName = "trip_planner/overlay"
+    private var overlay: ReferenceOverlay? = null
+    private val handler = Handler(Looper.getMainLooper())
+
+    // While the floating reference is up, show it only while the camera is on
+    // screen: switching to another app hides it, coming back shows it again
+    // where it was.
+    private val followCamera = object : Runnable {
+        override fun run() {
+            val shown = overlay ?: return
+            if (!shown.isShowing) {
+                overlay = null
+                return
+            }
+            shown.setShown(isCameraOnScreen())
+            handler.postDelayed(this, CAMERA_POLL_MS)
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         JpegEncoder.register(flutterEngine.dartExecutor.binaryMessenger)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "hasOverlayPermission" -> {
-                        result.success(hasOverlayPermission())
-                    }
-                    "requestOverlayPermission" -> {
+                    "canDrawOverlays" -> result.success(canDrawOverlays())
+                    "requestPermission" -> {
                         requestOverlayPermission()
-                        result.success(true)
+                        result.success(null)
                     }
-                    "launchCameraWithOverlay" -> {
-                        val imagePath = call.argument<String>("imagePath")
-                        if (imagePath == null) {
-                            result.error("NO_IMAGE", "No reference image path provided", null)
-                            return@setMethodCallHandler
+                    "showOverlay" -> {
+                        val path = call.argument<String>("path")
+                        val opacity = (call.argument<Double>("opacity") ?: 0.6).toFloat()
+                        // False for the float-only mode: the window stays
+                        // up while the user shoots with any camera app.
+                        val follow = call.argument<Boolean>("followCamera") ?: true
+                        when {
+                            path == null ->
+                                result.error("no_path", "path is required", null)
+                            !canDrawOverlays() ->
+                                result.error("no_permission", "overlay permission not granted", null)
+                            else -> {
+                                hideOverlay()
+                                val shown = ReferenceOverlay(this)
+                                if (shown.show(path, opacity)) {
+                                    overlay = shown
+                                    if (follow) handler.post(followCamera)
+                                    result.success(true)
+                                } else {
+                                    result.error("show_failed", "could not show the reference", null)
+                                }
+                            }
                         }
-                        pendingResult = result
-                        overlayImagePath = imagePath
-                        launchCameraWithOverlay(imagePath)
+                    }
+                    "hideOverlay" -> {
+                        hideOverlay()
+                        result.success(null)
                     }
                     else -> result.notImplemented()
                 }
             }
     }
 
-    private fun hasOverlayPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Settings.canDrawOverlays(this)
-        } else {
-            true
-        }
+    /**
+     * Whether the camera this app opened is what's on screen. It was opened
+     * for a result, so it runs on top of this app's task: follow that task's
+     * visibility. Android 13+ only reports it; on older versions, or if the
+     * camera got a task of its own (this task's top is still us, hidden behind
+     * it), keep the window up rather than hide it for good.
+     */
+    private fun isCameraOnScreen(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        val activities = getSystemService(ActivityManager::class.java) ?: return true
+        val task = activities.appTasks.asSequence()
+            .mapNotNull { runCatching { it.taskInfo }.getOrNull() }
+            .firstOrNull { it.taskId == taskId } ?: return true
+        val cameraOnTop = task.topActivity?.packageName.let { it != null && it != packageName }
+        return !cameraOnTop || task.isVisible
     }
+
+    private fun canDrawOverlays(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
 
     private fun requestOverlayPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName"),
+                ),
             )
-            startActivityForResult(intent, REQUEST_OVERLAY_PERMISSION)
         }
     }
 
-    private fun launchCameraWithOverlay(imagePath: String) {
-        try {
-            // Create temp file for the captured photo
-            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-            val photoFile = File.createTempFile("IMG_${timeStamp}_", ".jpg", storageDir)
-            photoPath = photoFile.absolutePath
-
-            val photoUri = FileProvider.getUriForFile(
-                this,
-                "${applicationContext.packageName}.fileprovider",
-                photoFile
-            )
-
-            // Request notification permission (Android 13+) so the foreground
-            // service notification is visible
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED) {
-                    ActivityCompat.requestPermissions(
-                        this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1003
-                    )
-                }
-            }
-
-            // Start the overlay service with the reference image
-            val overlayIntent = Intent(this, OverlayService::class.java).apply {
-                putExtra("imagePath", imagePath)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(overlayIntent)
-            } else {
-                startService(overlayIntent)
-            }
-            Log.d(TAG, "Overlay service started with image: $imagePath")
-
-            // Launch system camera
-            val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            }
-            startActivityForResult(cameraIntent, REQUEST_CAMERA)
-            Log.d(TAG, "Camera launched")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error: ${e.message}", e)
-            pendingResult?.error("CAMERA_ERROR", e.message, null)
-            pendingResult = null
-        }
+    private fun hideOverlay() {
+        handler.removeCallbacks(followCamera)
+        overlay?.hide()
+        overlay = null
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        Log.d(TAG, "onActivityResult: request=$requestCode, result=$resultCode")
+    override fun onDestroy() {
+        hideOverlay()
+        super.onDestroy()
+    }
 
-        if (requestCode == REQUEST_CAMERA) {
-            // Stop the overlay
-            stopService(Intent(this, OverlayService::class.java))
-
-            if (resultCode == RESULT_OK && photoPath != null) {
-                Log.d(TAG, "Photo captured: $photoPath")
-                pendingResult?.success(photoPath)
-            } else {
-                Log.d(TAG, "Camera cancelled")
-                pendingResult?.success(null)
-                photoPath?.let { File(it).delete() }
-            }
-            pendingResult = null
-            photoPath = null
-        }
+    private companion object {
+        const val CAMERA_POLL_MS = 500L
     }
 }
