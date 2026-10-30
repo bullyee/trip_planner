@@ -1,4 +1,4 @@
-name: Release APK
+name: Release
 
 # Pushing a vX.Y.Z tag builds the APK and attaches it to a *draft* pre-release.
 # Whoever cuts the release (see .claude/skills/release/SKILL.md) checks the
@@ -119,3 +119,71 @@ jobs:
               --title "$TAG" --notes-file notes.md \
               dist/app-release.apk dist/app-release.apk.sha1
           fi
+
+  build-windows:
+    name: Build Windows (x64)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check pubspec version matches the tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have=$(sed -nE 's/^version: *([^+ ]+).*/\1/p' pubspec.yaml)
+          if [ "$want" != "$have" ]; then
+            echo "::error::pubspec.yaml version is $have but the tag is $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.1
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter test
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Package Windows ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          $releaseDir = "build\windows\x64\runner\Release"
+          $zipPath = "dist\trip_planner-windows-x64.zip"
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath $zipPath -Force
+          $sha256 = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
+          "$sha256  trip_planner-windows-x64.zip" | Out-File -FilePath "$zipPath.sha256" -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trip_planner-windows-x64-${{ github.ref_name }}
+          path: dist/
+          retention-days: 14
+
+      - name: Attach Windows ZIP to draft pre-release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          for i in {1..30}; do
+            if gh release view "$TAG" > /dev/null 2>&1; then
+              break
+            fi
+            sleep 6
+          done
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/trip_planner-windows-x64.zip dist/trip_planner-windows-x64.zip.sha256 --clobber
+          else
+            gh release create "$TAG" --draft --prerelease --verify-tag \
+              --title "$TAG" \
+              dist/trip_planner-windows-x64.zip dist/trip_planner-windows-x64.zip.sha256
+          fi
+

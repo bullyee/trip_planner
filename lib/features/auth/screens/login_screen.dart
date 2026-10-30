@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trip_planner/features/auth/providers/auth_provider.dart';
@@ -27,9 +29,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } catch (e) {
       // Catch the thrown error and display it cleanly on the UI
       if (mounted) {
+        final message = e is AuthConfigurationException
+            ? e.message
+            : 'Sign-in failed: ${e.toString()}';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Sign-in failed: ${e.toString()}'),
+            content: Text(message),
             backgroundColor: Colors.redAccent,
             duration: const Duration(seconds: 4),
           ),
@@ -58,9 +63,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32.0),
-            child: Column(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 450),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Spacer(flex: 2),
@@ -137,12 +145,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                   ),
                 ),
+                if (!kIsWeb &&
+                    (Platform.isWindows || Platform.isMacOS || Platform.isLinux) &&
+                    !isDesktopAuthAvailable) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Desktop cloud sync is in preview. You can use all planning and mapping features offline without signing in.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
                 const Spacer(),
               ],
             ),
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 }
