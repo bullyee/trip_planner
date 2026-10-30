@@ -11,6 +11,7 @@ import '../providers/calendar_provider.dart';
 import '../repositories/time_chunk_repository.dart';
 import '../widgets/time_chunk_card.dart';
 import '../widgets/week_strip.dart';
+import '../../../core/utils/schedule_engine.dart';
 import '../../../core/utils/schedule_utils.dart';
 import '../../auth/providers/auth_provider.dart';
 
@@ -251,42 +252,54 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                   final poi = poisMap[chunk.poiId];
                                   final isSelected = _selectedScheduleIds.contains(chunk.id);
 
-                                  Widget gapWidget = const SizedBox.shrink();
-                                  if (index > 0) {
-                                    final prevChunk = sorted[index - 1];
-                                    final prevEndTime = prevChunk.endTime ?? '00:00';
-                                    
-                                    int prevEndMins = (int.tryParse(prevEndTime.split(':')[0]) ?? 0) * 60 + 
-                                                      (int.tryParse(prevEndTime.split(':')[1]) ?? 0);
-                                    int arrivalMins = prevEndMins + prevChunk.transitDuration;
-                                    
-                                    final currStartTime = chunk.startTime ?? '00:00';
-                                    int currStartMins = (int.tryParse(currStartTime.split(':')[0]) ?? 0) * 60 + 
-                                                        (int.tryParse(currStartTime.split(':')[1]) ?? 0);
-                                    
-                                    int gap = currStartMins - arrivalMins;
-                                    if (gap > 0) {
-                                      gapWidget = Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                                        child: Center(
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                                              borderRadius: BorderRadius.circular(16),
-                                            ),
-                                            child: Text(
-                                              'Free Time: $gap min',
-                                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                                color: Theme.of(context).colorScheme.onSecondaryContainer,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  }
+                                   Widget gapWidget = const SizedBox.shrink();
+                                   if (index > 0) {
+                                     final prevChunk = sorted[index - 1];
+                                     final gapInfo = calculateScheduleGap(prevChunk, chunk, priorChunks: sorted.sublist(0, index));
+                                     if (gapInfo != null) {
+                                       if (gapInfo.isConflict) {
+                                         gapWidget = Padding(
+                                           padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                           child: Center(
+                                             child: Container(
+                                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                               decoration: BoxDecoration(
+                                                 color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.5),
+                                                 borderRadius: BorderRadius.circular(16),
+                                               ),
+                                               child: Text(
+                                                 'Conflict: ${gapInfo.conflictMinutes} min',
+                                                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                                   color: Theme.of(context).colorScheme.onErrorContainer,
+                                                   fontWeight: FontWeight.w600,
+                                                 ),
+                                               ),
+                                             ),
+                                           ),
+                                         );
+                                       } else if (gapInfo.freeTimeMinutes > 0) {
+                                         gapWidget = Padding(
+                                           padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                           child: Center(
+                                             child: Container(
+                                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                               decoration: BoxDecoration(
+                                                 color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                                                 borderRadius: BorderRadius.circular(16),
+                                               ),
+                                               child: Text(
+                                                 'Free Time: ${gapInfo.freeTimeMinutes} min',
+                                                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                                   color: Theme.of(context).colorScheme.onSecondaryContainer,
+                                                   fontWeight: FontWeight.w600,
+                                                 ),
+                                               ),
+                                             ),
+                                           ),
+                                         );
+                                       }
+                                     }
+                                   }
 
                                   return Container(
                                     key: ValueKey(chunk.id), 
