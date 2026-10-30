@@ -9,6 +9,8 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:trip_planner/core/database/database.dart';
 import 'package:trip_planner/features/poi/services/anitabi_api_service.dart';
+import 'package:trip_planner/features/poi/repositories/poi_repository.dart';
+import 'package:trip_planner/features/poi/repositories/media_repository.dart';
 import 'package:trip_planner/features/poi/services/anitabi_static_data.dart';
 
 const _host = 'https://w.junreimap.com/d';
@@ -184,10 +186,19 @@ void main() {
   });
 
   group('AnitabiApiService.importBangumiSubject', () {
+    late PoiRepository poiRepo;
+    late MediaRepository mediaRepo;
+
+    setUp(() {
+      poiRepo = LocalPoiRepository(db, 'user-1');
+      mediaRepo = LocalMediaRepository(db);
+    });
+
     Future<AnitabiImportResult?> import(http.Client client) =>
         AnitabiApiService.importBangumiSubject(
-          db,
-          '1424',
+          poiRepository: poiRepo,
+          mediaRepository: mediaRepo,
+          subjectId: '1424',
           authorId: 'user-1',
           fallbackName: 'K-On!',
           client: client,

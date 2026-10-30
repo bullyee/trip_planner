@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 
+import 'package:flutter/foundation.dart';
 import '../models/poi_model.dart';
+import '../models/anitabi_poi_data.dart';
 import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -31,6 +33,13 @@ abstract class PoiRepository {
   Stream<int> watchPoiCountForAnime(String animeId);
   Stream<List<PoiModel>> watchPoisByTag(String tagId);
   Stream<int> watchPoiCountForTag(String tagId);
+
+  Future<AnitabiImportBatchResult> importAnitabiPois({
+    required String bangumiId,
+    required String animeName,
+    required List<AnitabiPoiData> spots,
+    required String authorId,
+  });
 }
 
 class LocalPoiRepository implements PoiRepository {
@@ -251,6 +260,82 @@ class LocalPoiRepository implements PoiRepository {
   @override
   Stream<int> watchPoiCountForTag(String tagId) {
     return localDb.watchPoiCountForTag(tagId);
+  }
+
+  @override
+  Future<AnitabiImportBatchResult> importAnitabiPois({
+    required String bangumiId,
+    required String animeName,
+    required List<AnitabiPoiData> spots,
+    required String authorId,
+  }) async {
+    final animeId = await localDb.upsertAnimeByBangumiId(
+      bangumiId: bangumiId,
+      name: animeName,
+      authorId: authorId,
+    );
+
+    int imported = 0;
+    int skipped = 0;
+    final pendingDownloads = <PendingCoverDownload>[];
+
+    await localDb.transaction(() async {
+      for (final spot in spots) {
+        try {
+          final poiId = spot.id;
+          final alreadyImported = await (localDb.select(localDb.pois)
+                ..where((t) => t.id.equals(poiId)))
+              .getSingleOrNull();
+
+          final companion = PoisCompanion(
+            id: Value(poiId),
+            name: Value(spot.name),
+            lat: Value(spot.lat),
+            lng: Value(spot.lng),
+            localCoverImagePath: const Value(null),
+            description: Value(spot.description),
+            address: const Value(null),
+            businessHours: const Value(null),
+            contactInfo: const Value(null),
+            roiId: const Value(null),
+            authorId: Value(authorId),
+            createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+            isShared: const Value(false),
+          );
+
+          await localDb.into(localDb.pois).insert(
+                companion,
+                mode: InsertMode.insertOrIgnore,
+              );
+
+          await localDb.addAnimeToPoi(poiId, animeId);
+
+          if (alreadyImported != null) {
+            skipped++;
+            continue;
+          }
+          imported++;
+
+          if (spot.imageUrl != null && spot.imageUrl!.isNotEmpty) {
+            pendingDownloads.add(PendingCoverDownload(
+              poiId: poiId,
+              url: spot.imageUrl!,
+              metadata: spot.imageMetadata ?? '',
+            ));
+          }
+        } catch (e, st) {
+          debugPrint('[LocalPoiRepository] Database Insert Error for POI ${spot.id}: $e\n$st');
+          skipped++;
+        }
+      }
+    });
+
+    return AnitabiImportBatchResult(
+      animeId: animeId,
+      imported: imported,
+      skipped: skipped,
+      pendingDownloads: pendingDownloads,
+    );
   }
 }
 
