@@ -167,7 +167,6 @@ class AnitabiApiService {
         bangumiId: subjectId,
         animeName: animeName,
         spots: parsed,
-        authorId: authorId,
       );
 
       // Hand the client off to the background downloader; it closes the

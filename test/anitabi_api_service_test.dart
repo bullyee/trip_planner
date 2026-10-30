@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -291,6 +292,78 @@ void main() {
         throwsA(isA<AnitabiUnavailableException>()
             .having((e) => e.blocked, 'blocked', isTrue)),
       );
+    });
+
+    test('re-importing an existing subject preserves edits and dedups cleanly',
+        () async {
+      http.Client serveStatic() => MockClient((request) async {
+            requests.add(request);
+            return switch (request.url.host) {
+              'img-tc.anitabi.cn' =>
+                http.Response.bytes([0xFF, 0xD8, 0xFF], 200),
+              _ => switch (request.url.pathSegments.last) {
+                  'g.json' => _ok(_index([kOn])),
+                  _ => _ok(_page(1424, [
+                      _row('a', 0,
+                          cn: '修学院站', image: '/images/points/1424/a.jpg'),
+                      _row('b', '豊郷小学校', cn: '丰乡小学'),
+                    ])),
+                },
+            };
+          });
+
+      // 1. Initial import
+      final first = await import(serveStatic());
+      expect(first!.poisImported, 2);
+      expect(first.poisSkipped, 0);
+      expect(first.coversPending, 1);
+      await first.coverDownloadCompletion;
+
+      final initialAnimeId = first.animeId;
+      final initialImages = await db.select(db.referenceImages).get();
+      expect(initialImages, hasLength(1));
+
+      // 2. User edits one POI
+      await (db.update(db.pois)..where((p) => p.id.equals('anitabi:a'))).write(
+        const PoisCompanion(
+          description: Value('Custom user edit for spot A'),
+        ),
+      );
+      final editedA = await (db.select(db.pois)
+            ..where((p) => p.id.equals('anitabi:a')))
+          .getSingle();
+      expect(editedA.description, 'Custom user edit for spot A');
+
+      // 3. Re-import the same subject
+      final second = await import(serveStatic());
+      expect(second!.animeId, initialAnimeId);
+      expect(second.poisImported, 0);
+      expect(second.poisSkipped, 2);
+      expect(second.coversPending, 0);
+
+      // Verify user's edit was preserved (not overwritten)
+      final preservedA = await (db.select(db.pois)
+            ..where((p) => p.id.equals('anitabi:a')))
+          .getSingle();
+      expect(preservedA.description, 'Custom user edit for spot A');
+
+      // Verify reference images count remains exactly one
+      final secondImages = await db.select(db.referenceImages).get();
+      expect(secondImages, hasLength(1));
+
+      // Verify poi_animes links are intact
+      final links = await (db.select(db.poiAnimes)).get();
+      expect(links.length, 2);
+
+      // 4. If poi_animes links are deleted first, re-import adds them back
+      await (db.delete(db.poiAnimes)).go();
+      expect(await (db.select(db.poiAnimes)).get(), isEmpty);
+
+      final third = await import(serveStatic());
+      expect(third!.poisImported, 0);
+      expect(third.poisSkipped, 2);
+      final restoredLinks = await (db.select(db.poiAnimes)).get();
+      expect(restoredLinks.length, 2);
     });
   });
 }

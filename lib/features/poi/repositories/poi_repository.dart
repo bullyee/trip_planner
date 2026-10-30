@@ -38,7 +38,6 @@ abstract class PoiRepository {
     required String bangumiId,
     required String animeName,
     required List<AnitabiPoiData> spots,
-    required String authorId,
   });
 }
 
@@ -267,12 +266,11 @@ class LocalPoiRepository implements PoiRepository {
     required String bangumiId,
     required String animeName,
     required List<AnitabiPoiData> spots,
-    required String authorId,
   }) async {
     final animeId = await localDb.upsertAnimeByBangumiId(
       bangumiId: bangumiId,
       name: animeName,
-      authorId: authorId,
+      authorId: currentUserId,
     );
 
     int imported = 0;
@@ -298,7 +296,7 @@ class LocalPoiRepository implements PoiRepository {
             businessHours: const Value(null),
             contactInfo: const Value(null),
             roiId: const Value(null),
-            authorId: Value(authorId),
+            authorId: Value(currentUserId),
             createdAt: Value(DateTime.now().millisecondsSinceEpoch),
             isShared: const Value(false),
           );
