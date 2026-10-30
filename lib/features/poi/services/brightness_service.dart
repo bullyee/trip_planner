@@ -30,24 +30,36 @@ class BrightnessArgs {
 Future<Uint8List> applyBrightness(BrightnessArgs args) async {
   final image = img.decodeImage(args.sourceBytes);
   if (image == null) return args.sourceBytes;
-  final scale = 1 + args.brightness.clamp(-0.5, 0.5);
+  final table = _brightnessTable(args.brightness);
   return processBandsInParallel(
     captured: image,
-    bandFn: (bytes, ch, _, _, _) => _applyBrightnessBand(bytes, ch, scale),
+    bandFn: (bytes, ch, _, _, _) => _mapChannels(bytes, ch, table),
   );
 }
 
-Uint8List _applyBrightnessBand(
-  Uint8List bandBytes,
-  int channels,
-  double scale,
-) {
-  final result = Uint8List.fromList(bandBytes);
-  final n = result.length;
+/// [applyBrightness] on raw [pixels] ([channels] bytes a pixel, R G B
+/// first), in place, for the full-resolution save render. A table lookup
+/// per byte, so it doesn't need splitting across isolates.
+void brightenPixels(Uint8List pixels, int channels, double brightness) {
+  _mapChannels(pixels, channels, _brightnessTable(brightness));
+}
+
+/// What each 8-bit channel value becomes: scaled by `1 + brightness`,
+/// rounded and clamped.
+Uint8List _brightnessTable(double brightness) {
+  final scale = 1 + brightness.clamp(-0.5, 0.5);
+  return Uint8List.fromList([
+    for (var v = 0; v < 256; v++) (v * scale).round().clamp(0, 255),
+  ]);
+}
+
+/// Maps the R G B bytes of every pixel through [table], in place.
+Uint8List _mapChannels(Uint8List bytes, int channels, Uint8List table) {
+  final n = bytes.length;
   for (var i = 0; i < n; i += channels) {
-    result[i] = (result[i] * scale).round().clamp(0, 255);
-    result[i + 1] = (result[i + 1] * scale).round().clamp(0, 255);
-    result[i + 2] = (result[i + 2] * scale).round().clamp(0, 255);
+    bytes[i] = table[bytes[i]];
+    bytes[i + 1] = table[bytes[i + 1]];
+    bytes[i + 2] = table[bytes[i + 2]];
   }
-  return result;
+  return bytes;
 }
