@@ -53,7 +53,11 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Region not found.')),
         );
-        context.pop();
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/rois');
+        }
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -276,7 +280,11 @@ class _RoiEditScreenState extends ConsumerState<RoiEditScreen> {
                 const SnackBar(content: Text('Trip upgraded to Cloud Collaborative Workspace!')),
              );
           }
-          context.pop();
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/rois');
+          }
         case Failure(:final error):
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Failed to save ROI: $error')),

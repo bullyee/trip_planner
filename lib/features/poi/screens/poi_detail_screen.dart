@@ -94,7 +94,7 @@ class PoiDetailScreen extends ConsumerWidget {
                   const Text('Spot not found or has been deleted.'),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () => context.pop(),
+                    onPressed: () => context.canPop() ? context.pop() : context.go('/pois'),
                     child: const Text('Go Back'),
                   ),
                 ],
@@ -518,7 +518,11 @@ class PoiDetailScreen extends ConsumerWidget {
                   await ref.read(poiRepositoryProvider).deletePoi(poi.id);
                   if (context.mounted) {
                     Navigator.pop(ctx);
-                    context.pop();
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/pois');
+                    }
                   }
                 },
                 child: const Text('Delete'),
