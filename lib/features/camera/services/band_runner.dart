@@ -40,14 +40,43 @@ Future<Uint8List> processBandsInParallel({
   required img.Image captured,
   required BandFn bandFn,
 }) async {
-  final width = captured.width;
-  final height = captured.height;
-  final channels = captured.numChannels;
-  final data = captured.toUint8List();
+  // A copy: the bands are written back into it, and `captured` stays as
+  // it was.
+  final pixels = Uint8List.fromList(captured.toUint8List());
+  await processPixelBands(
+    pixels: pixels,
+    width: captured.width,
+    height: captured.height,
+    channels: captured.numChannels,
+    bandFn: bandFn,
+  );
+  final newImage = img.Image.fromBytes(
+    width: captured.width,
+    height: captured.height,
+    bytes: pixels.buffer,
+    numChannels: captured.numChannels,
+  );
+  return Uint8List.fromList(img.encodeJpg(newImage, quality: 90));
+}
+
+/// Runs [bandFn] over raw [pixels] — [width] × [height], [channels] bytes a
+/// pixel, rows packed — split into [_parallelBands] horizontal bands, one
+/// isolate each, and writes each band's result back into [pixels].
+///
+/// The full-resolution save render uses this directly on the decoded photo,
+/// so its filters never go through a JPEG between steps.
+Future<void> processPixelBands({
+  required Uint8List pixels,
+  required int width,
+  required int height,
+  required int channels,
+  required BandFn bandFn,
+}) async {
   final bytesPerRow = width * channels;
 
   // Ceil so the last band picks up any remainder rows.
   final bandRowCount = (height / _parallelBands).ceil();
+  final starts = <int>[];
   final futures = <Future<Uint8List>>[];
 
   for (var b = 0; b < _parallelBands; b++) {
@@ -57,8 +86,9 @@ Future<Uint8List> processBandsInParallel({
     final actualHeight = y1 - y0;
     // `sublist` returns a fresh Uint8List, so each isolate gets its own
     // copy of its band to mutate without aliasing the source buffer.
-    final bandBytes = data.sublist(y0 * bytesPerRow, y1 * bytesPerRow);
+    final bandBytes = pixels.sublist(y0 * bytesPerRow, y1 * bytesPerRow);
 
+    starts.add(y0 * bytesPerRow);
     futures.add(
       Isolate.run(
         () => bandFn(bandBytes, channels, width, y0, actualHeight),
@@ -67,21 +97,7 @@ Future<Uint8List> processBandsInParallel({
   }
 
   final results = await Future.wait(futures);
-
-  // Stitch the per-band results into a single contiguous buffer.
-  final totalBytes = results.fold<int>(0, (sum, r) => sum + r.length);
-  final stitched = Uint8List(totalBytes);
-  var offset = 0;
-  for (final r in results) {
-    stitched.setRange(offset, offset + r.length, r);
-    offset += r.length;
+  for (var b = 0; b < results.length; b++) {
+    pixels.setRange(starts[b], starts[b] + results[b].length, results[b]);
   }
-
-  final newImage = img.Image.fromBytes(
-    width: width,
-    height: height,
-    bytes: stitched.buffer,
-    numChannels: channels,
-  );
-  return Uint8List.fromList(img.encodeJpg(newImage, quality: 90));
 }

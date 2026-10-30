@@ -53,46 +53,90 @@ Future<Uint8List> reinhardMatch(MatchArgs args) async {
   final reference = img.decodeImage(args.referenceBytes);
   if (captured == null || reference == null) return args.capturedBytes;
 
-  final capStats = _labStats(_thumb(captured));
-  final refStats = _labStats(_thumb(reference));
+  final capStats = labStatsOfImage(captured);
+  final refStats = labStatsOfImage(reference);
 
   return processBandsInParallel(
     captured: captured,
     bandFn: (bytes, ch, _, _, _) =>
-        _applyReinhardBand(bytes, ch, capStats, refStats),
+        _applyReinhardBand(bytes, ch, capStats, refStats, 1),
   );
 }
 
+/// [reinhardMatch] on raw [pixels] — [width] × [height], [channels] bytes a
+/// pixel with R G B first, rows packed — in place, for the full-resolution
+/// save render. [strength] blends the match with the original the way the
+/// editor's slider does (1 = the full match), in the same pass instead of
+/// [lerpJpegs]' second decode / encode.
+Future<void> matchColorPixels(
+  Uint8List pixels,
+  int width,
+  int height,
+  int channels,
+  Uint8List referenceBytes, {
+  double strength = 1,
+}) async {
+  final reference = img.decodeImage(referenceBytes);
+  if (reference == null) return;
+  final capStats = labStatsOfPixels(pixels, width, height, channels);
+  final refStats = labStatsOfImage(reference);
+  final t = strength.clamp(0.0, 1.0);
+  await processPixelBands(
+    pixels: pixels,
+    width: width,
+    height: height,
+    channels: channels,
+    bandFn: (bytes, ch, _, _, _) =>
+        _applyReinhardBand(bytes, ch, capStats, refStats, t),
+  );
+}
+
+/// Changes [bandBytes] in place: each band runs in its own isolate on its
+/// own copy.
 Uint8List _applyReinhardBand(
   Uint8List bandBytes,
   int channels,
-  _LabStats cap,
-  _LabStats ref,
+  LabStats cap,
+  LabStats ref,
+  double strength,
 ) {
-  final result = Uint8List.fromList(bandBytes);
+  final result = bandBytes;
   final n = result.length;
 
   final scaleL = (ref.stdL / cap.stdL).clamp(0.5, 2.0);
   final scaleA = (ref.stdA / cap.stdA).clamp(0.5, 2.0);
   final scaleB = (ref.stdB / cap.stdB).clamp(0.5, 2.0);
+  final blend = strength < 0.999;
+  final keep = 1 - strength;
 
   for (var i = 0; i < n; i += channels) {
-    final lab = _rgbToLab(result[i], result[i + 1], result[i + 2]);
+    final r0 = result[i], g0 = result[i + 1], b0 = result[i + 2];
+    final lab = _rgbToLab(r0, g0, b0);
     final newL = (lab.l - cap.meanL) * scaleL + ref.meanL;
     final newA = (lab.a - cap.meanA) * scaleA + ref.meanA;
     final newB = (lab.b - cap.meanB) * scaleB + ref.meanB;
     final rgb = _labToRgb(newL, newA, newB);
-    result[i] = rgb.r.round().clamp(0, 255);
-    result[i + 1] = rgb.g.round().clamp(0, 255);
-    result[i + 2] = rgb.b.round().clamp(0, 255);
+    final r = rgb.r.round().clamp(0, 255);
+    final g = rgb.g.round().clamp(0, 255);
+    final b = rgb.b.round().clamp(0, 255);
+    if (blend) {
+      // Same blend as lerpJpegs, minus its JPEG round trip.
+      result[i] = (r0 * keep + r * strength).round().clamp(0, 255);
+      result[i + 1] = (g0 * keep + g * strength).round().clamp(0, 255);
+      result[i + 2] = (b0 * keep + b * strength).round().clamp(0, 255);
+    } else {
+      result[i] = r;
+      result[i + 1] = g;
+      result[i + 2] = b;
+    }
   }
   return result;
 }
 
 /// Per-byte linear blend between two same-sized JPEG buffers, re-encoded
-/// as JPEG. Used by the editor's Save flow to flatten the Match Color
+/// as JPEG. Used by the editor's Confirm to flatten the Match Color
 /// strength slider (which renders as a Flutter Stack at preview time)
-/// into a single byte stream for `savePhoto`.
+/// into the step's preview bytes. Save blends inside [matchColorPixels].
 ///
 /// Both buffers must decode to the same width × height × channel layout
 /// — the function is only called from inside the editor after Reinhard
@@ -128,18 +172,21 @@ Future<Uint8List> lerpJpegs(LerpArgs args) async {
 //  consumer shows up.
 // ---------------------------------------------------------------------------
 
+const _thumbLongEdge = 256;
+
 img.Image _thumb(img.Image src) {
-  const longEdge = 256;
+  const longEdge = _thumbLongEdge;
   if (src.width <= longEdge && src.height <= longEdge) return src;
   return src.width >= src.height
       ? img.copyResize(src, width: longEdge)
       : img.copyResize(src, height: longEdge);
 }
 
-class _LabStats {
+/// Mean and standard deviation of an image's L, a and b channels.
+class LabStats {
   final double meanL, meanA, meanB;
   final double stdL, stdA, stdB;
-  const _LabStats({
+  const LabStats({
     required this.meanL,
     required this.meanA,
     required this.meanB,
@@ -149,13 +196,53 @@ class _LabStats {
   });
 }
 
-_LabStats _labStats(img.Image src) {
+/// Lab stats of [src], taken on a 256 px thumbnail of it.
+LabStats labStatsOfImage(img.Image src) {
+  final acc = _LabAccumulator();
+  for (final px in _thumb(src)) {
+    acc.add(px.r, px.g, px.b);
+  }
+  return acc.stats;
+}
+
+/// [labStatsOfImage] for raw pixels ([channels] bytes a pixel, R G B
+/// first), without building an `img.Image`: it samples the same pixels as
+/// `copyResize`'s default nearest-neighbour resize, in the same order, so
+/// the stats come out identical.
+LabStats labStatsOfPixels(
+  Uint8List pixels,
+  int width,
+  int height,
+  int channels,
+) {
+  var tw = width, th = height;
+  if (width > _thumbLongEdge || height > _thumbLongEdge) {
+    if (width >= height) {
+      tw = _thumbLongEdge;
+      th = (tw * (height / width)).round();
+    } else {
+      th = _thumbLongEdge;
+      tw = (th * (width / height)).round();
+    }
+  }
+  final acc = _LabAccumulator();
+  for (var y = 0; y < th; y++) {
+    final row = ((y * height) ~/ th) * width;
+    for (var x = 0; x < tw; x++) {
+      final i = (row + (x * width) ~/ tw) * channels;
+      acc.add(pixels[i], pixels[i + 1], pixels[i + 2]);
+    }
+  }
+  return acc.stats;
+}
+
+class _LabAccumulator {
   var sumL = 0.0, sumA = 0.0, sumB = 0.0;
   var sqL = 0.0, sqA = 0.0, sqB = 0.0;
   var count = 0;
 
-  for (final px in src) {
-    final lab = _rgbToLab(px.r, px.g, px.b);
+  void add(num r, num g, num b) {
+    final lab = _rgbToLab(r, g, b);
     sumL += lab.l;
     sumA += lab.a;
     sumB += lab.b;
@@ -165,26 +252,28 @@ _LabStats _labStats(img.Image src) {
     count++;
   }
 
-  if (count == 0) {
-    return const _LabStats(
-      meanL: 0, meanA: 0, meanB: 0,
-      stdL: 1, stdA: 1, stdB: 1,
+  LabStats get stats {
+    if (count == 0) {
+      return const LabStats(
+        meanL: 0, meanA: 0, meanB: 0,
+        stdL: 1, stdA: 1, stdB: 1,
+      );
+    }
+    final meanL = sumL / count;
+    final meanA = sumA / count;
+    final meanB = sumB / count;
+    final varL = math.max(0.0, sqL / count - meanL * meanL);
+    final varA = math.max(0.0, sqA / count - meanA * meanA);
+    final varB = math.max(0.0, sqB / count - meanB * meanB);
+    return LabStats(
+      meanL: meanL,
+      meanA: meanA,
+      meanB: meanB,
+      stdL: math.max(1e-6, math.sqrt(varL)),
+      stdA: math.max(1e-6, math.sqrt(varA)),
+      stdB: math.max(1e-6, math.sqrt(varB)),
     );
   }
-  final meanL = sumL / count;
-  final meanA = sumA / count;
-  final meanB = sumB / count;
-  final varL = math.max(0.0, sqL / count - meanL * meanL);
-  final varA = math.max(0.0, sqA / count - meanA * meanA);
-  final varB = math.max(0.0, sqB / count - meanB * meanB);
-  return _LabStats(
-    meanL: meanL,
-    meanA: meanA,
-    meanB: meanB,
-    stdL: math.max(1e-6, math.sqrt(varL)),
-    stdA: math.max(1e-6, math.sqrt(varA)),
-    stdB: math.max(1e-6, math.sqrt(varB)),
-  );
 }
 
 class _LabPixel {
@@ -221,10 +310,20 @@ double _labFInv(double t) {
   return t > 0.206893 ? t * t * t : (t - 16.0 / 116.0) / 7.787;
 }
 
+/// [_srgbToLinear] of every 8-bit value, so the per-pixel loop looks it up
+/// instead of calling `pow` three times a pixel.
+final _linearOf8Bit = Float64List.fromList([
+  for (var v = 0; v < 256; v++) _srgbToLinear(v.toDouble()),
+]);
+
+double _toLinear(num v8) => v8 is int && v8 >= 0 && v8 < 256
+    ? _linearOf8Bit[v8]
+    : _srgbToLinear(v8.toDouble());
+
 _LabPixel _rgbToLab(num r8, num g8, num b8) {
-  final lr = _srgbToLinear(r8.toDouble());
-  final lg = _srgbToLinear(g8.toDouble());
-  final lb = _srgbToLinear(b8.toDouble());
+  final lr = _toLinear(r8);
+  final lg = _toLinear(g8);
+  final lb = _toLinear(b8);
 
   final x = lr * 0.4124564 + lg * 0.3575761 + lb * 0.1804375;
   final y = lr * 0.2126729 + lg * 0.7151522 + lb * 0.0721750;
