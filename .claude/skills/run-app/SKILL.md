@@ -95,6 +95,25 @@ Observed on Pixel_Test with a small database; positions move with content, so co
 | Home cards | View POIs (540,682) · Map (540,934) · My Trips (540,1176) · Trip Calendar (540,1417) · Anime Camera (540,1659) |
 | Import from Bangumi | View POIs → **Add** FAB (964,2221) → *Import from Bangumi* (964,1224, not in the dump) → type a name → **Import** on a result → dialog **Import** (793,1385) → snackbar with the outcome |
 | New POI / Region / Anime / Tag | View POIs → **Add** FAB → the matching speed-dial entry (screenshot for positions) |
+| Anime Camera (Android) | Home **Anime Camera** (540,1659), or a POI page's **Take photo** → reference sheet (POI references / gallery / none) → the emulator's Camera app opens with the reference in a floating window → shutter (540,2238) → ✓ (539,2242) → photo editor (its AppBar's POI button shows "No POI" for a home-entry shot without a POI reference) |
+| Floating Reference (Android) | Home **Floating Reference** (the card under Anime Camera), or a POI page's **Float reference** → reference sheet → the window floats over every app until ✕ or a double-tap; no camera opens |
+
+## Anime Camera on Android
+
+Android shoots with the phone's own camera app (`image_picker`) and floats the reference over it in a window drawn by `ReferenceOverlay.kt`.
+
+```bash
+"$ADB" shell appops set $APP SYSTEM_ALERT_WINDOW allow   # skip the "Display over other apps" settings detour
+"$ADB" shell appops set $APP SYSTEM_ALERT_WINDOW deny    # test the permission dialog instead
+win() { "$ADB" shell dumpsys window windows | grep -c 'Window #.*Sys2038:'"$APP"; }   # 1 = floating window up
+```
+
+- `ui` only dumps the top app's window. The camera app and the floating window don't appear in it, so use `shot` for both.
+- The floating window starts in a top corner. In portrait that's top-right, about (563–1049, 252–525) on Pixel_Test; in landscape it's top-left, clear of the shutter. Tapping it shows a −/+/✕ bar underneath, with ✕ around (968,578) in portrait. Drag it with `input swipe`. After a rotation it must stay fully on screen.
+- `adb` can't fake a pinch, and two `input tap` calls arrive too far apart for a double-tap. Check resize and double-tap-to-close on a phone.
+- Backing out of the camera, or accepting a shot, must leave `win` at 0.
+- Leaving the camera for another app (`input keyevent 3` for Home) hides the window. `win` stays 1, because the window is only made invisible, so check with `shot`. Returning through Recents shows it again in the same place.
+- Reinstalling the app while the camera is open kills the app, and the window goes with it, so start the flow again.
 
 ## Gotchas
 

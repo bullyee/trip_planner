@@ -14,6 +14,7 @@ import '../../auth/providers/auth_provider.dart';
 import '../../calendar/models/time_chunk_model.dart';
 import '../../calendar/providers/calendar_provider.dart';
 import '../../calendar/repositories/time_chunk_repository.dart';
+import '../../camera/services/anime_camera_launcher.dart';
 import '../services/background_photo_save.dart';
 import '../models/media_asset_model.dart';
 import '../models/poi_model.dart';
@@ -403,12 +404,21 @@ class PoiDetailScreen extends ConsumerWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
-                        tooltip: 'Take photo',
-                        onPressed: () =>
-                            context.push('/camera?poiId=${poi.id}'),
-                        icon: const Icon(Icons.camera_alt),
-                      ),
+                      // Desktop and web have no Anime Camera.
+                      if (animeCameraSupported)
+                        IconButton(
+                          tooltip: 'Take photo',
+                          onPressed: () =>
+                              openAnimeCamera(context, ref, poiId: poi.id),
+                          icon: const Icon(Icons.camera_alt),
+                        ),
+                      if (floatingReferenceSupported)
+                        IconButton(
+                          tooltip: 'Float reference',
+                          onPressed: () =>
+                              floatReference(context, ref, poiId: poi.id),
+                          icon: const Icon(Icons.picture_in_picture_alt),
+                        ),
                       IconButton(
                         tooltip: 'Add image',
                         onPressed: () =>

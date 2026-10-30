@@ -2,17 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:trip_planner/features/auth/providers/auth_provider.dart';
+import 'package:trip_planner/features/camera/services/anime_camera_launcher.dart';
 
 
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // A photo taken just before Android killed the app comes back here.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) recoverLostCapture(context);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
     // Watch the authentication state to determine which button to show
@@ -110,15 +123,33 @@ class HomeScreen extends ConsumerWidget {
                 subtitle: 'Schedule your visits',
                 onTap: () => context.push('/calendar'),
               ),
-              if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) ...[
+              if (animeCameraSupported) ...[
                 const SizedBox(height: 12),
                 _HomeCard(
                   icon: Icons.camera_alt,
                   title: 'Anime Camera',
                   subtitle: 'AR photo overlay with reference',
-                  onTap: () => context.push('/camera'),
+                  onTap: () => openAnimeCamera(context, ref),
                 ),
               ],
+              if (floatingReferenceSupported) ...[
+                const SizedBox(height: 12),
+                _HomeCard(
+                  icon: Icons.picture_in_picture_alt,
+                  title: 'Floating Reference',
+                  subtitle: 'Float an anime frame over any app and shoot '
+                      'with your own camera',
+                  onTap: () => floatReference(context, ref),
+                ),
+              ],
+              const SizedBox(height: 12),
+              _HomeCard(
+                icon: Icons.auto_fix_high,
+                title: 'Edit Photo',
+                subtitle: 'Pick a photo from your gallery and edit it '
+                    'against a reference',
+                onTap: () => editPhotoFromGallery(context, ref),
+              ),
             ],
           ),
         ),      

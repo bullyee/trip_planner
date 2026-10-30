@@ -13,7 +13,7 @@ Built with Flutter (Dart). SQLite via Drift for local storage. Riverpod for stat
 1. **ROI (Region of Interest)**: Macro-container (e.g., "Kyoto City", "Akihabara") for grouping POIs
 2. **POI (Point of Interest)**: Core location node with spatial data, metadata, media, scheduling
 3. **Trip Calendar**: Time chunks for scheduling POIs with drag-and-drop
-4. **Anime Camera**: AR silhouette overlay for recreating anime screenshots, plus a photo editor with a Compose/cutout flow
+4. **Anime Camera**: shoot against an anime reference, then a photo editor (filters, rotate, crop) with a Compose/cutout flow. Android opens the phone's own camera app with the reference in a small draggable floating window (`ReferenceOverlay.kt`, `SYSTEM_ALERT_WINDOW`); iOS uses the in-app camera (`camera_screen.dart`); desktop/web have none. Entry point: `openAnimeCamera`. Why: `docs/anime-camera-decision.md`
 5. **Anime & Tag**: first-class entities linked to POIs many-to-many; anime can be imported from Bangumi + Anitabi
 6. **Ticket Organizer**: removed in v0.1.1 (the `ticket_qr` media type remains)
 7. **VLM Pipeline**: planned, not implemented — Gemini API for parsing screenshots into POI data via share extension
@@ -36,7 +36,7 @@ Source of truth: `lib/core/database/tables.dart`; migrations live in `lib/core/d
 - AI Integration: Gemini API (VLM) — planned
 - On-device ML: ONNX Runtime (isnet-anime cutout; model fetched at runtime, ~176 MB), ML Kit subject segmentation
 - Cloud: Firebase Auth (Google Sign-In), Firestore, Storage
-- Camera: Flutter camera package
+- Camera: the phone's camera app via `image_picker` + a native floating reference window (Android); Flutter camera package (iOS)
 - Navigation: Go Router
 
 ## Conventions
