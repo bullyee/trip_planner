@@ -642,6 +642,57 @@ void main() {
       expect(updated[3].id, 'chunk_d');
       expect(updated[3].startTime, '00:00');
       expect(updated[3].endTime, '01:00');
+
+      // Re-running or setting D duration to 90 min does NOT restart day at 00:00
+      final reloaded = [
+        updated[0],
+        updated[1],
+        updated[2],
+        updated[3].copyWith(duration: 90),
+      ];
+      await engine.recalculateDaySchedule(reloaded);
+      final updated2 = repository.lastUpdatedChunks;
+
+      expect(updated2[0].id, 'chunk_a');
+      expect(updated2[0].startTime, '09:00');
+      expect(updated2[3].id, 'chunk_d');
+      expect(updated2[3].startTime, '00:00');
+      expect(updated2[3].endTime, '01:30');
+    });
+
+    test('Evening day with downstream midnight crossing preserves start time on recalculation', () async {
+      // Repro from review: [A 20:00 d60, L locked 22:00 d60 t30, B d60, C d60]
+      final chunks = [
+        createChunk(id: 'chunk_a', sortOrder: 1, startTime: '20:00', duration: 60),
+        createChunk(id: 'chunk_l', sortOrder: 2, isFixedTime: true, startTime: '22:00', duration: 60, transitDuration: 30),
+        createChunk(id: 'chunk_b', sortOrder: 3, duration: 60),
+        createChunk(id: 'chunk_c', sortOrder: 4, duration: 60),
+      ];
+
+      await engine.recalculateDaySchedule(chunks);
+      final updated = repository.lastUpdatedChunks;
+
+      expect(updated[0].id, 'chunk_a');
+      expect(updated[0].startTime, '20:00');
+      expect(updated[1].id, 'chunk_l');
+      expect(updated[1].startTime, '22:00');
+      expect(updated[2].id, 'chunk_b');
+      expect(updated[2].startTime, '23:30');
+      expect(updated[3].id, 'chunk_c');
+      expect(updated[3].startTime, '00:30');
+
+      // Recalculating again without changes must NOT restart at 00:30
+      await engine.recalculateDaySchedule(updated);
+      final updated2 = repository.lastUpdatedChunks;
+
+      expect(updated2[0].id, 'chunk_a');
+      expect(updated2[0].startTime, '20:00');
+      expect(updated2[1].id, 'chunk_l');
+      expect(updated2[1].startTime, '22:00');
+      expect(updated2[2].id, 'chunk_b');
+      expect(updated2[2].startTime, '23:30');
+      expect(updated2[3].id, 'chunk_c');
+      expect(updated2[3].startTime, '00:30');
     });
   });
 
@@ -733,6 +784,19 @@ void main() {
       expect(gap!.isConflict, isFalse);
       expect(gap.gapMinutes, 0);
       expect(gap.conflictMinutes, 0);
+    });
+
+    test('calculateScheduleGap does not show false conflict on 09:00 day running past midnight', () {
+      final a = createChunk(id: 'chunk_a', sortOrder: 1, startTime: '09:00', endTime: '14:00', transitDuration: 60);
+      final b = createChunk(id: 'chunk_b', sortOrder: 2, startTime: '15:00', endTime: '20:00', transitDuration: 60);
+      final c = createChunk(id: 'chunk_c', sortOrder: 3, startTime: '21:00', endTime: '00:00', transitDuration: 0);
+      final d = createChunk(id: 'chunk_d', sortOrder: 4, startTime: '00:00', endTime: '01:00', transitDuration: 0);
+
+      final gap = calculateScheduleGap(c, d, priorChunks: [a, b, c]);
+      expect(gap, isNotNull);
+      expect(gap!.isConflict, isFalse);
+      expect(gap.conflictMinutes, 0);
+      expect(gap.freeTimeMinutes, 0);
     });
 
     test('Midnight crossing with real conflict calculates overlap correctly', () {

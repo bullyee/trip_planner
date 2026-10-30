@@ -18,6 +18,17 @@ String minutesToTimeString(int totalMinutes) {
   return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}';
 }
 
+/// Converts a "HH:mm" time string into continuous timeline minutes within a day's schedule.
+/// If the day starts during daytime/evening (>= 06:00 / 360 min), any time in early morning
+/// (< 06:00 / 360 min) belongs to the next morning across midnight (+1440 min).
+int toTimelineMinutes(String timeString, int dayStartMinutes) {
+  final int mins = timeStringToMinutes(timeString);
+  if (mins < 360 && dayStartMinutes >= 360) {
+    return mins + 1440;
+  }
+  return mins;
+}
+
 /// Converts a "HH:mm" time string into continuous timeline minutes relative to a reference
 /// point (or day start), properly handling crossings past midnight.
 int toContinuousMinutes(String timeString, int referenceMinutes) {
@@ -76,8 +87,8 @@ ScheduleGapInfo? calculateScheduleGap(
   for (final p in baseList) {
     final pEnd = p.endTime;
     if (pEnd == null || pEnd == '--:--') continue;
-    final int pStartMins = toContinuousMinutes(p.startTime ?? '00:00', dayRefMins);
-    int pEndMins = toContinuousMinutes(pEnd, dayRefMins);
+    final int pStartMins = toTimelineMinutes(p.startTime ?? '00:00', dayRefMins);
+    int pEndMins = toTimelineMinutes(pEnd, dayRefMins);
     if (pEndMins < pStartMins) {
       pEndMins += 1440;
     }
@@ -89,7 +100,7 @@ ScheduleGapInfo? calculateScheduleGap(
 
   if (maxPriorArrival < 0) return null;
 
-  final int currStartMinutes = toContinuousMinutes(currStart, dayRefMins);
+  final int currStartMinutes = toTimelineMinutes(currStart, dayRefMins);
   final int currDuration = currChunk.duration;
   final int currEndMinutes = currStartMinutes + currDuration;
   final int currArrivalMinutes = currEndMinutes + currChunk.transitDuration;
@@ -134,6 +145,12 @@ class ScheduleEngine {
     final sortedChunks = List<TimeChunkModel>.from(dayChunks)
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
+    // Find the first chunk with a valid start time to establish the day's baseline timeline reference
+    final String? firstValidTime = sortedChunks
+        .map((c) => c.startTime)
+        .firstWhere((t) => t != null && t != '--:--', orElse: () => null);
+    final int dayRefMins = firstValidTime != null ? timeStringToMinutes(firstValidTime) : 540;
+
     // 1. Determine day's base timeline start
     String currentTimeCursor = '09:00';
     final firstChunk = sortedChunks.first;
@@ -152,22 +169,26 @@ class ScheduleEngine {
       currentTimeCursor = firstChunk.startTime!;
     } else {
       // Find all valid flexible chunk start times
-      final flexibleTimes = sortedChunks
+      final flexibleChunks = sortedChunks
           .where((c) => !c.isFixedTime && c.startTime != null && c.startTime != '--:--')
-          .map((c) => c.startTime!)
           .toList();
 
       String? earliestFlex;
-      if (flexibleTimes.isNotEmpty) {
-        earliestFlex = flexibleTimes.reduce((a, b) => a.compareTo(b) < 0 ? a : b);
+      if (flexibleChunks.isNotEmpty) {
+        final earliest = flexibleChunks.reduce((a, b) {
+          final aMins = toTimelineMinutes(a.startTime!, dayRefMins);
+          final bMins = toTimelineMinutes(b.startTime!, dayRefMins);
+          return aMins <= bMins ? a : b;
+        });
+        earliestFlex = earliest.startTime;
       }
 
       if (firstLocked != null) {
-        final lockedMinutes = timeStringToMinutes(firstLocked.startTime!);
+        final lockedMinutes = toTimelineMinutes(firstLocked.startTime!, dayRefMins);
         final neededDuration = firstChunk.duration + firstChunk.transitDuration;
 
         if (earliestFlex != null) {
-          final earliestFlexMins = timeStringToMinutes(earliestFlex);
+          final earliestFlexMins = toTimelineMinutes(earliestFlex, dayRefMins);
           // If earliest flex chunk was after downstream locked chunk
           // (e.g. dragged from below afternoon locked chunk to top),
           // reset it to 09:00 only if there is room before the locked chunk.
@@ -193,14 +214,18 @@ class ScheduleEngine {
               .cast<String>()
               .toList();
           if (validTimes.isNotEmpty) {
-            currentTimeCursor = validTimes.reduce((a, b) => a.compareTo(b) < 0 ? a : b);
+            final earliest = validTimes.reduce((a, b) {
+              final aMins = toTimelineMinutes(a, dayRefMins);
+              final bMins = toTimelineMinutes(b, dayRefMins);
+              return aMins <= bMins ? a : b;
+            });
+            currentTimeCursor = earliest;
           }
         }
       }
     }
 
-    int cursorMinutes = timeStringToMinutes(currentTimeCursor);
-    int referenceMinutes = cursorMinutes;
+    int cursorMinutes = toTimelineMinutes(currentTimeCursor, dayRefMins);
 
     final List<TimeChunkModel> calculatedChunks = [];
 
@@ -211,7 +236,7 @@ class ScheduleEngine {
 
       if (chunk.isFixedTime && chunk.startTime != null && chunk.startTime != '--:--') {
         calculatedStartTime = chunk.startTime!;
-        chunkStartMinutes = toContinuousMinutes(calculatedStartTime, referenceMinutes);
+        chunkStartMinutes = toTimelineMinutes(calculatedStartTime, dayRefMins);
 
         // If the chunk is locked later than cursor, advance cursor to lock time.
         // If cursor was already past lock time (overlap/conflict), lock time is respected,
@@ -233,7 +258,6 @@ class ScheduleEngine {
       if (endWithTransitMinutes > cursorMinutes) {
         cursorMinutes = endWithTransitMinutes;
       }
-      referenceMinutes = cursorMinutes;
 
       calculatedChunks.add(
         chunk.copyWith(
@@ -247,12 +271,10 @@ class ScheduleEngine {
     // Sort chunks strictly by continuous start minutes relative to day's start time
     // so that both time and sortOrder are in chronological order.
     // Chunks that crossed midnight belong at the end of the day, not before day start.
-    final initialCursorMins = timeStringToMinutes(currentTimeCursor);
+    final initialCursorMins = toTimelineMinutes(currentTimeCursor, dayRefMins);
     calculatedChunks.sort((a, b) {
-      int aStart = timeStringToMinutes(a.startTime ?? '00:00');
-      int bStart = timeStringToMinutes(b.startTime ?? '00:00');
-      if (aStart < 360 && initialCursorMins >= 360) aStart += 1440;
-      if (bStart < 360 && initialCursorMins >= 360) bStart += 1440;
+      int aStart = toTimelineMinutes(a.startTime ?? '00:00', initialCursorMins);
+      int bStart = toTimelineMinutes(b.startTime ?? '00:00', initialCursorMins);
       if (aStart != bStart) {
         return aStart.compareTo(bStart);
       }
