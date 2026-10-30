@@ -95,13 +95,13 @@ service cloud.firestore {
       );
 
       match /timeChunks/{chunkId} {
-        allow read: if isAuthenticated() && isTripMember(tripId);
-        allow write: if isAuthenticated() && isTripMember(tripId) && isStrictTimeChunkSafe();
+        allow read, delete: if isAuthenticated() && isTripMember(tripId);
+        allow create, update: if isAuthenticated() && isTripMember(tripId) && isStrictTimeChunkSafe();
       }
 
       match /pois/{poiId} {
-        allow read: if isAuthenticated() && isTripMember(tripId);
-        allow write: if isAuthenticated() && isTripMember(tripId) && isStrictPoiSafe();
+        allow read, delete: if isAuthenticated() && isTripMember(tripId);
+        allow create, update: if isAuthenticated() && isTripMember(tripId) && isStrictPoiSafe();
       }
     }
   }
