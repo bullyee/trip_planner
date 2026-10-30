@@ -8,7 +8,8 @@ import '../../auth/providers/auth_provider.dart';
 import '../../poi/services/anitabi_api_service.dart';
 import '../models/bangumi_subject.dart';
 import '../services/bangumi_search_service.dart';
-import '../../../core/providers/database_provider.dart';
+import '../../poi/repositories/poi_repository.dart';
+import '../../poi/repositories/media_repository.dart';
 
 class BangumiSearchScreen extends ConsumerStatefulWidget {
   const BangumiSearchScreen({super.key});
@@ -95,15 +96,16 @@ class _BangumiSearchScreenState extends ConsumerState<BangumiSearchScreen> {
 
     setState(() => _importing = subject.id);
 
-    // 1. Read the database provider instead of the anime repository
-    final db = ref.read(databaseProvider);
+    final poiRepo = ref.read(poiRepositoryProvider);
+    final mediaRepo = ref.read(mediaRepositoryProvider);
     final authorId = ref.read(currentUserIdProvider);
     final AnitabiImportResult? result;
 
     try {
       result = await AnitabiApiService.importBangumiSubject(
-        db,
-        subject.id,
+        poiRepository: poiRepo,
+        mediaRepository: mediaRepo,
+        subjectId: subject.id,
         authorId: authorId,
         fallbackName: subject.name,
       );

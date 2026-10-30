@@ -2,17 +2,18 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
-import 'package:trip_planner/core/database/database.dart';
 import 'package:trip_planner/core/utils/image_storage.dart';
 
+import '../models/anitabi_poi_data.dart';
+import '../models/reference_image_model.dart';
+import '../repositories/poi_repository.dart';
+import '../repositories/media_repository.dart';
 import 'anitabi_static_data.dart';
-
 
 class AnitabiImportResult {
   final String animeId;
@@ -32,7 +33,7 @@ class AnitabiImportResult {
   /// Completes once every queued cover download has either succeeded or
   /// failed. Failures silently leave the original URL on the POI.
   /// Callers can ignore this if they're happy to let covers appear
-  /// via Drift's reactive streams as each download finishes.
+  /// via reactive streams as each download finishes.
   final Future<void> coverDownloadCompletion;
 
   const AnitabiImportResult({
@@ -85,11 +86,11 @@ class AnitabiApiService {
       'trip_planner (+https://github.com/bullyee/trip_planner)';
 
   /// Fetch POIs for a bangumi subject from Anitabi, upsert the Anime row by
-  /// bangumi_id (so re-import dedupes), insert each POI, link them via the
-  /// PoiAnimes junction, then kick off cover-image downloads in the
-  /// background. The returned result is yielded as soon as the database
-  /// rows are in place — covers stream in afterwards and the POI screens
-  /// pick them up via Drift's reactive watches.
+  /// bangumi_id (so re-import dedupes), insert each POI via [poiRepository],
+  /// then kick off cover-image downloads in the background via [mediaRepository].
+  /// The returned result is yielded as soon as the repository records are in
+  /// place — covers stream in afterwards and the POI screens pick them up via
+  /// reactive watches.
   ///
   /// Spots come from Anitabi's static map data ([AnitabiStaticData]): the
   /// open API (api.anitabi.cn) no longer returns spot coordinates and caps
@@ -99,9 +100,10 @@ class AnitabiApiService {
   /// The optional [client] parameter exists so tests can inject a single
   /// shared `MockClient` that answers both the data and the later
   /// image-download calls; [cacheDir] likewise replaces the on-disk cache.
-  static Future<AnitabiImportResult?> importBangumiSubject(
-    AppDatabase db,
-    String subjectId, {
+  static Future<AnitabiImportResult?> importBangumiSubject({
+    required PoiRepository poiRepository,
+    required MediaRepository mediaRepository,
+    required String subjectId,
     required String authorId,
     String? fallbackName,
     http.Client? client,
@@ -123,9 +125,9 @@ class AnitabiApiService {
       }
       if (work == null || work.spots.isEmpty) return null;
 
-      // Parse before touching the database so a subject whose spots are all
+      // Parse before touching persistence so a subject whose spots are all
       // unusable doesn't leave an empty Anime row behind.
-      final parsed = <(PoisCompanion, Map<String, dynamic>)>[];
+      final parsed = <AnitabiPoiData>[];
       int skipped = 0;
       int withoutCoordinates = 0;
       for (final raw in work.spots) {
@@ -134,17 +136,17 @@ class AnitabiApiService {
           withoutCoordinates++;
           continue;
         }
-        PoisCompanion? companion;
+        AnitabiPoiData? spotData;
         try {
-          companion = _parsePoi(raw, authorId, geo);
+          spotData = _parsePoi(raw, geo);
         } catch (e, st) {
           debugPrint('[AnitabiApiService] Parse Error: $e\n$st');
         }
-        if (companion == null) {
+        if (spotData == null) {
           skipped++;
           continue;
         }
-        parsed.add((companion, raw));
+        parsed.add(spotData);
       }
       if (parsed.isEmpty) {
         if (withoutCoordinates > 0) {
@@ -160,58 +162,18 @@ class AnitabiApiService {
       final animeName = _nonEmpty(work.title) ??
           _nonEmpty(fallbackName) ??
           'Bangumi $subjectId';
-      final animeId = await db.upsertAnimeByBangumiId(
+
+      final batchResult = await poiRepository.importAnitabiPois(
         bangumiId: subjectId,
-        name: animeName,
-        authorId: authorId,
+        animeName: animeName,
+        spots: parsed,
       );
-
-      int imported = 0;
-      final pendingDownloads = <_PendingCover>[];
-
-      await db.transaction(() async {
-        for (final (companion, raw) in parsed) {
-          try {
-            final poiId = companion.id.value;
-            final alreadyImported = await (db.select(db.pois)
-                  ..where((t) => t.id.equals(poiId)))
-                .getSingleOrNull();
-
-            await db.into(db.pois).insert(
-                  companion,
-                  mode: InsertMode.insertOrIgnore,
-                );
-
-            await db.addAnimeToPoi(poiId, animeId);
-
-            if (alreadyImported != null) {
-              skipped++;
-              continue;
-            }
-            imported++;
-
-            final rawImage = (raw['image'] ?? '').toString();
-            if (rawImage.isNotEmpty) {
-              final url = rawImage.replaceAll('?plan=h160', '?plan=h360');
-              pendingDownloads.add(_PendingCover(
-                poiId: poiId,
-                url: url,
-                metadata: _referenceMetadata(raw),
-              ));
-            }
-          } catch (e, st) {
-            // CRITICAL FIX: Log the database exception instead of swallowing it silently
-            debugPrint('[AnitabiApiService] Database Insert Error for POI ${companion.id.value}: $e\n$st');
-            skipped++;
-          }
-        }
-      });
 
       // Hand the client off to the background downloader; it closes the
       // client (when we own it) once every worker is done.
       final completion = _downloadCoversInBackground(
-        db: db,
-        pending: pendingDownloads,
+        mediaRepository: mediaRepository,
+        pending: batchResult.pendingDownloads,
         httpClient: httpClient,
         closeClientWhenDone: ownsClient,
         authorId: authorId,
@@ -219,12 +181,12 @@ class AnitabiApiService {
       handedOff = true;
 
       return AnitabiImportResult(
-        animeId: animeId,
+        animeId: batchResult.animeId,
         animeName: animeName,
-        poisImported: imported,
-        poisSkipped: skipped,
+        poisImported: batchResult.imported,
+        poisSkipped: skipped + batchResult.skipped,
         poisWithoutCoordinates: withoutCoordinates,
-        coversPending: pendingDownloads.length,
+        coversPending: batchResult.pendingDownloads.length,
         coverDownloadCompletion: completion,
       );
     } finally {
@@ -241,19 +203,17 @@ class AnitabiApiService {
 
   /// Drains the cover queue with [_coverDownloadConcurrency] simultaneous
   /// workers. Each worker pulls the next pending download off the shared
-  /// queue, fetches the bytes, writes them locally, and updates the POI
-  /// row's `coverImageUri`. Per-item failures are swallowed so one bad
-  /// CDN response cannot stop the rest of the queue.
+  /// queue, fetches the bytes, writes them locally, and inserts a reference
+  /// image record via [mediaRepository]. Per-item failures are caught and logged
+  /// so one bad CDN response cannot stop the rest of the queue.
   static Future<void> _downloadCoversInBackground({
-    required AppDatabase db,
-    required List<_PendingCover> pending,
+    required MediaRepository mediaRepository,
+    required List<PendingCoverDownload> pending,
     required http.Client httpClient,
     required bool closeClientWhenDone,
     required String authorId,
   }) async {
-
-
-    final queue = Queue<_PendingCover>.from(pending);
+    final queue = Queue<PendingCoverDownload>.from(pending);
 
     Future<void> worker(int workerId) async {
       while (queue.isNotEmpty) {
@@ -269,15 +229,15 @@ class AnitabiApiService {
               await _downloadFromImageMirror(next.url, httpClient);
 
           if (localPath != null) {
-            await db.insertReferenceImage(
-              ReferenceImagesCompanion.insert(
+            await mediaRepository.addReferenceImage(
+              ReferenceImageModel(
                 id: const Uuid().v4(),
                 poiId: next.poiId,
                 authorId: authorId,
-                localPath: Value(localPath),
-                remoteUrl: Value(next.url),
-                metadata: Value(next.metadata),
-                createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+                localPath: localPath,
+                remoteUrl: next.url,
+                metadata: next.metadata,
+                createdAt: DateTime.now().millisecondsSinceEpoch,
               ),
             );
           }
@@ -340,9 +300,8 @@ class AnitabiApiService {
     return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
   }
 
-  static PoisCompanion? _parsePoi(
+  static AnitabiPoiData? _parsePoi(
     Map<String, dynamic> json,
-    String authorId,
     (double, double) geo,
   ) {
     final rawId = json['id'];
@@ -373,22 +332,22 @@ class AnitabiApiService {
       'Source: $origin\n$originUrl'.trim(),
     ].join('\n');
 
-    return PoisCompanion(
-      id: Value('anitabi:$id'),
-      name: Value(name),
-      lat: Value(lat),
-      lng: Value(lng),
-      localCoverImagePath: const Value(null),
-      description: Value(description),
-      address: const Value(null),
-      businessHours: const Value(null),
-      contactInfo: const Value(null),
-      roiId: const Value(null),
+    final rawImage = (json['image'] ?? '').toString();
+    String? imageUrl;
+    String? imageMetadata;
+    if (rawImage.isNotEmpty) {
+      imageUrl = rawImage.replaceAll('?plan=h160', '?plan=h360');
+      imageMetadata = _referenceMetadata(json);
+    }
 
-      // ADDED: Required fields for the new synchronization schema
-      authorId: Value(authorId),
-      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-      isShared: const Value(false),
+    return AnitabiPoiData(
+      id: 'anitabi:$id',
+      name: name,
+      lat: lat,
+      lng: lng,
+      description: description,
+      imageUrl: imageUrl,
+      imageMetadata: imageMetadata,
     );
   }
 
@@ -398,23 +357,10 @@ class AnitabiApiService {
   static String _referenceMetadata(Map<String, dynamic> json) {
     return jsonEncode({
       'source': 'anitabi',
-      // FIXED: Removed invalid syntax '?' before map access
       'ep': json['ep'],
       's': json['s'],
     });
   }
-}
-
-class _PendingCover {
-  final String poiId;
-  final String url;
-  final String metadata;
-
-  const _PendingCover({
-    required this.poiId,
-    required this.url,
-    required this.metadata,
-  });
 }
 
 /// Stamps every request with [AnitabiApiService.userAgent] — the data
