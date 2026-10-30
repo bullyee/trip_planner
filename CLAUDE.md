@@ -7,7 +7,7 @@ Built with Flutter (Dart). SQLite via Drift for local storage. Riverpod for stat
 ## Architecture
 - **Mobile App (Flutter)**: Primary execution environment. Offline-first, GPS, camera, AR.
 - **PC Web (Next.js/React)**: Deep planning environment (future phase).
-- **Sync Model**: Firestore cloud sync for shared trips (`lib/features/sync/`). Upload-only so far; open gaps are tracked in `TODO.md`. Manual JSON export/import was removed from the UI in v0.1.1.
+- **Sync Model**: Firestore cloud sync for shared trips (`lib/features/sync/`). Upload-only so far; open gaps are tracked in issue #45. Manual JSON export/import was removed from the UI in v0.1.1.
 
 ## Core Modules
 1. **ROI (Region of Interest)**: Macro-container (e.g., "Kyoto City", "Akihabara") for grouping POIs

@@ -48,7 +48,7 @@ Every doc a user or contributor reads must describe the release being shipped:
 | `CHANGELOG.md` | New `## [X.Y.Z] - YYYY-MM-DD` section on top (Keep a Changelog: Added / Changed / Fixed / Removed / Known issues, with issue refs), plus the compare link at the bottom. Only claim what was verified — a fix you couldn't exercise end-to-end is described by what changed, not as "works again". |
 | `README.md` | The end-user manual: every section whose steps, messages, limits, or requirements changed; "What you can do"; "Good to know" (offline vs. online needs, platform table); the developer block. Plain language, no internal jargon. |
 | `CLAUDE.md` | Architecture facts the release changed: modules, tables and schema version (`schemaVersion` in `lib/core/database/database.dart`), external APIs and their rules, workflows. |
-| `docs/*.md`, `TODO.md` | Mark resolved items; fix statements the release made false. |
+| `docs/*.md` | Mark resolved items; fix statements the release made false. |
 | `THIRD_PARTY_NOTICES.md` | Add the license notice of any project whose code or approach the release adapted (MIT and similar require it), and credit it in README's Acknowledgements. |
 
 Then sweep for drift: grep the docs for the previous version, removed features, and renamed paths. Every file path or command a doc names must exist.
