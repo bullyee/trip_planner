@@ -44,7 +44,7 @@ class PoiBottomSheet extends ConsumerWidget {
               child: Image.file(
                 File(poi.localCoverImagePath!),
                 height: 180,
-                cacheHeight: 400,
+                cacheHeight: (180 * MediaQuery.devicePixelRatioOf(context)).round(),
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => Container(
                   height: 180,
