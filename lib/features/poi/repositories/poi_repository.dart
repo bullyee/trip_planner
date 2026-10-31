@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:drift/drift.dart';
 
 import 'package:flutter/foundation.dart';
@@ -84,17 +85,14 @@ class LocalPoiRepository implements PoiRepository {
     required List<String> tagIds,
     required bool isUpdate,
   }) async {
+    String? movedFromRoiId;
     await localDb.transaction(() async {
       if (isUpdate) {
         // --- [UPDATE FLOW] ---
         // Fetch the existing POI to preserve its sync state and original author
         final currentPoi = await localDb.getPoiById(poi.id);
         if (currentPoi.hasEverSynced && currentPoi.roiId != null && currentPoi.roiId != poi.roiId) {
-          try {
-            await firestoreSync?.deletePoiFromTrip(currentPoi.roiId!, poi.id);
-          } catch (e) {
-            debugPrint('[LocalPoiRepository] Error deleting POI from old cloud trip: $e');
-          }
+          movedFromRoiId = currentPoi.roiId;
         }
         DateTime modifiedAt = DateTime.now();
         if (currentPoi.lastModifiedAt != null &&
@@ -161,6 +159,14 @@ class LocalPoiRepository implements PoiRepository {
       await localDb.setAnimesForPoi(poi.id, animeIds);
       await localDb.setTagsForPoi(poi.id, tagIds);
     });
+
+    final sync = firestoreSync;
+    final from = movedFromRoiId;
+    if (sync != null && from != null) {
+      unawaited(sync.deletePoiFromTrip(from, poi.id).catchError((Object e) {
+        debugPrint('[LocalPoiRepository] Error deleting POI from old cloud trip: $e');
+      }));
+    }
   }
 
   @override

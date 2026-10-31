@@ -336,17 +336,6 @@ class SyncEngineService {
           ..where((p) => p.id.equals(poiId)))
         .getSingleOrNull();
 
-    // If the local POI belongs to another trip, it was moved!
-    // Clean up the obsolete cloud doc in this old trip and skip upserting locally.
-    if (existing != null && existing.roiId != null && existing.roiId != roiId) {
-      try {
-        await firestoreSync.deletePoiFromTrip(roiId, poiId);
-      } catch (e) {
-        debugPrint('[SyncEngine] Error deleting moved POI from old trip: $e');
-      }
-      return;
-    }
-
     // If local POI has unpushed edits, let local edits take precedence until pushed
     if (existing != null && existing.syncStatus == SyncStatus.dirty.index) {
       return;
