@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../sync/services/firestore_sync_service.dart';
 import '../../sync/providers/firestore_sync_provider.dart';
@@ -94,14 +95,13 @@ class LocalRoiRepository implements RoiRepository {
   Future<void> deleteRoi(String id) async {
     syncEngine?.notifyRoiDeleted(id);
     final roi = await (localDb.select(localDb.rois)..where((r) => r.id.equals(id))).getSingleOrNull();
-    if (roi != null && roi.isShared && firestoreSync != null && currentUserId.isNotEmpty && currentUserId != 'guest_local_user') {
-      try {
-        await firestoreSync!.leaveOrDeleteCloudTrip(id, currentUserId);
-      } catch (e) {
-        debugPrint('[LocalRoiRepository] Error leaving cloud trip: $e');
-      }
-    }
+    final shouldLeaveCloud = roi != null && roi.isShared && firestoreSync != null && currentUserId.isNotEmpty && currentUserId != 'guest_local_user';
     await localDb.deleteRoi(id);
+    if (shouldLeaveCloud) {
+      unawaited(firestoreSync!.leaveOrDeleteCloudTrip(id, currentUserId).catchError((Object e) {
+        debugPrint('[LocalRoiRepository] Error leaving cloud trip: $e');
+      }));
+    }
   }
 
   @override

@@ -82,7 +82,9 @@ service cloud.firestore {
         // (b) Member self-removal: a member can remove only themselves from `members`
         (
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
-          && resource.data.members.removeAll(request.resource.data.members).hasOnly([request.auth.uid])
+          && resource.data.members.hasAll(request.resource.data.members)
+          && request.resource.data.members.size() == resource.data.members.size() - 1
+          && !(request.auth.uid in request.resource.data.members)
         )
         ||
         // (c) A real sync commit: monotonic version bump, lock respected, and

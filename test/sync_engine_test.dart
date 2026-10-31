@@ -28,6 +28,26 @@ class GatedFake extends FakeFirestoreSyncService {
   }
 }
 
+class OfflineFake extends FakeFirestoreSyncService {
+  Completer<void>? offline;
+
+  @override
+  Future<void> deletePoiFromTrip(String roiId, String poiId) async {
+    final o = offline;
+    if (o != null) await o.future;
+    return super.deletePoiFromTrip(roiId, poiId);
+  }
+
+  @override
+  Future<void> leaveOrDeleteCloudTrip(String roiId, String userId) async {
+    final o = offline;
+    if (o != null) await o.future;
+    return super.leaveOrDeleteCloudTrip(roiId, userId);
+  }
+}
+
+
+
 class FakeFirestoreSyncService implements FirestoreSyncService {
   final Map<String, Map<String, dynamic>> trips = {};
   final Map<String, Map<String, Map<String, dynamic>>> tripPois = {};
@@ -796,6 +816,117 @@ void main() {
       final roi = await (db.select(db.rois)..where((r) => r.id.equals('roi-1'))).getSingleOrNull();
       // Even if roi row was deleted by deleteRoi, it should NOT be re-created or synced
       expect(roi?.cloudVersion != 5, isTrue);
+    });
+  });
+
+  group('SyncEngineService - Follow-up Reviews (G, H, I)', () {
+    late OfflineFake fake;
+    const user = 'alice';
+
+    setUp(() async {
+      fake = OfflineFake();
+      for (final id in ['roi-1', 'roi-2']) {
+        await fake.initializeCloudTrip(id, user, id);
+      }
+    });
+
+    Future<AppDatabase> device() async {
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      for (final id in ['roi-1', 'roi-2']) {
+        await db.insertRoi(RoisCompanion.insert(
+            id: id, name: id, authorId: user, isShared: const Value(true)));
+      }
+      return db;
+    }
+
+    PoiModel poi(String id, String roiId) => PoiModel(
+        id: id, roiId: roiId, authorId: user, name: 'spot', lat: 35, lng: 135, createdAt: 0);
+
+    Future<void> save(PoiRepository repo, PoiModel p, {required bool update}) =>
+        repo.savePoiWithRelations(poi: p, animeIds: [], tagIds: [], isUpdate: update);
+
+    test('G: a move made on another device survives the pull', () async {
+      // One account on two devices, sharing one cloud.
+      final phoneDb = await device();
+      final deskDb = await device();
+      final phone = SyncEngineService(localDb: phoneDb, firestoreSync: fake, currentUserId: user);
+      final desk = SyncEngineService(localDb: deskDb, firestoreSync: fake, currentUserId: user);
+      final phoneRepo = LocalPoiRepository(phoneDb, user, fake);
+
+      await save(phoneRepo, poi('p', 'roi-1'), update: false);
+      await phone.executePush('roi-1');
+      await desk.executePull('roi-1'); // the desktop now has p in roi-1, clean
+
+      await save(phoneRepo, poi('p', 'roi-2'), update: true); // moved on the phone
+      await phone.executePush('roi-2');
+      await desk.executePull('roi-2'); // the desktop pulls the trip p moved into
+
+      final cloudHasIt = fake.tripPois['roi-2']?.containsKey('p') ?? false;
+
+      // Anything else bumps roi-2 later, and the phone pulls it.
+      fake.trips['roi-2']!['cloudVersion'] = (fake.trips['roi-2']!['cloudVersion'] as int) + 1;
+      await phone.executePull('roi-2');
+      final phoneHasIt = await (phoneDb.select(phoneDb.pois)..where((t) => t.id.equals('p')))
+              .getSingleOrNull() !=
+          null;
+
+      expect(cloudHasIt && phoneHasIt, isTrue,
+          reason: 'roi-2 in the cloud still has p: $cloudHasIt; the phone still has p: $phoneHasIt');
+
+      await phoneDb.close();
+      await deskDb.close();
+    });
+
+    test('H: moving a synced POI while offline does not block the database', () async {
+      final db = await device();
+      final engine = SyncEngineService(localDb: db, firestoreSync: fake, currentUserId: user);
+      final repo = LocalPoiRepository(db, user, fake);
+
+      await save(repo, poi('p', 'roi-1'), update: false);
+      await engine.executePush('roi-1');
+
+      fake.offline = Completer<void>();
+      final move = save(repo, poi('p', 'roi-2'), update: true);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      // Any unrelated write, e.g. creating a trip.
+      final write = db.insertRoi(RoisCompanion.insert(id: 'roi-3', name: 'roi-3', authorId: user));
+      var blocked = false;
+      try {
+        await write.timeout(const Duration(seconds: 2));
+      } on TimeoutException {
+        blocked = true;
+      }
+
+      fake.offline!.complete(); // back online
+      await move;
+      await write;
+      await db.close();
+
+      expect(blocked, isFalse,
+          reason: 'an unrelated insert waited for the network: the Firestore delete '
+              'runs inside the Drift transaction in savePoiWithRelations');
+    });
+
+    test('I: deleting a shared trip while offline does not block local deletion', () async {
+      final db = await device();
+      final roiRepo = LocalRoiRepository(db, user, firestoreSync: fake);
+      fake.offline = Completer<void>();
+
+      var blocked = false;
+      try {
+        await roiRepo.deleteRoi('roi-1').timeout(const Duration(seconds: 2));
+      } on TimeoutException {
+        blocked = true;
+      }
+
+      final local = await (db.select(db.rois)..where((r) => r.id.equals('roi-1'))).getSingleOrNull();
+      fake.offline!.complete();
+      await db.close();
+
+      expect(blocked, isFalse,
+          reason: 'deleteRoi waited for the network before deleting the local row');
+      expect(local, isNull);
     });
   });
 }
