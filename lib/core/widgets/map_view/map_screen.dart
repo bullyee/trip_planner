@@ -34,6 +34,12 @@ class _MapScreenState extends State<MapScreen> {
     _fetchCurrentLocation();
   }
 
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
+
   Future<void> _fetchCurrentLocation({bool recenter = false}) async {
     try {
       // 1. Check if location services are enabled

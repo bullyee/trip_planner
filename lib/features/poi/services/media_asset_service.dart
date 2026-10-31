@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart'; // ADDED: for debugPrint
-import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -10,9 +9,8 @@ import '../models/media_asset_model.dart';
 import '../repositories/media_repository.dart';
 
 /// Copies [source] into the app's permanent `camera_photos` directory
-/// (filename derived from the current timestamp, suffix added on
-/// collision) and inserts a matching `MediaAsset` row pointing at the
-/// new path.
+/// (filename derived from a unique UUID) and inserts a matching `MediaAsset`
+/// row pointing at the new path.
 ///
 /// [type] should be `user_photo` for fresh camera captures or
 /// `uploaded_image` for gallery-picked photos — the POI detail list
@@ -35,15 +33,14 @@ Future<bool> persistMediaAsset({
       await photosDir.create(recursive: true);
     }
 
-    final timestamp = DateFormat('MMdd-HH-mm-ss').format(DateTime.now());
+    final assetId = const Uuid().v4();
     final extension =
         p.extension(source.path).isEmpty ? '.jpg' : p.extension(source.path);
-    final savedPath =
-        await _nextAvailablePath(photosDir.path, timestamp, extension);
+    final savedPath = p.join(photosDir.path, 'photo_$assetId$extension');
     await source.copy(savedPath);
 
     final newAsset = MediaAssetModel(
-      id: const Uuid().v4(),
+      id: assetId,
       poiId: poiId,
       type: type,
       authorId: authorId, // CRITICAL FIX: Use the injected ID
@@ -61,16 +58,3 @@ Future<bool> persistMediaAsset({
   }
 }
 
-Future<String> _nextAvailablePath(
-  String directory,
-  String baseName,
-  String extension,
-) async {
-  var candidate = p.join(directory, '$baseName$extension');
-  var suffix = 1;
-  while (await File(candidate).exists()) {
-    candidate = p.join(directory, '$baseName-$suffix$extension');
-    suffix += 1;
-  }
-  return candidate;
-}

@@ -286,5 +286,42 @@ void main() {
       expect(row.transitDuration, 45, reason: 'updateTimeChunk must not drop transitDuration');
       expect(row.duration, 90);
     });
+
+    test('getPoisByDate returns POIs ordered by time chunk startTime and sortOrder', () async {
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-2',
+        authorId: 'test-user',
+        name: 'Afternoon Spot',
+        lat: 35.0,
+        lng: 135.0,
+        sortOrder: const Value(2),
+      ));
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-1',
+        authorId: 'test-user',
+        name: 'Morning Spot',
+        lat: 35.0,
+        lng: 135.0,
+        sortOrder: const Value(1),
+      ));
+
+      await db.insertTimeChunk(TimeChunksCompanion.insert(
+        id: 'chunk-2',
+        authorId: 'test-user',
+        poiId: 'poi-2',
+        date: const Value('2026-10-31'),
+        startTime: const Value('14:00'),
+      ));
+      await db.insertTimeChunk(TimeChunksCompanion.insert(
+        id: 'chunk-1',
+        authorId: 'test-user',
+        poiId: 'poi-1',
+        date: const Value('2026-10-31'),
+        startTime: const Value('09:00'),
+      ));
+
+      final pois = await db.getPoisByDate('2026-10-31');
+      expect(pois.map((p) => p.id).toList(), ['poi-1', 'poi-2']);
+    });
   });
 }

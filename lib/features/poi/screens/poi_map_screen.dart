@@ -32,12 +32,33 @@ class PoiMapScreen extends ConsumerWidget {
     );
   }
 
-  /// Determines the pin color based on the ROI ID.
-  /// Replace this with your actual color mapping logic.
+  static const List<Color> _roiPalette = [
+    Colors.indigo,
+    Colors.teal,
+    Colors.deepOrange,
+    Colors.purple,
+    Colors.amber,
+    Colors.blue,
+    Colors.green,
+    Colors.pink,
+    Colors.cyan,
+    Colors.orange,
+    Colors.deepPurple,
+    Colors.lightGreen,
+    Colors.brown,
+    Colors.blueGrey,
+    Colors.red,
+    Colors.lime,
+  ];
+
+  /// Determines the pin color based on the ROI ID using a 16-color distinct palette.
   Color _colorForRoi(String? roiId) {
     if (roiId == null || roiId.isEmpty) return Colors.grey;
-    // Example logic: you can restore your original _colorForRoi implementation here.
-    return Colors.blue; 
+    var hash = 0;
+    for (var i = 0; i < roiId.length; i++) {
+      hash = (hash * 31 + roiId.codeUnitAt(i)) & 0x7FFFFFFF;
+    }
+    return _roiPalette[hash % _roiPalette.length];
   }
 
   @override

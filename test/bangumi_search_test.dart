@@ -17,6 +17,9 @@ void main() {
       final calls = <String>[];
       final mock = MockClient((request) async {
         calls.add('${request.method} ${request.url}');
+        final reqBody = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(reqBody['filter']?['nsfw'], isFalse);
+        expect(reqBody['filter']?['type'], [2]);
         return _jsonBytes({
           'data': [
             {
