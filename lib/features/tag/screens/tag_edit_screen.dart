@@ -41,7 +41,11 @@ class _TagEditScreenState extends ConsumerState<TagEditScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Tag not found.')),
           );
-          context.pop();
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/');
+          }
         }
         return;
       }
@@ -120,7 +124,11 @@ class _TagEditScreenState extends ConsumerState<TagEditScreen> {
 
     switch (result) {
       case Success():
-        context.pop();
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/');
+        }
       case Failure(:final error):
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to save tag: $error')),

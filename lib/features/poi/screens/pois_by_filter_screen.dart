@@ -140,6 +140,7 @@ class _PoiThumbnail extends ConsumerWidget {
         height: 48,
         child: Image.file(
           File(uri),
+          cacheHeight: 120,
           fit: BoxFit.cover,
           errorBuilder: (_, _, _) => const ColoredBox(
               color: Colors.black12, child: Icon(Icons.location_on)),

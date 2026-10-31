@@ -43,7 +43,11 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Anime not found.')),
           );
-          context.pop();
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/');
+          }
         }
         return;
       }
@@ -136,7 +140,11 @@ class _AnimeEditScreenState extends ConsumerState<AnimeEditScreen> {
     // Utilize Dart 3 pattern matching for precise error handling
     switch (result) {
       case Success():
-        context.pop();
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/');
+        }
       case Failure(:final error):
         // Now the UI can display the exact failure reason (e.g., DB lock, validation error)
         ScaffoldMessenger.of(context).showSnackBar(

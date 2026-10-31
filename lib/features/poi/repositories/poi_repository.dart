@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:drift/drift.dart';
 
 import 'package:flutter/foundation.dart';
@@ -171,7 +172,50 @@ class LocalPoiRepository implements PoiRepository {
 
   @override
   Future<void> deletePoi(String id) async {
+    // 1. Gather all associated physical file paths before deleting database records
+    final filesToDelete = <String>[];
+    try {
+      final poi = await (localDb.select(localDb.pois)..where((p) => p.id.equals(id)))
+          .getSingleOrNull();
+      if (poi?.localCoverImagePath != null && poi!.localCoverImagePath!.isNotEmpty) {
+        filesToDelete.add(poi.localCoverImagePath!);
+      }
+
+      final media = await (localDb.select(localDb.mediaAssets)
+            ..where((m) => m.poiId.equals(id)))
+          .get();
+      for (final m in media) {
+        if (m.localPath != null && m.localPath!.isNotEmpty) {
+          filesToDelete.add(m.localPath!);
+        }
+      }
+
+      final refs = await (localDb.select(localDb.referenceImages)
+            ..where((r) => r.poiId.equals(id)))
+          .get();
+      for (final r in refs) {
+        if (r.localPath != null && r.localPath!.isNotEmpty) {
+          filesToDelete.add(r.localPath!);
+        }
+      }
+    } catch (e) {
+      debugPrint('[PoiRepository] Failed to inspect related media files for POI $id: $e');
+    }
+
+    // 2. Cascade delete database records in SQLite transaction
     await localDb.deletePoi(id);
+
+    // 3. Clean up physical files from local storage
+    for (final filePath in filesToDelete) {
+      try {
+        final file = File(filePath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint('[PoiRepository] Failed to delete physical file $filePath: $e');
+      }
+    }
   }
 
   @override

@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'dart:io';
 import 'package:drift/drift.dart';
 import '../models/media_asset_model.dart';
 import '../models/reference_image_model.dart';
@@ -76,7 +78,28 @@ class LocalMediaRepository implements MediaRepository {
 
   @override
   Future<void> deleteMediaAsset(String id) async {
+    String? pathToDelete;
+    try {
+      final asset = await (localDb.select(localDb.mediaAssets)..where((m) => m.id.equals(id))).getSingleOrNull();
+      if (asset?.localPath != null && asset!.localPath!.isNotEmpty) {
+        pathToDelete = asset.localPath;
+      }
+    } catch (e) {
+      debugPrint('[MediaRepository] Failed to inspect file path for MediaAsset $id: $e');
+    }
+
     await localDb.deleteMediaAsset(id);
+
+    if (pathToDelete != null) {
+      try {
+        final file = File(pathToDelete);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint('[MediaRepository] Failed to delete physical file $pathToDelete: $e');
+      }
+    }
   }
 
   @override
@@ -96,7 +119,28 @@ class LocalMediaRepository implements MediaRepository {
 
   @override
   Future<void> deleteReferenceImage(String id) async {
+    String? pathToDelete;
+    try {
+      final img = await (localDb.select(localDb.referenceImages)..where((r) => r.id.equals(id))).getSingleOrNull();
+      if (img?.localPath != null && img!.localPath!.isNotEmpty) {
+        pathToDelete = img.localPath;
+      }
+    } catch (e) {
+      debugPrint('[MediaRepository] Failed to inspect file path for ReferenceImage $id: $e');
+    }
+
     await localDb.deleteReferenceImage(id);
+
+    if (pathToDelete != null) {
+      try {
+        final file = File(pathToDelete);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint('[MediaRepository] Failed to delete physical file $pathToDelete: $e');
+      }
+    }
   }
 
   @override

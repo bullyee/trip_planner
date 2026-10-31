@@ -94,7 +94,7 @@ class PoiDetailScreen extends ConsumerWidget {
                   const Text('Spot not found or has been deleted.'),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () => context.pop(),
+                    onPressed: () => context.canPop() ? context.pop() : context.go('/pois'),
                     child: const Text('Go Back'),
                   ),
                 ],
@@ -518,7 +518,11 @@ class PoiDetailScreen extends ConsumerWidget {
                   await ref.read(poiRepositoryProvider).deletePoi(poi.id);
                   if (context.mounted) {
                     Navigator.pop(ctx);
-                    context.pop();
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/pois');
+                    }
                   }
                 },
                 child: const Text('Delete'),
@@ -1436,6 +1440,7 @@ class _ReferenceImageTile extends StatelessWidget {
     if (image.localPath != null && image.localPath!.isNotEmpty) {
       imageWidget = Image.file(
         File(image.localPath!), // Safe to use ! here
+        cacheHeight: 120,
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => const ColoredBox(
           color: Colors.black12,
@@ -1445,6 +1450,7 @@ class _ReferenceImageTile extends StatelessWidget {
     } else if (image.remoteUrl != null && image.remoteUrl!.isNotEmpty) {
       imageWidget = Image.network(
         image.remoteUrl!, // Safe to use ! here
+        cacheHeight: 120,
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => const ColoredBox(
           color: Colors.black12,
