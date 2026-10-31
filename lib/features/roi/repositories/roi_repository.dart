@@ -1,8 +1,13 @@
+import 'package:flutter/foundation.dart';
+import '../../sync/services/firestore_sync_service.dart';
+import '../../sync/providers/firestore_sync_provider.dart';
 import 'package:drift/drift.dart'; 
 import '../../auth/providers/auth_provider.dart';
 import '../models/roi_model.dart';
 import '../../../core/database/database.dart'; 
 import '../../../core/providers/database_provider.dart';
+import '../../../core/providers/sync_provider.dart';
+import '../../sync/services/sync_engine_service.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'roi_repository.g.dart';
@@ -26,8 +31,10 @@ abstract class RoiRepository {
 class LocalRoiRepository implements RoiRepository {
   final AppDatabase localDb;
   final String currentUserId;
+  final FirestoreSyncService? firestoreSync;
+  final SyncEngineService? syncEngine;
   
-  LocalRoiRepository(this.localDb, this.currentUserId);
+  LocalRoiRepository(this.localDb, this.currentUserId, {this.firestoreSync, this.syncEngine});
 
   RoiModel _mapRoi(Roi row) {
     return RoiModel(
@@ -85,6 +92,15 @@ class LocalRoiRepository implements RoiRepository {
   
   @override
   Future<void> deleteRoi(String id) async {
+    syncEngine?.notifyRoiDeleted(id);
+    final roi = await (localDb.select(localDb.rois)..where((r) => r.id.equals(id))).getSingleOrNull();
+    if (roi != null && roi.isShared && firestoreSync != null && currentUserId.isNotEmpty && currentUserId != 'guest_local_user') {
+      try {
+        await firestoreSync!.leaveOrDeleteCloudTrip(id, currentUserId);
+      } catch (e) {
+        debugPrint('[LocalRoiRepository] Error leaving cloud trip: $e');
+      }
+    }
     await localDb.deleteRoi(id);
   }
 
@@ -100,11 +116,26 @@ class LocalRoiRepository implements RoiRepository {
 
   @override
   Future<void> enableCloudSyncForRoi(String roiId) async {
-    await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
-      const RoisCompanion(
-        isShared: Value(true),
-      ),
-    );
+    await localDb.transaction(() async {
+      await (localDb.update(localDb.rois)..where((r) => r.id.equals(roiId))).write(
+        const RoisCompanion(
+          isShared: Value(true),
+        ),
+      );
+      await (localDb.update(localDb.pois)..where((p) => p.roiId.equals(roiId) & p.isDeleted.equals(false))).write(
+        const PoisCompanion(
+          syncStatus: Value(1), // SyncStatus.dirty
+        ),
+      );
+      final poiIds = (await localDb.getPoisByRoi(roiId)).map((p) => p.id).toList();
+      if (poiIds.isNotEmpty) {
+        await (localDb.update(localDb.timeChunks)..where((t) => t.poiId.isIn(poiIds) & t.isDeleted.equals(false))).write(
+          const TimeChunksCompanion(
+            syncStatus: Value(1), // SyncStatus.dirty
+          ),
+        );
+      }
+    });
   }
 }
 
@@ -112,5 +143,7 @@ class LocalRoiRepository implements RoiRepository {
 RoiRepository roiRepository(RoiRepositoryRef ref) {
   final db = ref.watch(databaseProvider);
   final currentUserId = ref.watch(currentUserIdProvider);
-  return LocalRoiRepository(db, currentUserId);
+  final firestoreSync = ref.watch(firestoreSyncServiceProvider);
+  final syncEngine = ref.watch(syncEngineProvider);
+  return LocalRoiRepository(db, currentUserId, firestoreSync: firestoreSync, syncEngine: syncEngine);
 }

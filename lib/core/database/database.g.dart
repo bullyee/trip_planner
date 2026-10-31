@@ -748,6 +748,60 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _isDeletedMeta = const VerificationMeta(
+    'isDeleted',
+  );
+  @override
+  late final GeneratedColumn<bool> isDeleted = GeneratedColumn<bool>(
+    'is_deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_deleted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _hasEverSyncedMeta = const VerificationMeta(
+    'hasEverSynced',
+  );
+  @override
+  late final GeneratedColumn<bool> hasEverSynced = GeneratedColumn<bool>(
+    'has_ever_synced',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("has_ever_synced" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _lastModifiedAtMeta = const VerificationMeta(
+    'lastModifiedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastModifiedAt =
+      GeneratedColumn<DateTime>(
+        'last_modified_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -765,6 +819,10 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
     createdAt,
     isShared,
     sortOrder,
+    syncStatus,
+    isDeleted,
+    hasEverSynced,
+    lastModifiedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -890,6 +948,36 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
         sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('is_deleted')) {
+      context.handle(
+        _isDeletedMeta,
+        isDeleted.isAcceptableOrUnknown(data['is_deleted']!, _isDeletedMeta),
+      );
+    }
+    if (data.containsKey('has_ever_synced')) {
+      context.handle(
+        _hasEverSyncedMeta,
+        hasEverSynced.isAcceptableOrUnknown(
+          data['has_ever_synced']!,
+          _hasEverSyncedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_modified_at')) {
+      context.handle(
+        _lastModifiedAtMeta,
+        lastModifiedAt.isAcceptableOrUnknown(
+          data['last_modified_at']!,
+          _lastModifiedAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -959,6 +1047,22 @@ class $PoisTable extends Pois with TableInfo<$PoisTable, Poi> {
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      isDeleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_deleted'],
+      )!,
+      hasEverSynced: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}has_ever_synced'],
+      )!,
+      lastModifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_modified_at'],
+      ),
     );
   }
 
@@ -984,6 +1088,10 @@ class Poi extends DataClass implements Insertable<Poi> {
   final int createdAt;
   final bool isShared;
   final int sortOrder;
+  final int syncStatus;
+  final bool isDeleted;
+  final bool hasEverSynced;
+  final DateTime? lastModifiedAt;
   const Poi({
     required this.id,
     this.roiId,
@@ -1000,6 +1108,10 @@ class Poi extends DataClass implements Insertable<Poi> {
     required this.createdAt,
     required this.isShared,
     required this.sortOrder,
+    required this.syncStatus,
+    required this.isDeleted,
+    required this.hasEverSynced,
+    this.lastModifiedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1033,6 +1145,12 @@ class Poi extends DataClass implements Insertable<Poi> {
     map['created_at'] = Variable<int>(createdAt);
     map['is_shared'] = Variable<bool>(isShared);
     map['sort_order'] = Variable<int>(sortOrder);
+    map['sync_status'] = Variable<int>(syncStatus);
+    map['is_deleted'] = Variable<bool>(isDeleted);
+    map['has_ever_synced'] = Variable<bool>(hasEverSynced);
+    if (!nullToAbsent || lastModifiedAt != null) {
+      map['last_modified_at'] = Variable<DateTime>(lastModifiedAt);
+    }
     return map;
   }
 
@@ -1067,6 +1185,12 @@ class Poi extends DataClass implements Insertable<Poi> {
       createdAt: Value(createdAt),
       isShared: Value(isShared),
       sortOrder: Value(sortOrder),
+      syncStatus: Value(syncStatus),
+      isDeleted: Value(isDeleted),
+      hasEverSynced: Value(hasEverSynced),
+      lastModifiedAt: lastModifiedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastModifiedAt),
     );
   }
 
@@ -1095,6 +1219,10 @@ class Poi extends DataClass implements Insertable<Poi> {
       createdAt: serializer.fromJson<int>(json['createdAt']),
       isShared: serializer.fromJson<bool>(json['isShared']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
+      isDeleted: serializer.fromJson<bool>(json['isDeleted']),
+      hasEverSynced: serializer.fromJson<bool>(json['hasEverSynced']),
+      lastModifiedAt: serializer.fromJson<DateTime?>(json['lastModifiedAt']),
     );
   }
   @override
@@ -1116,6 +1244,10 @@ class Poi extends DataClass implements Insertable<Poi> {
       'createdAt': serializer.toJson<int>(createdAt),
       'isShared': serializer.toJson<bool>(isShared),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'syncStatus': serializer.toJson<int>(syncStatus),
+      'isDeleted': serializer.toJson<bool>(isDeleted),
+      'hasEverSynced': serializer.toJson<bool>(hasEverSynced),
+      'lastModifiedAt': serializer.toJson<DateTime?>(lastModifiedAt),
     };
   }
 
@@ -1135,6 +1267,10 @@ class Poi extends DataClass implements Insertable<Poi> {
     int? createdAt,
     bool? isShared,
     int? sortOrder,
+    int? syncStatus,
+    bool? isDeleted,
+    bool? hasEverSynced,
+    Value<DateTime?> lastModifiedAt = const Value.absent(),
   }) => Poi(
     id: id ?? this.id,
     roiId: roiId.present ? roiId.value : this.roiId,
@@ -1157,6 +1293,12 @@ class Poi extends DataClass implements Insertable<Poi> {
     createdAt: createdAt ?? this.createdAt,
     isShared: isShared ?? this.isShared,
     sortOrder: sortOrder ?? this.sortOrder,
+    syncStatus: syncStatus ?? this.syncStatus,
+    isDeleted: isDeleted ?? this.isDeleted,
+    hasEverSynced: hasEverSynced ?? this.hasEverSynced,
+    lastModifiedAt: lastModifiedAt.present
+        ? lastModifiedAt.value
+        : this.lastModifiedAt,
   );
   Poi copyWithCompanion(PoisCompanion data) {
     return Poi(
@@ -1185,6 +1327,16 @@ class Poi extends DataClass implements Insertable<Poi> {
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       isShared: data.isShared.present ? data.isShared.value : this.isShared,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      isDeleted: data.isDeleted.present ? data.isDeleted.value : this.isDeleted,
+      hasEverSynced: data.hasEverSynced.present
+          ? data.hasEverSynced.value
+          : this.hasEverSynced,
+      lastModifiedAt: data.lastModifiedAt.present
+          ? data.lastModifiedAt.value
+          : this.lastModifiedAt,
     );
   }
 
@@ -1205,7 +1357,11 @@ class Poi extends DataClass implements Insertable<Poi> {
           ..write('remoteCoverImageUrl: $remoteCoverImageUrl, ')
           ..write('createdAt: $createdAt, ')
           ..write('isShared: $isShared, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('isDeleted: $isDeleted, ')
+          ..write('hasEverSynced: $hasEverSynced, ')
+          ..write('lastModifiedAt: $lastModifiedAt')
           ..write(')'))
         .toString();
   }
@@ -1227,6 +1383,10 @@ class Poi extends DataClass implements Insertable<Poi> {
     createdAt,
     isShared,
     sortOrder,
+    syncStatus,
+    isDeleted,
+    hasEverSynced,
+    lastModifiedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -1246,7 +1406,11 @@ class Poi extends DataClass implements Insertable<Poi> {
           other.remoteCoverImageUrl == this.remoteCoverImageUrl &&
           other.createdAt == this.createdAt &&
           other.isShared == this.isShared &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.syncStatus == this.syncStatus &&
+          other.isDeleted == this.isDeleted &&
+          other.hasEverSynced == this.hasEverSynced &&
+          other.lastModifiedAt == this.lastModifiedAt);
 }
 
 class PoisCompanion extends UpdateCompanion<Poi> {
@@ -1265,6 +1429,10 @@ class PoisCompanion extends UpdateCompanion<Poi> {
   final Value<int> createdAt;
   final Value<bool> isShared;
   final Value<int> sortOrder;
+  final Value<int> syncStatus;
+  final Value<bool> isDeleted;
+  final Value<bool> hasEverSynced;
+  final Value<DateTime?> lastModifiedAt;
   final Value<int> rowid;
   const PoisCompanion({
     this.id = const Value.absent(),
@@ -1282,6 +1450,10 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     this.createdAt = const Value.absent(),
     this.isShared = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.isDeleted = const Value.absent(),
+    this.hasEverSynced = const Value.absent(),
+    this.lastModifiedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PoisCompanion.insert({
@@ -1300,6 +1472,10 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     this.createdAt = const Value.absent(),
     this.isShared = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.isDeleted = const Value.absent(),
+    this.hasEverSynced = const Value.absent(),
+    this.lastModifiedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        authorId = Value(authorId),
@@ -1322,6 +1498,10 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     Expression<int>? createdAt,
     Expression<bool>? isShared,
     Expression<int>? sortOrder,
+    Expression<int>? syncStatus,
+    Expression<bool>? isDeleted,
+    Expression<bool>? hasEverSynced,
+    Expression<DateTime>? lastModifiedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1342,6 +1522,10 @@ class PoisCompanion extends UpdateCompanion<Poi> {
       if (createdAt != null) 'created_at': createdAt,
       if (isShared != null) 'is_shared': isShared,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (isDeleted != null) 'is_deleted': isDeleted,
+      if (hasEverSynced != null) 'has_ever_synced': hasEverSynced,
+      if (lastModifiedAt != null) 'last_modified_at': lastModifiedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1362,6 +1546,10 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     Value<int>? createdAt,
     Value<bool>? isShared,
     Value<int>? sortOrder,
+    Value<int>? syncStatus,
+    Value<bool>? isDeleted,
+    Value<bool>? hasEverSynced,
+    Value<DateTime?>? lastModifiedAt,
     Value<int>? rowid,
   }) {
     return PoisCompanion(
@@ -1380,6 +1568,10 @@ class PoisCompanion extends UpdateCompanion<Poi> {
       createdAt: createdAt ?? this.createdAt,
       isShared: isShared ?? this.isShared,
       sortOrder: sortOrder ?? this.sortOrder,
+      syncStatus: syncStatus ?? this.syncStatus,
+      isDeleted: isDeleted ?? this.isDeleted,
+      hasEverSynced: hasEverSynced ?? this.hasEverSynced,
+      lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1436,6 +1628,18 @@ class PoisCompanion extends UpdateCompanion<Poi> {
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(syncStatus.value);
+    }
+    if (isDeleted.present) {
+      map['is_deleted'] = Variable<bool>(isDeleted.value);
+    }
+    if (hasEverSynced.present) {
+      map['has_ever_synced'] = Variable<bool>(hasEverSynced.value);
+    }
+    if (lastModifiedAt.present) {
+      map['last_modified_at'] = Variable<DateTime>(lastModifiedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1460,6 +1664,10 @@ class PoisCompanion extends UpdateCompanion<Poi> {
           ..write('createdAt: $createdAt, ')
           ..write('isShared: $isShared, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('isDeleted: $isDeleted, ')
+          ..write('hasEverSynced: $hasEverSynced, ')
+          ..write('lastModifiedAt: $lastModifiedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5353,6 +5561,10 @@ typedef $$PoisTableCreateCompanionBuilder =
       Value<int> createdAt,
       Value<bool> isShared,
       Value<int> sortOrder,
+      Value<int> syncStatus,
+      Value<bool> isDeleted,
+      Value<bool> hasEverSynced,
+      Value<DateTime?> lastModifiedAt,
       Value<int> rowid,
     });
 typedef $$PoisTableUpdateCompanionBuilder =
@@ -5372,6 +5584,10 @@ typedef $$PoisTableUpdateCompanionBuilder =
       Value<int> createdAt,
       Value<bool> isShared,
       Value<int> sortOrder,
+      Value<int> syncStatus,
+      Value<bool> isDeleted,
+      Value<bool> hasEverSynced,
+      Value<DateTime?> lastModifiedAt,
       Value<int> rowid,
     });
 
@@ -5565,6 +5781,26 @@ class $$PoisTableFilterComposer extends Composer<_$AppDatabase, $PoisTable> {
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isDeleted => $composableBuilder(
+    column: $table.isDeleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get hasEverSynced => $composableBuilder(
+    column: $table.hasEverSynced,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastModifiedAt => $composableBuilder(
+    column: $table.lastModifiedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5795,6 +6031,26 @@ class $$PoisTableOrderingComposer extends Composer<_$AppDatabase, $PoisTable> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isDeleted => $composableBuilder(
+    column: $table.isDeleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get hasEverSynced => $composableBuilder(
+    column: $table.hasEverSynced,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastModifiedAt => $composableBuilder(
+    column: $table.lastModifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$RoisTableOrderingComposer get roiId {
     final $$RoisTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -5879,6 +6135,24 @@ class $$PoisTableAnnotationComposer
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isDeleted =>
+      $composableBuilder(column: $table.isDeleted, builder: (column) => column);
+
+  GeneratedColumn<bool> get hasEverSynced => $composableBuilder(
+    column: $table.hasEverSynced,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get lastModifiedAt => $composableBuilder(
+    column: $table.lastModifiedAt,
+    builder: (column) => column,
+  );
 
   $$RoisTableAnnotationComposer get roiId {
     final $$RoisTableAnnotationComposer composer = $composerBuilder(
@@ -6079,6 +6353,10 @@ class $$PoisTableTableManager
                 Value<int> createdAt = const Value.absent(),
                 Value<bool> isShared = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<bool> isDeleted = const Value.absent(),
+                Value<bool> hasEverSynced = const Value.absent(),
+                Value<DateTime?> lastModifiedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PoisCompanion(
                 id: id,
@@ -6096,6 +6374,10 @@ class $$PoisTableTableManager
                 createdAt: createdAt,
                 isShared: isShared,
                 sortOrder: sortOrder,
+                syncStatus: syncStatus,
+                isDeleted: isDeleted,
+                hasEverSynced: hasEverSynced,
+                lastModifiedAt: lastModifiedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6115,6 +6397,10 @@ class $$PoisTableTableManager
                 Value<int> createdAt = const Value.absent(),
                 Value<bool> isShared = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<bool> isDeleted = const Value.absent(),
+                Value<bool> hasEverSynced = const Value.absent(),
+                Value<DateTime?> lastModifiedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PoisCompanion.insert(
                 id: id,
@@ -6132,6 +6418,10 @@ class $$PoisTableTableManager
                 createdAt: createdAt,
                 isShared: isShared,
                 sortOrder: sortOrder,
+                syncStatus: syncStatus,
+                isDeleted: isDeleted,
+                hasEverSynced: hasEverSynced,
+                lastModifiedAt: lastModifiedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

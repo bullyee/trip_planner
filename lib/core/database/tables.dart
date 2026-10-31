@@ -75,6 +75,12 @@ class Pois extends Table {
 
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 
+  // ADDED: Required fields for dual-track sync and dirty tracking (#45)
+  IntColumn get syncStatus => integer().withDefault(const Constant(0))();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
+  BoolColumn get hasEverSynced => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get lastModifiedAt => dateTime().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

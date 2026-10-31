@@ -7,6 +7,8 @@ import '../../../core/database/database.dart';
 import '../../../core/providers/database_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../sync/providers/firestore_sync_provider.dart';
+import '../../sync/services/firestore_sync_service.dart';
 
 part 'poi_repository.g.dart';
 
@@ -44,8 +46,9 @@ abstract class PoiRepository {
 class LocalPoiRepository implements PoiRepository {
   final AppDatabase localDb;
   final String currentUserId;
+  final FirestoreSyncService? firestoreSync;
 
-  LocalPoiRepository(this.localDb, this.currentUserId);
+  LocalPoiRepository(this.localDb, this.currentUserId, [this.firestoreSync]);
 
   @override
   Future<void> updatePoi(PoiModel poi) async {
@@ -65,6 +68,10 @@ class LocalPoiRepository implements PoiRepository {
       sortOrder: Value(poi.sortOrder),
       createdAt: Value(poi.createdAt),
       isShared: Value(poi.isShared),
+      syncStatus: const Value(1), // SyncStatus.dirty
+      isDeleted: Value(poi.isDeleted),
+      hasEverSynced: Value(poi.hasEverSynced),
+      lastModifiedAt: Value(DateTime.now()),
     );
     
     await localDb.updatePoi(companion); 
@@ -82,6 +89,18 @@ class LocalPoiRepository implements PoiRepository {
         // --- [UPDATE FLOW] ---
         // Fetch the existing POI to preserve its sync state and original author
         final currentPoi = await localDb.getPoiById(poi.id);
+        if (currentPoi.hasEverSynced && currentPoi.roiId != null && currentPoi.roiId != poi.roiId) {
+          try {
+            await firestoreSync?.deletePoiFromTrip(currentPoi.roiId!, poi.id);
+          } catch (e) {
+            debugPrint('[LocalPoiRepository] Error deleting POI from old cloud trip: $e');
+          }
+        }
+        DateTime modifiedAt = DateTime.now();
+        if (currentPoi.lastModifiedAt != null &&
+            modifiedAt.difference(currentPoi.lastModifiedAt!).inSeconds < 1) {
+          modifiedAt = currentPoi.lastModifiedAt!.add(const Duration(seconds: 1));
+        }
         final updateCompanion = PoisCompanion(
           id: Value(poi.id),
           roiId: Value(poi.roiId),
@@ -100,6 +119,10 @@ class LocalPoiRepository implements PoiRepository {
           // CRITICAL: Preserve original ownership and sync status during an update
           authorId: Value(currentPoi.authorId),
           isShared: Value(currentPoi.isShared),
+          syncStatus: const Value(1), // SyncStatus.dirty
+          hasEverSynced: Value(currentPoi.hasEverSynced),
+          isDeleted: Value(currentPoi.isDeleted),
+          lastModifiedAt: Value(modifiedAt),
         );
         
         await localDb.updatePoi(updateCompanion);
@@ -125,6 +148,10 @@ class LocalPoiRepository implements PoiRepository {
           authorId: currentUserId, 
           // Default to false since it's a local draft until synced
           isShared: const Value(false), 
+          syncStatus: const Value(1), // SyncStatus.dirty
+          isDeleted: const Value(false),
+          hasEverSynced: const Value(false),
+          lastModifiedAt: Value(DateTime.now()),
         );
         
         await localDb.insertPoi(insertCompanion);
@@ -164,6 +191,10 @@ class LocalPoiRepository implements PoiRepository {
       sortOrder: driftPoi.sortOrder,
       createdAt: driftPoi.createdAt,
       isShared: driftPoi.isShared,
+      syncStatus: driftPoi.syncStatus,
+      isDeleted: driftPoi.isDeleted,
+      hasEverSynced: driftPoi.hasEverSynced,
+      lastModifiedAt: driftPoi.lastModifiedAt,
     );
   }
 
@@ -209,24 +240,7 @@ class LocalPoiRepository implements PoiRepository {
 
   @override
   Stream<List<PoiModel>> watchPoisByAnime(String animeId) {
-    return localDb.watchPoisByAnime(animeId).map((rows) {
-      return rows.map((row) => PoiModel(
-        id: row.id,
-        roiId: row.roiId,
-        authorId: row.authorId,
-        name: row.name,
-        description: row.description,
-        address: row.address,
-        lat: row.lat,
-        lng: row.lng,
-        businessHours: row.businessHours,
-        contactInfo: row.contactInfo,
-        localCoverImagePath: row.localCoverImagePath,
-        remoteCoverImageUrl: row.remoteCoverImageUrl,
-        createdAt: row.createdAt, 
-        isShared: false, 
-      )).toList();
-    });
+    return localDb.watchPoisByAnime(animeId).map((rows) => rows.map(_mapPoi).toList());
   }
 
   @override
@@ -236,24 +250,7 @@ class LocalPoiRepository implements PoiRepository {
 
   @override
   Stream<List<PoiModel>> watchPoisByTag(String tagId) {
-    return localDb.watchPoisByTag(tagId).map((rows) {
-      return rows.map((row) => PoiModel(
-        id: row.id,
-        roiId: row.roiId,
-        authorId: row.authorId,
-        name: row.name,
-        description: row.description,
-        address: row.address,
-        lat: row.lat,
-        lng: row.lng,
-        businessHours: row.businessHours,
-        contactInfo: row.contactInfo,
-        localCoverImagePath: row.localCoverImagePath,
-        remoteCoverImageUrl: row.remoteCoverImageUrl,
-        createdAt: row.createdAt,
-        isShared: false,
-      )).toList();
-    });
+    return localDb.watchPoisByTag(tagId).map((rows) => rows.map(_mapPoi).toList());
   }
 
   @override
@@ -341,5 +338,6 @@ class LocalPoiRepository implements PoiRepository {
 PoiRepository poiRepository(PoiRepositoryRef ref) {
   final db = ref.watch(databaseProvider);
   final currentUserId = ref.watch(currentUserIdProvider);
-  return LocalPoiRepository(db, currentUserId);
+  final firestoreSync = ref.watch(firestoreSyncServiceProvider);
+  return LocalPoiRepository(db, currentUserId, firestoreSync);
 }
