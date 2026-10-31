@@ -50,11 +50,16 @@ Future<Uint8List> processBandsInParallel({
     channels: captured.numChannels,
     bandFn: bandFn,
   );
+  assert(
+    captured.numChannels == 3 || captured.numChannels == 4,
+    'Expected RGB or RGBA image, got ${captured.numChannels} channels',
+  );
   final newImage = img.Image.fromBytes(
     width: captured.width,
     height: captured.height,
     bytes: pixels.buffer,
     numChannels: captured.numChannels,
+    format: captured.format,
   );
   return Uint8List.fromList(img.encodeJpg(newImage, quality: 90));
 }
@@ -72,6 +77,11 @@ Future<void> processPixelBands({
   required int channels,
   required BandFn bandFn,
 }) async {
+  assert(channels > 0 && channels <= 4, 'Channel count must be between 1 and 4');
+  assert(
+    pixels.lengthInBytes >= width * height * channels,
+    'Pixel buffer size (${pixels.lengthInBytes}) is smaller than width * height * channels (${width * height * channels})',
+  );
   final bytesPerRow = width * channels;
 
   // Ceil so the last band picks up any remainder rows.

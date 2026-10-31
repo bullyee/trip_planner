@@ -42,6 +42,7 @@ class BangumiSearchService {
               'sort': 'match',
               'filter': {
                 'type': [2],
+                'nsfw': false,
               },
             }),
           )

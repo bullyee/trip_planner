@@ -334,7 +334,12 @@ class AppDatabase extends _$AppDatabase {
       ..where(timeChunks.date.equals(date) &
           timeChunks.isDeleted.equals(false) &
           pois.isDeleted.equals(false))
-      ..groupBy([pois.id]);
+      ..groupBy([pois.id])
+      ..orderBy([
+        OrderingTerm.asc(timeChunks.startTime),
+        OrderingTerm.asc(pois.sortOrder),
+        OrderingTerm.asc(pois.name),
+      ]);
     return query.map((row) => row.readTable(pois)).get();
   }
 
