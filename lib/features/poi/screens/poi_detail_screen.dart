@@ -1436,6 +1436,8 @@ class _ReferenceImageTile extends StatelessWidget {
     if (image.localPath != null && image.localPath!.isNotEmpty) {
       imageWidget = Image.file(
         File(image.localPath!), // Safe to use ! here
+        cacheWidth: 120,
+        cacheHeight: 120,
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => const ColoredBox(
           color: Colors.black12,
@@ -1445,6 +1447,8 @@ class _ReferenceImageTile extends StatelessWidget {
     } else if (image.remoteUrl != null && image.remoteUrl!.isNotEmpty) {
       imageWidget = Image.network(
         image.remoteUrl!, // Safe to use ! here
+        cacheWidth: 120,
+        cacheHeight: 120,
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => const ColoredBox(
           color: Colors.black12,

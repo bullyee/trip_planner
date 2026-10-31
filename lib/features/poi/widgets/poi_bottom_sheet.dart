@@ -44,6 +44,7 @@ class PoiBottomSheet extends ConsumerWidget {
               child: Image.file(
                 File(poi.localCoverImagePath!),
                 height: 180,
+                cacheHeight: 400,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => Container(
                   height: 180,
@@ -76,9 +77,13 @@ class PoiBottomSheet extends ConsumerWidget {
             Row(children: [
               const Icon(Icons.access_time, size: 16),
               const SizedBox(width: 4),
-              Text(
-                poi.businessHours!,
-                style: Theme.of(context).textTheme.bodySmall,
+              Expanded(
+                child: Text(
+                  poi.businessHours!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ]),
           ],

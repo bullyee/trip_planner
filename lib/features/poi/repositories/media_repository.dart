@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:drift/drift.dart';
 import '../models/media_asset_model.dart';
 import '../models/reference_image_model.dart';
@@ -76,6 +77,17 @@ class LocalMediaRepository implements MediaRepository {
 
   @override
   Future<void> deleteMediaAsset(String id) async {
+    try {
+      final asset = await (localDb.select(localDb.mediaAssets)..where((m) => m.id.equals(id))).getSingleOrNull();
+      if (asset?.localPath != null && asset!.localPath!.isNotEmpty) {
+        final file = File(asset.localPath!);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+    } catch (e) {
+      // Best-effort cleanup
+    }
     await localDb.deleteMediaAsset(id);
   }
 
@@ -96,6 +108,17 @@ class LocalMediaRepository implements MediaRepository {
 
   @override
   Future<void> deleteReferenceImage(String id) async {
+    try {
+      final img = await (localDb.select(localDb.referenceImages)..where((r) => r.id.equals(id))).getSingleOrNull();
+      if (img?.localPath != null && img!.localPath!.isNotEmpty) {
+        final file = File(img.localPath!);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+    } catch (e) {
+      // Best-effort cleanup
+    }
     await localDb.deleteReferenceImage(id);
   }
 

@@ -1,3 +1,7 @@
+import 'dart:io';
+import 'package:trip_planner/features/poi/models/media_asset_model.dart';
+import 'package:trip_planner/features/poi/models/reference_image_model.dart';
+import 'package:trip_planner/features/poi/repositories/media_repository.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -146,6 +150,97 @@ void main() {
       expect(await db.getReferenceImagesByPoi('poi-with-children'), isEmpty);
       expect(await db.getMediaAssetsByPoi('poi-with-children'), isEmpty);
       expect(await db.getTimeChunksByPoi('poi-with-children'), isEmpty);
+    });
+
+    test('deletePoi cleans up physical local files from disk', () async {
+      final tempDir = await Directory.systemTemp.createTemp('poi_test_');
+      final coverFile = File('${tempDir.path}/cover.jpg')..writeAsStringSync('dummy cover');
+      final refFile = File('${tempDir.path}/ref.jpg')..writeAsStringSync('dummy ref');
+      final mediaFile = File('${tempDir.path}/photo.jpg')..writeAsStringSync('dummy photo');
+
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-with-files',
+        authorId: 'test_user_id',
+        name: 'Shrine Spot With Files',
+        lat: 35.0,
+        lng: 135.0,
+        localCoverImagePath: Value(coverFile.path),
+      ));
+
+      await db.insertReferenceImage(ReferenceImagesCompanion.insert(
+        id: 'ref-file-1',
+        poiId: 'poi-with-files',
+        authorId: 'test_user_id',
+        localPath: Value(refFile.path),
+      ));
+
+      await db.insertMediaAsset(MediaAssetsCompanion.insert(
+        id: 'media-file-1',
+        poiId: 'poi-with-files',
+        authorId: 'test_user_id',
+        type: 'user_photo',
+        localPath: Value(mediaFile.path),
+      ));
+
+      expect(await coverFile.exists(), isTrue);
+      expect(await refFile.exists(), isTrue);
+      expect(await mediaFile.exists(), isTrue);
+
+      await poiRepository.deletePoi('poi-with-files');
+
+      expect(await db.getAllPois(), isEmpty);
+      expect(await coverFile.exists(), isFalse, reason: 'Cover file must be deleted from disk');
+      expect(await refFile.exists(), isFalse, reason: 'Reference image file must be deleted from disk');
+      expect(await mediaFile.exists(), isFalse, reason: 'Media asset photo must be deleted from disk');
+
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    test('LocalMediaRepository deleteMediaAsset and deleteReferenceImage delete files from disk', () async {
+      final mediaRepo = LocalMediaRepository(db);
+      final tempDir = await Directory.systemTemp.createTemp('media_test_');
+      final refFile = File('${tempDir.path}/ref2.jpg')..writeAsStringSync('dummy ref 2');
+      final mediaFile = File('${tempDir.path}/photo2.jpg')..writeAsStringSync('dummy photo 2');
+
+      await db.insertPoi(PoisCompanion.insert(
+        id: 'poi-media-test',
+        authorId: 'test_user_id',
+        name: 'Spot',
+        lat: 35.0,
+        lng: 135.0,
+      ));
+
+      await mediaRepo.addReferenceImage(ReferenceImageModel(
+        id: 'ref-direct',
+        poiId: 'poi-media-test',
+        authorId: 'test_user_id',
+        localPath: refFile.path,
+        createdAt: 1000,
+      ));
+
+      await mediaRepo.addMediaAsset(MediaAssetModel(
+        id: 'media-direct',
+        poiId: 'poi-media-test',
+        authorId: 'test_user_id',
+        localPath: mediaFile.path,
+        type: 'user_photo',
+        createdAt: 1000,
+      ));
+
+      expect(await refFile.exists(), isTrue);
+      expect(await mediaFile.exists(), isTrue);
+
+      await mediaRepo.deleteReferenceImage('ref-direct');
+      expect(await refFile.exists(), isFalse, reason: 'Reference image must be deleted from disk');
+
+      await mediaRepo.deleteMediaAsset('media-direct');
+      expect(await mediaFile.exists(), isFalse, reason: 'Media asset must be deleted from disk');
+
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
     });
 
     test('updatePoi preserves localCoverImagePath, remoteCoverImageUrl, and sortOrder', () async {
